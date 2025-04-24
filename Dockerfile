@@ -1,13 +1,21 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
+# Install native AOT dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    clang \
+    lld \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 # Define build arguments with defaults
 ARG USE_POSTGRESQL=false
 ARG USE_AZURE_BLOB=false
 
 COPY ["TerraformRegistry/TerraformRegistry.csproj", "TerraformRegistry/"]
 RUN dotnet restore "TerraformRegistry/TerraformRegistry.csproj" /p:UsePostgreSQL=${USE_POSTGRESQL} /p:UseAzureBlob=${USE_AZURE_BLOB}
-COPY . .
+COPY . . 
 WORKDIR "/src/TerraformRegistry"
 RUN dotnet build "TerraformRegistry.csproj" -c Release -o /app/build /p:UsePostgreSQL=${USE_POSTGRESQL} /p:UseAzureBlob=${USE_AZURE_BLOB}
 
