@@ -4,16 +4,17 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PublishAot>true</PublishAot>
-    <OptimizationPreference>Speed</OptimizationPreference>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <IsAotCompatible>true</IsAotCompatible>
+    <!-- <PublishAot>true</PublishAot> -->
+    <!-- <OptimizationPreference>Speed</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization> -->
+    <!-- <IsAotCompatible>true</IsAotCompatible> -->
     <Configurations>Debug;Release</Configurations>
     <!-- AOT-specific settings -->
+    <!-- <StaticallyLinked>true</StaticallyLinked>
     <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
     <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
     <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
-    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies> -->
   </PropertyGroup>
 
   <ItemGroup>
