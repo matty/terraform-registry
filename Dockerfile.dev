@@ -1,0 +1,25 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build-env
+WORKDIR /app
+
+# Copy csproj and restore dependencies
+COPY ["TerraformRegistry/TerraformRegistry.csproj", "TerraformRegistry/"]
+RUN dotnet restore "TerraformRegistry/TerraformRegistry.csproj"
+
+# Copy everything else
+COPY . ./
+
+# Set up for development
+WORKDIR /app/TerraformRegistry
+EXPOSE 80
+EXPOSE 443
+
+# Create modules directory
+RUN mkdir -p /app/modules
+
+# Use environment variables for configuration
+ENV ASPNETCORE_ENVIRONMENT=Development
+ENV DOTNET_USE_POLLING_FILE_WATCHER=1
+ENV ASPNETCORE_URLS=http://+:80;https://+:443
+
+# Run in development mode with hot reload
+ENTRYPOINT ["dotnet", "watch", "run", "--no-restore", "--urls", "http://+:80;https://+:443"]

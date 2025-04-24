@@ -1,0 +1,53 @@
+---
+
+# Production-specific overrides
+services:
+  app:
+    image: terraform-registry:latest  # Using a pre-built image instead of building
+    container_name: terraform-registry-app-prod
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - TF_REG_DatabaseProvider=postgres
+      - TF_REG_PostgreSQL__ConnectionString=Host=postgres;Database=terraform_registry;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      - TF_REG_BaseUrl=${BASE_URL:-http://localhost:5131}
+      - TF_REG_StorageProvider=local
+
+  postgres:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-terraform_reg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-terraform_reg_password}
+      POSTGRES_DB: terraform_registry
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    # No ports exposed to the host in production (only accessible to other containers)
+    ports: []
+
+  # Adding a reverse proxy for production
+  nginx:
+    image: nginx:latest
+    container_name: terraform-registry-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+    restart: always
+
+volumes:
+  postgres_data_prod:
+  module_data:

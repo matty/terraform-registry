@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Terraform Registry Database",
+      "Group": "Terraform",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "terraform_registry_dev",
+      "Username": "terraform_reg_user",
+      "SSLMode": "prefer",
+      "PassFile": "/var/lib/pgadmin/pgpassfile"
+    }
+  }
+}
