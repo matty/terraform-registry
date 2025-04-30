@@ -7,113 +7,142 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-// Add services to the container
-// Add configurations - with support for environment variables
 builder.Configuration
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables("TF_REG_") // Add environment variables with prefix
-    .AddInMemoryCollection(new List<KeyValuePair<string, string?>>
-    {
-        new("BaseUrl", "http://localhost:5131"),
-        new("ModuleStoragePath", Path.Combine(Directory.GetCurrentDirectory(), "modules")),
-        new("DatabaseProvider", "inmemory"), // Add default database provider
-        new("AuthorizationToken", null) // Add default for authorization token
-    });
+    .AddEnvironmentVariables("TF_REG_");
 
-// Get the base URL from configuration
-var baseUrl = builder.Configuration["BaseUrl"] ?? "http://localhost:5131";
-
-// Register database service based on configuration
 var databaseProvider = builder.Configuration["DatabaseProvider"]?.ToLower() ?? "inmemory";
 
 switch (databaseProvider)
 {
    case "postgres":
-      var postgresConnectionString = builder.Configuration["PostgreSQL:ConnectionString"];
-      if (string.IsNullOrEmpty(postgresConnectionString))
-      {
-         throw new Exception("PostgreSQL connection string is not configured");
-      }
-
-#if UsePostgreSQL
+      builder.Services.AddSingleton<TerraformRegistry.PostgreSQL.Migrations.MigrationManager>();
       builder.Services.AddSingleton<IDatabaseService>(provider =>
-          new TerraformRegistry.PostgreSQL.PostgreSQLDatabaseService(postgresConnectionString, baseUrl));
-      Console.WriteLine("Using PostgreSQL database for module metadata");
-#else
-      throw new Exception("PostgreSQL support is not included in this build. Rebuild with UsePostgreSQL=true");
-#endif
+      {
+         var config = provider.GetRequiredService<IConfiguration>();
+         var loggerDb = provider.GetRequiredService<ILogger<TerraformRegistry.PostgreSQL.PostgreSqlDatabaseService>>();
+         var migrationManager = provider.GetRequiredService<TerraformRegistry.PostgreSQL.Migrations.MigrationManager>();
+         var connectionString = config["PostgreSQL:ConnectionString"];
+         if (string.IsNullOrEmpty(connectionString))
+         {
+            throw new InvalidOperationException("PostgreSQL connection string is missing or empty. Please check your configuration.");
+         }
+         var baseUrl = config["BaseUrl"] ?? "http://localhost:5131";
+         if (string.IsNullOrEmpty(baseUrl))
+         {
+            throw new InvalidOperationException("BaseUrl is missing or empty. Please check your configuration.");
+         }
+         return new TerraformRegistry.PostgreSQL.PostgreSqlDatabaseService(connectionString, baseUrl, loggerDb, migrationManager);
+      });
+      builder.Services.AddSingleton(provider => (IInitializableDb)provider.GetRequiredService<IDatabaseService>());
       break;
 
    case "inmemory":
-   default:
       builder.Services.AddSingleton<IDatabaseService>(provider =>
-          new InMemoryDatabaseService(baseUrl));
-      Console.WriteLine("Using in-memory database for module metadata");
+      {
+         var config = provider.GetRequiredService<IConfiguration>();
+         var baseUrl = config["BaseUrl"] ?? "http://localhost:5131";
+         if (string.IsNullOrEmpty(baseUrl))
+         {
+            throw new InvalidOperationException("BaseUrl is missing or empty. Please check your configuration.");
+         }
+         return new InMemoryDatabaseService(baseUrl);
+      });
       break;
+
+   default:
+      throw new Exception($"Invalid database provider specified: '{databaseProvider}'. Check configuration.");
 }
 
-// Choose which module service to use based on configuration
 var storageProvider = builder.Configuration["StorageProvider"]?.ToLower() ?? "local";
 
 switch (storageProvider)
 {
    case "azure":
-#if UseAzureBlob
       builder.Services.AddSingleton<IModuleService, TerraformRegistry.AzureBlob.AzureBlobModuleService>();
-      Console.WriteLine("Using Azure Blob Storage for module storage");
-#else
-      throw new Exception("Azure Blob Storage support is not included in this build. Rebuild with UseAzureBlob=true");
-#endif
       break;
 
    case "local":
-   default:
-      builder.Services.AddSingleton<IModuleService, LocalModuleService>();
-      Console.WriteLine("Using local file system for module storage");
+      builder.Services.AddSingleton<IModuleService>(provider =>
+      {
+         var config = provider.GetRequiredService<IConfiguration>();
+         var db = provider.GetRequiredService<IDatabaseService>();
+         var logger = provider.GetRequiredService<ILogger<LocalModuleService>>();
+         var storagePath = config["ModuleStoragePath"];
+         if (string.IsNullOrEmpty(storagePath))
+         {
+            logger.LogError("ModuleStoragePath is missing or empty. Please check your configuration. Application cannot start.");
+            throw new InvalidOperationException("ModuleStoragePath is missing or empty. Please check your configuration.");
+         }
+         return new LocalModuleService(config, db, logger);
+      });
       break;
+
+   default:
+      throw new Exception($"Invalid storage provider specified: '{storageProvider}'. Check configuration.");
 }
 
-// Configure JSON serialization with source generation
+// Register the database initializer hosted service
+builder.Services.AddHostedService<DatabaseInitializerHostedService>();
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
    options.SerializerOptions.TypeInfoResolver = AppJsonSerializerContext.Default;
 });
 
-// Add Swagger/OpenAPI support for development
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApiDocument(options =>
+bool enableSwagger = false;
+var enableSwaggerConfig = builder.Configuration["EnableSwagger"];
+if (!string.IsNullOrEmpty(enableSwaggerConfig) && bool.TryParse(enableSwaggerConfig, out var parsed))
 {
-   options.Title = "Terraform Registry API";
-   options.Version = "v1";
-   options.Description = "A private Terraform Registry API for modules";
-});
-
-var app = builder.Build();
-
-// Authorization middleware for API endpoints
-var authToken = builder.Configuration["AuthorizationToken"];
-if (!string.IsNullOrEmpty(authToken))
+   enableSwagger = parsed;
+}
+else if (builder.Environment.IsDevelopment())
 {
-   app.Use(async (context, next) =>
+   enableSwagger = true;
+}
+
+if (enableSwagger)
+{
+   builder.Services.AddEndpointsApiExplorer();
+   builder.Services.AddOpenApiDocument(options =>
    {
-      // Only protect API endpoints (not static files or root)
-      var path = context.Request.Path.Value ?? string.Empty;
-      if (path.StartsWith("/v1/") || path.StartsWith("/.well-known/"))
+      options.Title = "Terraform Registry API";
+      options.Version = "v1";
+      options.Description = "A private Terraform Registry API for modules";
+      // Add Bearer authentication support
+      options.AddSecurity("Bearer", new NSwag.OpenApiSecurityScheme
       {
-         var header = context.Request.Headers["Authorization"].FirstOrDefault();
-         if (string.IsNullOrEmpty(header) || !header.Equals($"Bearer {authToken}", StringComparison.Ordinal))
-         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
-            return;
-         }
-      }
-      await next();
+         Type = NSwag.OpenApiSecuritySchemeType.Http,
+         Scheme = "bearer",
+         BearerFormat = "JWT",
+         Name = "Authorization",
+         In = NSwag.OpenApiSecurityApiKeyLocation.Header,
+         Description = "Enter your Bearer token in the format: Bearer {token}"
+      });
+      options.OperationProcessors.Add(new NSwag.Generation.Processors.Security.AspNetCoreOperationSecurityScopeProcessor("Bearer"));
    });
 }
 
-// Configure static files middleware for serving SPA
+var app = builder.Build();
+
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("Using {DatabaseProvider} database for module metadata", databaseProvider);
+logger.LogInformation("Using {StorageProvider} storage for module storage", storageProvider);
+
+var authToken = app.Configuration["AuthorizationToken"];
+
+if (authToken == "default-auth-token")
+{
+   logger.LogWarning("WARNING: The default AuthorizationToken is in use. This is not secure. Please set a secure token in your configuration.");
+}
+
+if (!string.IsNullOrEmpty(authToken))
+{
+   // Use the new AuthenticationMiddleware
+   app.UseMiddleware<TerraformRegistry.Middleware.AuthenticationMiddleware>(authToken);
+}
+
 var webFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "web");
 if (Directory.Exists(webFolderPath))
 {
@@ -124,16 +153,12 @@ if (Directory.Exists(webFolderPath))
    });
 }
 
-// Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+if (enableSwagger)
 {
    app.UseOpenApi();
    app.UseSwaggerUi();
-
-   // No longer redirecting to Swagger docs from root
 }
 
-// In all environments, serve the SPA's index.html for the root route if it exists
 app.MapGet("/", async (HttpContext context) =>
 {
    var indexPath = Path.Combine(webFolderPath, "index.html");
@@ -150,39 +175,40 @@ app.MapGet("/", async (HttpContext context) =>
 
 app.UseHttpsRedirection();
 
-// Define routes directly with minimal API patterns
-// Service discovery endpoint
 app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDiscovery)
    .WithTags("Service Discovery")
    .WithDescription("Terraform service discovery endpoint")
    .Produces<ServiceDiscovery>();
 
-// Module endpoints
 app.MapGet("/v1/modules", (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset, int limit) =>
     ModuleHandlers.ListModules(moduleService, q, @namespace, provider, offset, limit))
    .WithTags("Modules")
    .WithDescription("Lists or searches modules")
-   .Produces<ModuleList>();
+   .Produces<ModuleList>()
+   .RequireAuthorization();
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}", (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
     ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService))
    .WithTags("Modules")
    .WithDescription("Gets a specific module")
    .Produces<Module>()
-   .ProducesProblem(404);
+   .ProducesProblem(404)
+   .RequireAuthorization();
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions", (string @namespace, string name, string provider, IModuleService moduleService) =>
     ModuleHandlers.GetModuleVersions(@namespace, name, provider, moduleService))
    .WithTags("Modules")
    .WithDescription("Gets all versions of a specific module")
-   .Produces<ModuleVersions>();
+   .Produces<ModuleVersions>()
+   .RequireAuthorization();
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download", (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
     ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService))
    .WithTags("Modules")
    .WithDescription("Downloads a specific module version")
    .Produces(200, contentType: "application/zip")
-   .ProducesProblem(404);
+   .ProducesProblem(404)
+   .RequireAuthorization();
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name, string provider, string version, HttpRequest request, IModuleService moduleService) =>
     await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService))
@@ -191,12 +217,11 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
    .Accepts<IFormFile>("multipart/form-data")
    .ProducesProblem(400)
    .ProducesProblem(409)
-   .Produces(201);
+   .Produces(201)
+   .RequireAuthorization();
 
-// Add a fallback route for the SPA to handle client-side routing
 app.MapFallback(async (HttpContext context) =>
 {
-   // Check if the request is for an API route - if so, let it 404 normally
    if (context.Request.Path.StartsWithSegments("/v1") ||
        context.Request.Path.StartsWithSegments("/.well-known") ||
        context.Request.Path.StartsWithSegments("/swagger"))
@@ -213,3 +238,5 @@ app.MapFallback(async (HttpContext context) =>
 });
 
 app.Run();
+
+public partial class Program;

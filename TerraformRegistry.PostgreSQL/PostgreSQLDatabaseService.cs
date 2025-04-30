@@ -1,58 +1,53 @@
-namespace TerraformRegistry.PostgreSQL;
-
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL.Migrations;
 
+namespace TerraformRegistry.PostgreSQL;
+
 /// <summary>
-/// Implementation of database service using PostgreSQL
+/// Implementation of a database service using PostgreSQL
 /// </summary>
-public class PostgreSQLDatabaseService : IDatabaseService
+public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly string _baseUrl;
     private readonly MigrationManager _migrationManager;
+    private readonly ILogger<PostgreSqlDatabaseService> _logger;
 
-    public PostgreSQLDatabaseService(string connectionString, string baseUrl)
+    public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger, MigrationManager migrationManager)
     {
         _connectionString = connectionString;
         _baseUrl = baseUrl;
-        _migrationManager = new MigrationManager();
-
-        // Initialize the database if needed
-        InitializeDatabase().GetAwaiter().GetResult();
+        _migrationManager = migrationManager;
+        _logger = logger;
     }
 
-    /// <summary>
-    /// Initialize the database schema if it doesn't exist or needs upgrading
-    /// </summary>
-    private async Task InitializeDatabase()
+    public async Task InitializeDatabase()
+    {
+        await InitializeDatabaseImpl();
+    }
+
+    private async Task InitializeDatabaseImpl()
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        // Check if we need to initialize the database
         if (await _migrationManager.NeedsInitializationAsync(connection))
         {
-            // Start a transaction to ensure all schema changes are atomic
             await using var transaction = await connection.BeginTransactionAsync();
-
             try
             {
-                // Apply all necessary migrations
                 await _migrationManager.InitializeDatabaseAsync(connection, transaction);
-
-                // Commit all changes
                 await transaction.CommitAsync();
-                Console.WriteLine("Database initialization and migrations completed successfully");
+                _logger.LogInformation("Database initialization and migrations completed successfully");
             }
             catch (Exception ex)
             {
-                // Roll back all changes if any part fails
                 await transaction.RollbackAsync();
-                Console.WriteLine($"Error initializing database: {ex.Message}");
+                _logger.LogError(ex, "Error initializing database");
                 throw;
             }
         }
@@ -415,7 +410,7 @@ public class PostgreSQLDatabaseService : IDatabaseService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error adding module {module.Namespace}/{module.Name}/{module.Provider}/{module.Version} to database: {ex.Message}");
+            _logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database", module.Namespace, module.Name, module.Provider, module.Version);
             return false;
         }
     }

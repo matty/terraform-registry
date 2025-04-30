@@ -8,6 +8,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Sas;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
@@ -23,10 +24,12 @@ public class AzureBlobModuleService : ModuleService
     private readonly BlobContainerClient _containerClient;
     private readonly string _containerName;
     private readonly int _sasTokenExpiryMinutes;
+    private readonly ILogger<AzureBlobModuleService> _logger;
 
-    public AzureBlobModuleService(IConfiguration configuration, IDatabaseService databaseService)
+    public AzureBlobModuleService(IConfiguration configuration, IDatabaseService databaseService, ILogger<AzureBlobModuleService> logger)
     {
         _databaseService = databaseService;
+        _logger = logger;
 
         // Get Azure Storage connection settings from configuration
         var connectionString = configuration["AzureStorage:ConnectionString"]
@@ -80,7 +83,7 @@ public class AzureBlobModuleService : ModuleService
         if (moduleStorage == null)
         {
             // Module not found in database
-            Console.WriteLine($"Module {@namespace}/{name}/{provider}/{version} not found in database");
+            _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} not found in database");
             return null;
         }
 
@@ -94,7 +97,7 @@ public class AzureBlobModuleService : ModuleService
             if (!await blobClient.ExistsAsync())
             {
                 // This indicates data inconsistency - database record exists but no blob
-                Console.WriteLine($"Module {@namespace}/{name}/{provider}/{version} exists in database but blob not found at {blobPath}");
+                _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} exists in database but blob not found at {blobPath}");
                 return null;
             }
 
@@ -117,7 +120,7 @@ public class AzureBlobModuleService : ModuleService
         catch (Exception ex)
         {
             // Log any errors during SAS token generation
-            Console.WriteLine($"Error generating SAS token for module {@namespace}/{name}/{provider}/{version}: {ex.Message}");
+            _logger.LogError(ex, $"Error generating SAS token for module {@namespace}/{name}/{provider}/{version}");
             return null;
         }
     }
@@ -142,7 +145,7 @@ public class AzureBlobModuleService : ModuleService
         // Check if blob already exists to avoid duplication
         if (await blobClient.ExistsAsync())
         {
-            Console.WriteLine($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
+            _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
             return false;
         }
 
@@ -183,7 +186,7 @@ public class AzureBlobModuleService : ModuleService
             {
                 // Clean up the blob if database insertion fails to maintain consistency
                 await blobClient.DeleteAsync();
-                Console.WriteLine($"Failed to add module {@namespace}/{name}/{provider}/{version} to database, cleaned up blob storage");
+                _logger.LogError($"Failed to add module {@namespace}/{name}/{provider}/{version} to database, cleaned up blob storage");
             }
 
             return result;
@@ -191,7 +194,7 @@ public class AzureBlobModuleService : ModuleService
         catch (Exception ex)
         {
             // Log any errors during upload
-            Console.WriteLine($"Error uploading module {@namespace}/{name}/{provider}/{version}: {ex.Message}");
+            _logger.LogError(ex, $"Error uploading module {@namespace}/{name}/{provider}/{version}");
 
             // Try to clean up the blob if an error occurred
             try
@@ -223,7 +226,7 @@ public class AzureBlobModuleService : ModuleService
     {
         try
         {
-            Console.WriteLine("Starting synchronization between Azure Blob Storage and PostgreSQL database...");
+            _logger.LogInformation("Starting synchronization between Azure Blob Storage and PostgreSQL database...");
             int syncCount = 0;
 
             // List all blobs in the container
@@ -314,7 +317,7 @@ public class AzureBlobModuleService : ModuleService
                             if (result)
                             {
                                 syncCount++;
-                                Console.WriteLine($"Synchronized module {module.Namespace}/{module.Name}/{module.Provider}/{module.Version} from blob storage to database");
+                                _logger.LogInformation($"Synchronized module {module.Namespace}/{module.Name}/{module.Provider}/{module.Version} from blob storage to database");
                             }
                         }
                     }
@@ -322,16 +325,16 @@ public class AzureBlobModuleService : ModuleService
                 catch (Exception ex)
                 {
                     // Log the error but continue processing other blobs
-                    Console.WriteLine($"Error processing blob {blobItem.Name}: {ex.Message}");
+                    _logger.LogError(ex, $"Error processing blob {blobItem.Name}");
                 }
             }
 
-            Console.WriteLine($"Synchronization complete. Added {syncCount} modules from Azure Blob Storage to the database.");
+            _logger.LogInformation($"Synchronization complete. Added {syncCount} modules from Azure Blob Storage to the database.");
         }
         catch (Exception ex)
         {
             // Log any errors during initialization
-            Console.WriteLine($"Error during blob storage/database synchronization: {ex.Message}");
+            _logger.LogError(ex, "Error during blob storage/database synchronization");
         }
     }
 }

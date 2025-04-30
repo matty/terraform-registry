@@ -7,6 +7,7 @@ using TerraformRegistry.Models;
 using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Implementation of module service with local file system storage
@@ -15,16 +16,18 @@ public class LocalModuleService : ModuleService
 {
     private readonly IDatabaseService _databaseService;
     private readonly string _moduleStoragePath;
+    private readonly ILogger<LocalModuleService> _logger;
 
-    public LocalModuleService(IConfiguration configuration, IDatabaseService databaseService)
+    public LocalModuleService(IConfiguration configuration, IDatabaseService databaseService, ILogger<LocalModuleService> logger)
     {
         _databaseService = databaseService;
+        _logger = logger;
 
         // Get storage path from configuration, with a reasonable default if not specified
         _moduleStoragePath = configuration["ModuleStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "modules");
 
         // Log the storage path being used
-        Console.WriteLine($"Using local module storage path: {_moduleStoragePath}");
+        _logger.LogInformation("Using local module storage path: {Path}", _moduleStoragePath);
 
         // Ensure module storage directory exists
         if (!Directory.Exists(_moduleStoragePath))
@@ -64,17 +67,17 @@ public class LocalModuleService : ModuleService
                     catch (Exception ex)
                     {
                         // Log the error but continue processing other files
-                        Console.WriteLine($"Error loading module from {zipFile}: {ex.Message}");
+                        _logger.LogError(ex, "Error loading module from {ZipFile}", zipFile);
                     }
                 }
             }
 
-            Console.WriteLine($"Loaded modules from disk.");
+            _logger.LogInformation("Loaded modules from disk.");
         }
         catch (Exception ex)
         {
             // Log any errors during initialization
-            Console.WriteLine($"Error scanning module directory: {ex.Message}");
+            _logger.LogError(ex, "Error scanning module directory");
         }
     }
 
@@ -90,7 +93,7 @@ public class LocalModuleService : ModuleService
 
         if (parts.Length < 3)
         {
-            Console.WriteLine($"Invalid module filename format: {fileName}");
+            _logger.LogWarning("Invalid module filename format: {FileName}", fileName);
             return;
         }
 
@@ -104,7 +107,7 @@ public class LocalModuleService : ModuleService
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
         {
-            Console.WriteLine($"Skipping module {fileName}: Version '{version}' is not a valid Semantic Version (SemVer 2.0.0)");
+            _logger.LogWarning("Skipping module {FileName}: Version '{Version}' is not a valid Semantic Version (SemVer 2.0.0)", fileName, version);
             return;
         }
 

@@ -3,6 +3,7 @@ namespace TerraformRegistry.PostgreSQL.Migrations;
 using System.Data;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 /// <summary>
@@ -12,12 +13,14 @@ public class MigrationManager
 {
     private readonly List<IDatabaseMigration> _migrations = new List<IDatabaseMigration>();
     private const string SchemaVersionTable = "schema_version";
+    private readonly ILogger<MigrationManager> _logger;
 
     /// <summary>
     /// Initializes a new instance of the MigrationManager class
     /// </summary>
-    public MigrationManager()
+    public MigrationManager(ILogger<MigrationManager> logger)
     {
+        _logger = logger;
         // Discover all migration implementations in the assembly
         DiscoverMigrations();
     }
@@ -180,11 +183,11 @@ public class MigrationManager
             versionCommand.Parameters.AddWithValue("@description", migration.Description);
             await versionCommand.ExecuteNonQueryAsync();
 
-            Console.WriteLine($"Applied database migration to version {migration.Version}: {migration.Description}");
+            _logger.LogInformation("Applied database migration to version {Version}: {Description}", migration.Version, migration.Description);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error applying migration to version {migration.Version}: {ex.Message}");
+            _logger.LogError(ex, "Error applying migration to version {Version}", migration.Version);
             throw;
         }
     }
