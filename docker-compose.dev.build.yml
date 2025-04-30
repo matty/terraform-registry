@@ -1,0 +1,52 @@
+---
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: terraform-registry-app-dev
+    ports:
+      - "5131:80"
+      - "5132:443"
+    volumes:
+      - module_data:/app/modules
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - TF_REG_DatabaseProvider=postgres
+      - TF_REG_PostgreSQL__ConnectionString=Host=postgres;Database=terraform_registry;Username=terraform_reg_user;Password=terraform_reg_password
+      - TF_REG_BaseUrl=http://localhost:5131
+      - TF_REG_StorageProvider=local
+      - TF_REG_EnableSwagger=true
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:17
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: terraform_reg_user
+      POSTGRES_PASSWORD: terraform_reg_password
+      POSTGRES_DB: terraform_registry_dev
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: terraform-registry-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - ./devutils/pgadmin/servers/servers.json:/pgadmin4/servers.json
+      - pgpassfile_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data_dev:
+  pgpassfile_data:
+  module_data:

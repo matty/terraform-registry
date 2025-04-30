@@ -1,0 +1,73 @@
+using System.IO;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace TerraformRegistry.Tests.IntegrationTests;
+
+public class UploadModuleTests : IntegrationTestBase
+{
+    private const string TestDataDirectory = "TestData";
+    private const string TestModuleName = "test-module.zip";
+    private const string AuthToken = "default-auth-token";
+
+    public UploadModuleTests(ITestOutputHelper output) : base(output)
+    {
+        Environment.SetEnvironmentVariable("AuthorizationToken", AuthToken);
+    }
+
+    [Fact]
+    public async Task Upload_ValidModule_ReturnsOk()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        // Get the project directory instead of the output directory
+        var projectDir = GetProjectDirectory();
+        var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
+        var fileName = Path.GetFileName(moduleFilePath);
+
+        _output.WriteLine($"Looking for test module at: {moduleFilePath}");
+
+        if (!File.Exists(moduleFilePath))
+        {
+            _output.WriteLine($"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
+            throw new FileNotFoundException("Test module file missing.", moduleFilePath);
+        }
+
+        await using var fileStream = File.OpenRead(moduleFilePath);
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(fileStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
+        content.Add(streamContent, "file", fileName);
+
+        var response = await client.PutAsync("/modules/test-ns/test-name/test-provider/0.1.0/file", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
+    /// Gets the test project directory path
+    /// </summary>
+    private string GetProjectDirectory()
+    {
+        // Find the project directory by starting from the current assembly location and going up
+        // until we find the directory containing the test project file
+        var assembly = Assembly.GetExecutingAssembly();
+        var assemblyDirectory = Path.GetDirectoryName(assembly.Location);
+
+        // Navigate to the project directory (going up from bin/Debug/net9.0)
+        var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName;
+
+        if (string.IsNullOrEmpty(projectDir) || !Directory.Exists(projectDir))
+        {
+            throw new DirectoryNotFoundException("Could not locate the test project directory.");
+        }
+
+        return projectDir;
+    }
+}
