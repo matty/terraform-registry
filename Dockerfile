@@ -12,6 +12,7 @@ COPY TerraformRegistry.API/TerraformRegistry.API.csproj TerraformRegistry.API/
 COPY TerraformRegistry.AzureBlob/TerraformRegistry.AzureBlob.csproj TerraformRegistry.AzureBlob/
 COPY TerraformRegistry.Models/TerraformRegistry.Models.csproj TerraformRegistry.Models/
 COPY TerraformRegistry.PostgreSQL/TerraformRegistry.PostgreSQL.csproj TerraformRegistry.PostgreSQL/
+COPY TerraformRegistry.Tests/TerraformRegistry.Tests.csproj TerraformRegistry.Tests/
 
 # Restore using the solution file
 RUN dotnet restore terraform-registry.sln /p:UsePostgreSQL=${USE_POSTGRESQL} /p:UseAzureBlob=${USE_AZURE_BLOB}
