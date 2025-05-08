@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Mvc;
+
 namespace TerraformRegistry;
 
 using System.Text.Json.Serialization;
@@ -16,7 +18,10 @@ using Models;
 [JsonSerializable(typeof(ModuleStorage))]
 [JsonSerializable(typeof(ModuleSubmodule))]
 [JsonSerializable(typeof(ModuleVersions))]
-[JsonSerializable(typeof(ModuleMetadata))]
+[JsonSerializable(typeof(ProblemDetails))]
+[JsonSerializable(typeof(UploadModuleResponse))]
+[JsonSerializable(typeof(StringArrayWrapper))]
+[JsonSerializable(typeof(string[]))]
 public partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }

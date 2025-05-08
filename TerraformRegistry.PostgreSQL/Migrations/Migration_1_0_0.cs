@@ -3,7 +3,7 @@ namespace TerraformRegistry.PostgreSQL.Migrations;
 using Npgsql;
 
 /// <summary>
-/// Combined initial database schema migration (v1.2.0)
+/// Initial database
 /// Creates the core module storage tables, adds metadata, and download tracking.
 /// </summary>
 public class Migration_1_0_0 : IDatabaseMigration // Keep class name for simplicity, but update version/desc
@@ -11,19 +11,18 @@ public class Migration_1_0_0 : IDatabaseMigration // Keep class name for simplic
     /// <summary>
     /// Gets the migration version in SemVer format
     /// </summary>
-    public string Version => "1.2.0"; // Updated version
+    public string Version => "1.0.0"; // Updated version
 
     /// <summary>
     /// Gets a description of what this migration does
     /// </summary>
-    public string Description => "Initial schema, metadata column, and download tracking"; // Updated description
+    public string Description => "Initial schema";
 
     /// <summary>
     /// Applies the migration to the database
     /// </summary>
     public async Task ApplyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction)
     {
-        // Combined SQL from migrations 1.0.0, 1.1.0, and 1.2.0
         var combinedSql = @"
             -- Migration 1.0.0: Initial schema creation
             CREATE TABLE IF NOT EXISTS modules (
@@ -36,23 +35,18 @@ public class Migration_1_0_0 : IDatabaseMigration // Keep class name for simplic
                 storage_path TEXT NOT NULL,
                 published_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 dependencies JSONB NOT NULL DEFAULT '[]',
+                metadata JSONB NOT NULL DEFAULT '{}',
                 CONSTRAINT module_unique_constraint UNIQUE (namespace, name, provider, version)
             );
             
-            -- Create indexes for faster searches (1.0.0)
+            -- Create indexes for faster searches
             CREATE INDEX IF NOT EXISTS idx_module_namespace ON modules(namespace);
             CREATE INDEX IF NOT EXISTS idx_module_name ON modules(name);
             CREATE INDEX IF NOT EXISTS idx_module_provider ON modules(provider);
             CREATE INDEX IF NOT EXISTS idx_module_version ON modules(version);
-
-            -- Migration 1.1.0: Add metadata column
-            -- Add a new column for additional metadata
-            ALTER TABLE modules ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
-            
-            -- Create an index for efficient JSON queries on metadata (1.1.0)
+            -- Create an index for efficient JSON queries on metadata
             CREATE INDEX IF NOT EXISTS idx_module_metadata ON modules USING GIN (metadata);
 
-            -- Migration 1.2.0: Add module download tracking
             -- Create downloads table
             CREATE TABLE IF NOT EXISTS module_downloads (
                 id SERIAL PRIMARY KEY,
@@ -66,14 +60,14 @@ public class Migration_1_0_0 : IDatabaseMigration // Keep class name for simplic
                 user_agent TEXT
             );
             
-            -- Create indexes for faster queries (1.2.0)
+            -- Create indexes for faster queries
             CREATE INDEX IF NOT EXISTS idx_downloads_module_id ON module_downloads(module_id);
             CREATE INDEX IF NOT EXISTS idx_downloads_namespace ON module_downloads(namespace);
             CREATE INDEX IF NOT EXISTS idx_downloads_name ON module_downloads(name);
             CREATE INDEX IF NOT EXISTS idx_downloads_provider ON module_downloads(provider);
             CREATE INDEX IF NOT EXISTS idx_downloads_time ON module_downloads(download_time);
             
-            -- Create function to record a download (1.2.0)
+            -- Create function to record a download
             CREATE OR REPLACE FUNCTION record_module_download(
                 p_namespace VARCHAR(255),
                 p_name VARCHAR(255),

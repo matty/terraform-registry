@@ -163,6 +163,15 @@ public class InMemoryDatabaseService : IDatabaseService
     }
 
     /// <summary>
+    /// Removes a module from the in-memory database
+    /// </summary>
+    public Task<bool> RemoveModuleAsync(ModuleStorage module)
+    {
+        var key = GetModuleKey(module.Namespace, module.Name, module.Provider, module.Version);
+        return Task.FromResult(_modules.TryRemove(key, out _));
+    }
+
+    /// <summary>
     /// Generates a unique key for a module version
     /// </summary>
     private static string GetModuleKey(string @namespace, string name, string provider, string version)

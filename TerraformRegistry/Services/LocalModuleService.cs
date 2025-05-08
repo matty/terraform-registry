@@ -8,6 +8,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 /// <summary>
 /// Implementation of module service with local file system storage
@@ -17,6 +18,10 @@ public class LocalModuleService : ModuleService
     private readonly IDatabaseService _databaseService;
     private readonly string _moduleStoragePath;
     private readonly ILogger<LocalModuleService> _logger;
+
+    // Token storage for download links
+    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> _downloadTokens = new();
+    private static readonly TimeSpan _tokenLifetime = TimeSpan.FromMinutes(10);
 
     public LocalModuleService(IConfiguration configuration, IDatabaseService databaseService, ILogger<LocalModuleService> logger)
     {
@@ -190,7 +195,33 @@ public class LocalModuleService : ModuleService
     public override async Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider, string version)
     {
         var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
-        return moduleStorage?.FilePath;
+        if (moduleStorage == null)
+            return null;
+
+        // Generate a unique token
+        var token = Guid.NewGuid().ToString("N");
+        var expiry = DateTime.UtcNow.Add(_tokenLifetime);
+        _downloadTokens[token] = (moduleStorage.FilePath, expiry);
+
+        // Return the download link (adjust base path as needed)
+        return $"/module/download?token={token}";
+    }
+
+    // Helper for endpoint to validate and retrieve file path
+    public static bool TryGetFilePathFromToken(string token, out string filePath)
+    {
+        filePath = string.Empty;
+        if (_downloadTokens.TryGetValue(token, out var entry))
+        {
+            if (entry.Expiry > DateTime.UtcNow)
+            {
+                filePath = entry.FilePath;
+                return true;
+            }
+            // Expired, remove
+            _downloadTokens.TryRemove(token, out _);
+        }
+        return false;
     }
 
     /// <summary>
@@ -205,27 +236,79 @@ public class LocalModuleService : ModuleService
             Directory.CreateDirectory(namespaceDir);
         }
 
-        // Save the module zip file
+        // Save the module zip file as a temporary file first
         var fileName = $"{name}-{provider}-{version}.zip";
-        var filePath = Path.Combine(namespaceDir, fileName);
+        var tempFileName = $"{fileName}.tmp";
+        var tempFilePath = Path.Combine(namespaceDir, tempFileName);
+        var finalFilePath = Path.Combine(namespaceDir, fileName);
 
-        using (var fileStream = File.Create(filePath))
+        try
         {
-            await moduleContent.CopyToAsync(fileStream);
+            using (var fileStream = File.Create(tempFilePath))
+            {
+                await moduleContent.CopyToAsync(fileStream);
+            }
+
+            var module = new ModuleStorage
+            {
+                Namespace = @namespace,
+                Name = name,
+                Provider = provider,
+                Version = version,
+                Description = description,
+                FilePath = finalFilePath,
+                PublishedAt = DateTime.UtcNow,
+                Dependencies = new List<string>()
+            };
+
+            var dbResult = await _databaseService.AddModuleAsync(module);
+            if (dbResult)
+            {
+                try
+                {
+                    // Move temp file to final file name
+                    if (File.Exists(finalFilePath))
+                    {
+                        File.Delete(finalFilePath);
+                    }
+                    File.Move(tempFilePath, finalFilePath);
+                    return true;
+                }
+                catch (Exception fileMoveEx)
+                {
+                    // Rollback DB entry if file move fails
+                    try
+                    {
+                        await _databaseService.RemoveModuleAsync(module);
+                    }
+                    catch (Exception dbRollbackEx)
+                    {
+                        _logger.LogError(dbRollbackEx, "Failed to rollback DB entry after file move failure for {Namespace}/{Name}/{Provider}/{Version}", @namespace, name, provider, version);
+                    }
+                    _logger.LogError(fileMoveEx, "Failed to move file, rolled back DB entry for {Namespace}/{Name}/{Provider}/{Version}", @namespace, name, provider, version);
+                    if (File.Exists(tempFilePath))
+                    {
+                        File.Delete(tempFilePath);
+                    }
+                    return false;
+                }
+            }
+            else
+            {
+                // DB failed, delete temp file
+                File.Delete(tempFilePath);
+                return false;
+            }
         }
-
-        var module = new ModuleStorage
+        catch (Exception ex)
         {
-            Namespace = @namespace,
-            Name = name,
-            Provider = provider,
-            Version = version,
-            Description = description,
-            FilePath = filePath,
-            PublishedAt = DateTime.UtcNow, // Use current time for newly uploaded modules
-            Dependencies = new List<string>() // Simplified, no dependencies
-        };
-
-        return await _databaseService.AddModuleAsync(module);
+            _logger.LogError(ex, "Failed to upload module {Namespace}/{Name}/{Provider}/{Version}", @namespace, name, provider, version);
+            // Clean up temp file if it exists
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+            return false;
+        }
     }
 }

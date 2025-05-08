@@ -24,15 +24,54 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     protected readonly ITestOutputHelper _output;
     protected XunitLoggerProvider _loggerProvider = null!;
     private CancellationTokenSource _logMonitorCts = new();
+    private string _authToken;
 
-    protected IntegrationTestBase(ITestOutputHelper output)
+    protected IntegrationTestBase(ITestOutputHelper output, string authToken)
     {
         _output = output;
+        _authToken = authToken;
     }
 
     public virtual async Task InitializeAsync()
     {
         _output.WriteLine("Starting PostgreSQL test container...");
+
+        var randomSuffix = Path.GetRandomFileName().Replace(".", "");
+        var moduleStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"modules/{randomSuffix}");
+        if (!string.IsNullOrEmpty(moduleStoragePath) && Directory.Exists(moduleStoragePath))
+        {
+            Directory.Delete(moduleStoragePath, true);
+            _output.WriteLine($"Cleared directory: {moduleStoragePath}");
+        }
+
+        _factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, config) =>
+                {
+                    var connStr = _postgresContainer.GetConnectionString();
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["PostgreSQL:ConnectionString"] = connStr,
+                        ["DatabaseProvider"] = "postgres",
+                        ["StorageProvider"] = "local",
+                        ["BaseUrl"] = "http://localhost:5000",
+                        ["ModuleStoragePath"] = moduleStoragePath,
+                        ["AuthorizationToken"] = _authToken
+                    });
+                });
+
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddProvider(_loggerProvider);
+                    logging.SetMinimumLevel(LogLevel.Information);
+                    logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+                    logging.AddFilter("Testcontainers", LogLevel.Information);
+                });
+
+                builder.UseEnvironment("Test");
+            });
 
         var testOutputConsumer = Consume.RedirectStdoutAndStderrToStream(
             new OutputToTestConsoleStream(_output), new OutputToTestConsoleStream(_output));
@@ -50,7 +89,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
             await _postgresContainer.StartAsync();
             _output.WriteLine($"PostgreSQL container started successfully. Connection string: {_postgresContainer.GetConnectionString()}");
 
-            // Start monitoring logs in the background
+            // Optionally, start monitoring logs in the background
             // _ = MonitorContainerLogsAsync();
         }
         catch (Exception ex)
@@ -59,31 +98,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
             throw;
         }
 
-        _loggerProvider = new XunitLoggerProvider(_output, (category, level) => true);
-
-        _factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.ConfigureAppConfiguration((context, config) =>
-                {
-                    var connStr = _postgresContainer.GetConnectionString();
-                    config.AddInMemoryCollection([
-                        new KeyValuePair<string, string?>("PostgreSQL:ConnectionString", connStr),
-                        new KeyValuePair<string, string?>("DatabaseProvider", "postgres"),
-                        new KeyValuePair<string, string?>("BaseUrl", "http://localhost:5000")
-                    ]);
-                });
-
-                builder.ConfigureLogging(logging =>
-                {
-                    logging.ClearProviders();
-                    logging.AddProvider(_loggerProvider);
-
-                    logging.SetMinimumLevel(LogLevel.Information);
-                    logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
-                    logging.AddFilter("Testcontainers", LogLevel.Information);
-                });
-            });
+        _loggerProvider = new XunitLoggerProvider(_output, (_, _) => true);
 
         _client = _factory.CreateClient();
     }

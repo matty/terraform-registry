@@ -401,7 +401,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             command.Parameters.AddWithValue("@description", module.Description);
             command.Parameters.AddWithValue("@storagePath", module.FilePath);  // Link to blob storage path
             command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
-            command.Parameters.AddWithValue("@dependencies", JsonSerializer.Serialize(module.Dependencies));
+            command.Parameters.AddWithValue("@dependencies", module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb;
 
             // Execute and get the ID of the inserted/updated row
             var result = await command.ExecuteScalarAsync();
@@ -411,6 +411,39 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database", module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Removes a module from the database
+    /// </summary>
+    public async Task<bool> RemoveModuleAsync(ModuleStorage module)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", module.Namespace);
+            command.Parameters.AddWithValue("@name", module.Name);
+            command.Parameters.AddWithValue("@provider", module.Provider);
+            command.Parameters.AddWithValue("@version", module.Version);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database", module.Namespace, module.Name, module.Provider, module.Version);
             return false;
         }
     }

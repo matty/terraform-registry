@@ -5,11 +5,9 @@ using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
 
-public class WellKnownEndpointTests : IntegrationTestBase
+public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestBase(output, AuthToken)
 {
-    public WellKnownEndpointTests(ITestOutputHelper output) : base(output)
-    {
-    }
+    private const string AuthToken = "default-auth-token";
 
     [Fact]
     public async Task WellKnown_Endpoint_Returns_Expected_Response()

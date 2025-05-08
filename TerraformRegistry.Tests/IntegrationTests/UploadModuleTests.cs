@@ -1,23 +1,25 @@
-using System.IO;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Reflection;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
 
-public class UploadModuleTests : IntegrationTestBase
+public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(output, AuthToken)
 {
     private const string TestDataDirectory = "TestData";
     private const string TestModuleName = "test-module.zip";
-    private const string AuthToken = "default-auth-token";
-
-    public UploadModuleTests(ITestOutputHelper output) : base(output)
+    protected const string AuthToken = "default-auth-token";
+    
+    [Fact]
+    public async Task Invalid_Authorization_ReturnsUnauthorized()
     {
-        Environment.SetEnvironmentVariable("AuthorizationToken", AuthToken);
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invalid-token");
+
+        var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.1.0", null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -35,7 +37,8 @@ public class UploadModuleTests : IntegrationTestBase
 
         if (!File.Exists(moduleFilePath))
         {
-            _output.WriteLine($"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
+            _output.WriteLine(
+                $"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
             throw new FileNotFoundException("Test module file missing.", moduleFilePath);
         }
 
@@ -43,11 +46,14 @@ public class UploadModuleTests : IntegrationTestBase
         using var content = new MultipartFormDataContent();
         using var streamContent = new StreamContent(fileStream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
-        content.Add(streamContent, "file", fileName);
+        content.Add(streamContent, "moduleFile", fileName);
 
-        var response = await client.PutAsync("/modules/test-ns/test-name/test-provider/0.1.0/file", content);
+        var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.1.0", content);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        _output.WriteLine($"Response content: {responseContent}");
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     /// <summary>

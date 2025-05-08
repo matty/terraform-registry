@@ -26,6 +26,12 @@ public static class ModuleHandlers
         _logger = loggerFactory.CreateLogger("ModuleHandlers");
     }
 
+    // Helper to return error responses in Terraform Registry format
+    private static IResult Error(int statusCode, string message)
+    {
+        return Results.Json(new { errors = new[] { message } }, statusCode: statusCode);
+    }
+
     /// <summary>
     /// Lists or searches modules
     /// </summary>
@@ -69,7 +75,7 @@ public static class ModuleHandlers
         var module = await moduleService.GetModuleAsync(@namespace, name, provider, version);
         if (module == null)
         {
-            return NotFound();
+            return Error(404, "Module not found");
         }
 
         return Ok(module);
@@ -88,6 +94,10 @@ public static class ModuleHandlers
             @namespace, name, provider);
 
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        if (versions == null || versions.Versions == null || versions.Versions.Count == 0)
+        {
+            return Error(404, "Module not found");
+        }
         return Ok(versions);
     }
 
@@ -99,7 +109,8 @@ public static class ModuleHandlers
         string name,
         string provider,
         string version,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        HttpContext context)
     {
         _logger.LogInformation("Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -107,25 +118,36 @@ public static class ModuleHandlers
         var downloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
         if (downloadPath == null)
         {
-            return NotFound();
+            return Error(404, "Module not found");
         }
 
-        // Check if the result is a URL (Azure Blob SAS URL)
-        if (Uri.TryCreate(downloadPath, UriKind.Absolute, out var uriResult) &&
-            (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps))
+        context.Response.Headers["X-Terraform-Get"] = downloadPath;
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Downloads the latest version of a module for a provider
+    /// </summary>
+    public static async Task<IResult> DownloadLatestModule(
+        string @namespace,
+        string name,
+        string provider,
+        IModuleService moduleService,
+        HttpContext context)
+    {
+        _logger.LogInformation("Downloading latest module: {Namespace}/{Name}/{Provider}",
+            @namespace, name, provider);
+
+        // Get all versions and pick the latest using SemVer sort
+        var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var latest = versions?.Versions?.OrderByDescending(v => v, Comparer<string>.Create((a, b) =>
+            SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault();
+        if (string.IsNullOrEmpty(latest))
         {
-            _logger.LogInformation("Redirecting to blob storage URL for download");
-            return Redirect(downloadPath);
+            return Error(404, "Module not found");
         }
 
-        // Otherwise, treat it as a local file path
-        if (!System.IO.File.Exists(downloadPath))
-        {
-            _logger.LogWarning("Module file not found: {FilePath}", downloadPath);
-            return NotFound("Module file not found");
-        }
-
-        return File(downloadPath, "application/zip", Path.GetFileName(downloadPath));
+        return await DownloadModule(@namespace, name, provider, latest, moduleService, context);
     }
 
     /// <summary>
@@ -146,7 +168,7 @@ public static class ModuleHandlers
         if (!SemVerValidator.IsValid(version))
         {
             _logger.LogWarning("Invalid version format: {Version}", version);
-            return BadRequest($"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+            return Error(400, $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
         var form = await request.ReadFormAsync();
@@ -155,31 +177,32 @@ public static class ModuleHandlers
 
         if (moduleFile == null || moduleFile.Length == 0)
         {
-            return BadRequest("No file uploaded");
+            return Error(400, "No file uploaded");
         }
 
         try
         {
-            using var stream = moduleFile.OpenReadStream();
+            await using var stream = moduleFile.OpenReadStream();
             var result = await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description);
 
             if (!result)
             {
-                return Conflict("Module version already exists");
+                return Error(409, "Module version already exists");
             }
 
-            // Using location header instead of CreatedAtAction for minimal API
-            return Created($"/v1/modules/{@namespace}/{name}/{provider}/{version}", null);
+            // Return JSON with filename using DTO
+            var response = new UploadModuleResponse { Filename = moduleFile.FileName };
+            return Created($"/v1/modules/{@namespace}/{name}/{provider}/{version}", response);
         }
         catch (ArgumentException ex) when (ex.Message.Contains("Version"))
         {
             _logger.LogWarning("Invalid version format: {Version}", version);
-            return BadRequest(ex.Message);
+            return Error(400, ex.Message);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error uploading module");
-            return Problem("An error occurred while uploading the module", statusCode: 500);
+            return Error(500, "An error occurred while uploading the module");
         }
     }
 }

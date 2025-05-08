@@ -31,4 +31,9 @@ public interface IDatabaseService
     /// Adds a new module to the database
     /// </summary>
     Task<bool> AddModuleAsync(ModuleStorage module);
+
+    /// <summary>
+    /// Removes a module from the database
+    /// </summary>
+    Task<bool> RemoveModuleAsync(ModuleStorage module);
 }

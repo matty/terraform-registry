@@ -1,7 +1,3 @@
-using Microsoft.Extensions.Hosting;
-using System.Threading;
-using System.Threading.Tasks;
-using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 
 namespace TerraformRegistry.Services
