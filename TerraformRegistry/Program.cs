@@ -161,6 +161,12 @@ if (enableSwagger)
     app.UseSwaggerUi();
 }
 
+var port = builder.Configuration["PORT"] ?? builder.Configuration["Port"] ?? "80";
+if (!int.TryParse(port, out var portNumber))
+{
+    throw new InvalidOperationException($"Invalid port specified: '{port}'. Please check your configuration.");
+}
+
 app.MapGet("/", async (HttpContext context) =>
 {
     var indexPath = Path.Combine(webFolderPath, "index.html");
@@ -282,6 +288,6 @@ app.MapFallback(async (HttpContext context) =>
     context.Response.StatusCode = 404;
 });
 
-app.Run();
+app.Run($"http://0.0.0.0:{portNumber}");
 
 public partial class Program;

@@ -33,6 +33,4 @@ COPY --from=publish /app/publish .
 RUN mkdir -p /app/modules
 # Create web directory and copy static files
 COPY TerraformRegistry/web /app/web
-EXPOSE 80
-EXPOSE 443
 ENTRYPOINT ["dotnet", "TerraformRegistry.dll"]
