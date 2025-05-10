@@ -9,10 +9,14 @@ on:
       - "hotfix/**"
     tags:
       - "v*.*.*"
+    paths:
+      - "TerraformRegistry**/**"
   pull_request:
     branches:
       - main
       - develop
+    paths:
+      - "TerraformRegistry**/**"
   workflow_dispatch:
     inputs:
       use_postgresql:
