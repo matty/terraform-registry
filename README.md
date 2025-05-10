@@ -29,18 +29,20 @@ A lightweight private Terraform Registry implementation currently focusing on su
 
 The application can be configured using the following environment variables (all must be prefixed with `TF_REG_`):
 
-| Environment Variable                  | Description                                      | Default Value           | Required                                   |
-| ------------------------------------- | ------------------------------------------------ | ----------------------- | ------------------------------------------ |
-| `TF_REG_PORT`                         | Port the application listens on                  | `5131`                  | No                                         |
-| `TF_REG_BASEURL`                      | Base URL for the Terraform Registry              | `http://localhost:5131` | Yes                                        |
-| `TF_REG_DATABASEPROVIDER`             | Database provider (`postgres` or `inmemory`)     | `inmemory`              | No                                         |
-| `TF_REG_POSTGRESQL__CONNECTIONSTRING` | PostgreSQL connection string                     | Empty                   | Only when `DatabaseProvider` is `postgres` |
-| `TF_REG_STORAGEPROVIDER`              | Storage provider (`local` or `azure`)            | `local`                 | Yes                                        |
-| `TF_REG_MODULESTORAGEPATH`            | Local path to store modules                      | `modules`               | Only when `StorageProvider` is `local`     |
-| `TF_REG_AZUREBLOB__CONNECTIONSTRING`  | Azure Blob Storage connection string             | Empty                   | Only when `StorageProvider` is `azure`     |
-| `TF_REG_AZUREBLOB__CONTAINERNAME`     | Azure Blob Storage container name                | `modules`               | Only when `StorageProvider` is `azure`     |
-| `TF_REG_AUTHORIZATIONTOKEN`           | Token required for API authentication            | Empty                   | No                                         |
-| `TF_REG_ENABLESWAGGER`                | Enable or disable Swagger UI (`true` or `false`) | `true` in dev           | No                                         |
+| Environment Variable                         | Description                                       | Default Value           | Required                                   |
+| -------------------------------------------- | ------------------------------------------------- | ----------------------- | ------------------------------------------ |
+| `TF_REG_PORT`                                | Port the application listens on                   | `5131`                  | No                                         |
+| `TF_REG_BASEURL`                             | Base URL for the Terraform Registry               | `http://localhost:5131` | Yes                                        |
+| `TF_REG_DATABASEPROVIDER`                    | Database provider (`postgres` or `inmemory`)      | `inmemory`              | No                                         |
+| `TF_REG_POSTGRESQL__CONNECTIONSTRING`        | PostgreSQL connection string                      | Empty                   | Only when `DatabaseProvider` is `postgres` |
+| `TF_REG_STORAGEPROVIDER`                     | Storage provider (`local` or `azure`)             | `local`                 | Yes                                        |
+| `TF_REG_MODULESTORAGEPATH`                   | Local path to store modules                       | `modules`               | Only when `StorageProvider` is `local`     |
+| `TF_REG_AZUREBLOB__CONNECTIONSTRING`         | Azure Blob Storage connection string              | Empty                   | Only when `StorageProvider` is `azure`     |
+| `TF_REG_AZUREBLOB__CONTAINERNAME`            | Azure Blob Storage container name                 | `modules`               | Only when `StorageProvider` is `azure`     |
+| `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Azure Storage account name (for Managed Identity) | Empty                   | Only when using Managed Identity           |
+| `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry in minutes                       | `5`                     | No                                         |
+| `TF_REG_AUTHORIZATIONTOKEN`                  | Token required for API authentication             | Empty                   | No                                         |
+| `TF_REG_ENABLESWAGGER`                       | Enable or disable Swagger UI (`true` or `false`)  | `true` in dev           | No                                         |
 
 > **Note:** For nested configuration (like `PostgreSQL:ConnectionString`), use double underscores:  
 > `TF_REG_POSTGRESQL__CONNECTIONSTRING`
@@ -62,6 +64,8 @@ docker run -p 5131:80 \
   -e TF_REG_BASEURL=http://registry.example.com \
   -e TF_REG_STORAGEPROVIDER=azure \
   -e TF_REG_AZUREBLOB__CONNECTIONSTRING="DefaultEndpointsProtocol=https;AccountName=youraccountname;AccountKey=youraccountkey;EndpointSuffix=core.windows.net" \
+  -e TF_REG_AZUREBLOB__CONTAINERNAME=modules \
+  -e TF_REG_AZURESTORAGE__ACCOUNTNAME=youraccountname \
   terraform-registry
 ```
 
