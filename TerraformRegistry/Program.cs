@@ -161,7 +161,7 @@ if (enableSwagger)
     app.UseSwaggerUi();
 }
 
-var port = builder.Configuration["PORT"] ?? builder.Configuration["Port"] ?? "80";
+var port = builder.Configuration["PORT"] ?? builder.Configuration["Port"] ?? "5131";
 if (!int.TryParse(port, out var portNumber))
 {
     throw new InvalidOperationException($"Invalid port specified: '{port}'. Please check your configuration.");
