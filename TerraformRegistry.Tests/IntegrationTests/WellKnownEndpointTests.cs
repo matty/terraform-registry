@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Text.Json;
-using TerraformRegistry.Tests.IntegrationTests;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
@@ -34,7 +33,8 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
         {
             modules = new
             {
-                service_discovery = jsonDoc.RootElement.GetProperty("modules").GetProperty("service-discovery").GetString(),
+                service_discovery = jsonDoc.RootElement.GetProperty("modules").GetProperty("service-discovery")
+                    .GetString(),
                 modules = jsonDoc.RootElement.GetProperty("modules").GetProperty("modules").GetString()
             }
         };

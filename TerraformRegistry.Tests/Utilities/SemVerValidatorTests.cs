@@ -49,9 +49,11 @@ public class SemVerValidatorTests
     [InlineData("10.20.30-alpha.1", 10, 20, 30, "alpha.1", null)]
     [InlineData("1.0.0+build.123", 1, 0, 0, null, "build.123")]
     [InlineData("2.5.0-rc.2+meta.data", 2, 5, 0, "rc.2", "meta.data")]
-    public void TryParse_ValidVersion_ReturnsTrueAndCorrectComponents(string version, int expMajor, int expMinor, int expPatch, string? expPrerelease, string? expBuild)
+    public void TryParse_ValidVersion_ReturnsTrueAndCorrectComponents(string version, int expMajor, int expMinor,
+        int expPatch, string? expPrerelease, string? expBuild)
     {
-        var result = SemVerValidator.TryParse(version, out var major, out var minor, out var patch, out var prerelease, out var buildMetadata);
+        var result = SemVerValidator.TryParse(version, out var major, out var minor, out var patch, out var prerelease,
+            out var buildMetadata);
 
         Assert.True(result);
         Assert.Equal(expMajor, major);

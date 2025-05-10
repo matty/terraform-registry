@@ -10,7 +10,7 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     private const string TestDataDirectory = "TestData";
     private const string TestModuleName = "test-module.zip";
     protected const string AuthToken = "default-auth-token";
-    
+
     [Fact]
     public async Task Invalid_Authorization_ReturnsUnauthorized()
     {
@@ -57,7 +57,7 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     /// <summary>
-    /// Gets the test project directory path
+    ///     Gets the test project directory path
     /// </summary>
     private string GetProjectDirectory()
     {
@@ -70,9 +70,7 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName;
 
         if (string.IsNullOrEmpty(projectDir) || !Directory.Exists(projectDir))
-        {
             throw new DirectoryNotFoundException("Could not locate the test project directory.");
-        }
 
         return projectDir;
     }

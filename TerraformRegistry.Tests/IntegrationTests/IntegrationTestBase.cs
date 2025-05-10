@@ -1,30 +1,25 @@
+using System.Text;
+using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Text;
-using System.Threading;
 using Testcontainers.PostgreSql;
-using DotNet.Testcontainers.Containers;
-using DotNet.Testcontainers.Configurations;
-using DotNet.Testcontainers.Builders;
-using Xunit;
 using Xunit.Abstractions;
 using Xunit.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
 
 // Base class for integration tests
 public abstract class IntegrationTestBase : IAsyncLifetime
 {
-    protected PostgreSqlContainer _postgresContainer = null!;
-    protected WebApplicationFactory<Program> _factory = null!;
-    protected HttpClient _client = null!;
     protected readonly ITestOutputHelper _output;
+    private readonly string _authToken;
+    protected HttpClient _client = null!;
+    protected WebApplicationFactory<Program> _factory = null!;
     protected XunitLoggerProvider _loggerProvider = null!;
-    private CancellationTokenSource _logMonitorCts = new();
-    private string _authToken;
+    private readonly CancellationTokenSource _logMonitorCts = new();
+    protected PostgreSqlContainer _postgresContainer = null!;
 
     protected IntegrationTestBase(ITestOutputHelper output, string authToken)
     {
@@ -87,7 +82,8 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         try
         {
             await _postgresContainer.StartAsync();
-            _output.WriteLine($"PostgreSQL container started successfully. Connection string: {_postgresContainer.GetConnectionString()}");
+            _output.WriteLine(
+                $"PostgreSQL container started successfully. Connection string: {_postgresContainer.GetConnectionString()}");
 
             // Optionally, start monitoring logs in the background
             // _ = MonitorContainerLogsAsync();
@@ -112,7 +108,6 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         _factory?.Dispose();
 
         if (_postgresContainer != null)
-        {
             try
             {
                 _output.WriteLine("Stopping PostgreSQL container...");
@@ -123,7 +118,6 @@ public abstract class IntegrationTestBase : IAsyncLifetime
             {
                 _output.WriteLine($"Error stopping PostgreSQL container: {ex.Message}");
             }
-        }
 
         _loggerProvider?.Dispose();
     }
@@ -141,15 +135,9 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                     var since = DateTime.UtcNow.AddMinutes(-1);
                     var (stdout, stderr) = await _postgresContainer.GetLogsAsync(since);
 
-                    if (!string.IsNullOrEmpty(stdout))
-                    {
-                        _output.WriteLine($"PostgreSQL Container Stdout: {stdout}");
-                    }
+                    if (!string.IsNullOrEmpty(stdout)) _output.WriteLine($"PostgreSQL Container Stdout: {stdout}");
 
-                    if (!string.IsNullOrEmpty(stderr))
-                    {
-                        _output.WriteLine($"PostgreSQL Container Stderr: {stderr}");
-                    }
+                    if (!string.IsNullOrEmpty(stderr)) _output.WriteLine($"PostgreSQL Container Stderr: {stderr}");
                 }
                 catch (Exception ex)
                 {
@@ -174,8 +162,8 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 // Custom stream class to redirect container output to test output
 public class OutputToTestConsoleStream : Stream
 {
-    private readonly ITestOutputHelper _output;
     private readonly StringBuilder _lineBuffer = new();
+    private readonly ITestOutputHelper _output;
 
     public OutputToTestConsoleStream(ITestOutputHelper output)
     {
@@ -186,9 +174,16 @@ public class OutputToTestConsoleStream : Stream
     public override bool CanSeek => false;
     public override bool CanWrite => true;
     public override long Length => 0;
-    public override long Position { get => 0; set { } }
 
-    public override void Flush() { }
+    public override long Position
+    {
+        get => 0;
+        set { }
+    }
+
+    public override void Flush()
+    {
+    }
 
     public override int Read(byte[] buffer, int offset, int count)
     {
@@ -207,11 +202,11 @@ public class OutputToTestConsoleStream : Stream
 
     public override void Write(byte[] buffer, int offset, int count)
     {
-        string text = Encoding.UTF8.GetString(buffer, offset, count);
+        var text = Encoding.UTF8.GetString(buffer, offset, count);
 
-        for (int i = 0; i < text.Length; i++)
+        for (var i = 0; i < text.Length; i++)
         {
-            char c = text[i];
+            var c = text[i];
             if (c == '\n')
             {
                 // End of line found, write to output
@@ -223,6 +218,7 @@ public class OutputToTestConsoleStream : Stream
                 {
                     // Ignore write errors during test cleanup
                 }
+
                 _lineBuffer.Clear();
             }
             else if (c != '\r')
@@ -233,4 +229,3 @@ public class OutputToTestConsoleStream : Stream
         }
     }
 }
-

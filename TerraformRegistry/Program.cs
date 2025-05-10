@@ -154,7 +154,6 @@ if (Directory.Exists(webFolderPath))
 }
 
 app.UseMiddleware<AuthenticationMiddleware>(authToken);
-// Removed app.UseAuthorization();
 
 if (enableSwagger)
 {

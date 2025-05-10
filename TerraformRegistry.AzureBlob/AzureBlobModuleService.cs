@@ -3,6 +3,7 @@ namespace TerraformRegistry.AzureBlob;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
+using Azure.Identity; // Added for Managed Identity
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
@@ -15,38 +16,86 @@ using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 
 /// <summary>
-/// Implementation of module service using Azure Blob Storage
+/// Implementation of a module service using Azure Blob Storage
 /// </summary>
 public class AzureBlobModuleService : ModuleService
 {
     private readonly IDatabaseService _databaseService;
-    private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private readonly string _containerName;
     private readonly int _sasTokenExpiryMinutes;
     private readonly ILogger<AzureBlobModuleService> _logger;
 
-    public AzureBlobModuleService(IConfiguration configuration, IDatabaseService databaseService, ILogger<AzureBlobModuleService> logger)
+    public AzureBlobModuleService(
+        IConfiguration configuration,
+        IDatabaseService databaseService,
+        ILogger<AzureBlobModuleService> logger,
+        BlobServiceClient? blobServiceClient = null)
     {
         _databaseService = databaseService;
         _logger = logger;
 
-        // Get Azure Storage connection settings from configuration
-        var connectionString = configuration["AzureStorage:ConnectionString"]
-            ?? throw new ArgumentNullException("AzureStorage:ConnectionString", "Azure Storage connection string is required");
-
-        _containerName = configuration["AzureStorage:ContainerName"] ?? "modules";
+        // Get Azure Storage configuration values
+        _containerName = configuration["AzureStorage:ContainerName"]
+            ?? throw new ArgumentNullException("AzureStorage:ContainerName", "Azure Storage container name is required.");
+        
         _sasTokenExpiryMinutes = int.Parse(configuration["AzureStorage:SasTokenExpiryMinutes"] ?? "5");
+        if (_sasTokenExpiryMinutes <= 0)
+        {
+            _logger.LogWarning("AzureStorage:SasTokenExpiryMinutes must be a positive integer, but was configured as {ConfiguredValue}. Defaulting to 5 minutes.", _sasTokenExpiryMinutes);
+            _sasTokenExpiryMinutes = 5;
+        }
 
-        // Initialize Azure Blob Storage clients
-        _blobServiceClient = new BlobServiceClient(connectionString);
-        _containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+        BlobServiceClient clientToUse;
+
+        if (blobServiceClient != null)
+        {
+            _logger.LogInformation("Using provided BlobServiceClient instance.");
+            clientToUse = blobServiceClient;
+        }
+        else
+        {
+            _logger.LogInformation("BlobServiceClient not provided; attempting to create one based on configuration.");
+            // Get Azure Storage connection settings from configuration
+            var connectionString = configuration["AzureStorage:ConnectionString"];
+            var accountName = configuration["AzureStorage:AccountName"];
+
+            // Initialize Azure Blob Storage clients
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                if (string.IsNullOrEmpty(accountName))
+                {
+                    const string errorMessage = "Azure Storage AccountName ('AzureStorage:AccountName') is required when connection string is not provided (for Managed Identity).";
+                    _logger.LogError(errorMessage);
+                    throw new ArgumentNullException("AzureStorage:AccountName", errorMessage);
+                }
+                _logger.LogInformation("Azure Storage connection string not found. Attempting to use Managed Identity for account: {AccountName}.", accountName);
+                // Use Managed Identity
+                var blobServiceUri = new Uri($"https://{accountName}.blob.core.windows.net");
+                clientToUse = new BlobServiceClient(blobServiceUri, new DefaultAzureCredential());
+            }
+            else
+            {
+                _logger.LogInformation("Using Azure Storage connection string to create BlobServiceClient.");
+                clientToUse = new BlobServiceClient(connectionString);
+            }
+        }
+
+        // Initialize Azure Blob Storage container client
+        _containerClient = clientToUse.GetBlobContainerClient(_containerName);
 
         // Ensure container exists
-        _containerClient.CreateIfNotExists(PublicAccessType.None);
-
-        // Load existing modules from Azure Blob Storage
-        LoadExistingModules();
+        try
+        {
+            _logger.LogInformation("Ensuring blob container '{ContainerName}' exists...", _containerName);
+            _containerClient.CreateIfNotExists(PublicAccessType.None);
+            _logger.LogInformation("Blob container '{ContainerName}' is ready.", _containerName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create or verify blob container '{ContainerName}'. This may prevent module operations.", _containerName);
+            throw; // Re-throw as this is a critical failure for the service's operation.
+        }
     }
 
     /// <summary>

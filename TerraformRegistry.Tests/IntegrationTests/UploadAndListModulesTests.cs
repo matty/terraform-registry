@@ -1,8 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text.Json;
-using System.Threading.Tasks;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
@@ -36,6 +33,5 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
 
         var listContent = await listResponse.Content.ReadAsStringAsync();
         Assert.Equal("{\"modules\":[],\"meta\":{\"limit\":\"10\",\"current_offset\":\"0\"}}", listContent);
-
     }
 }
