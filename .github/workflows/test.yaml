@@ -31,7 +31,19 @@ jobs:
       - name: Build solution
         run: dotnet build --no-restore --configuration Release
 
-      - name: Run tests
-        run: dotnet test TerraformRegistry.Tests/TerraformRegistry.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test_results.trx"
+      - name: Run tests with coverage
+        run: dotnet test TerraformRegistry.Tests/TerraformRegistry.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test_results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=./TestResults/coverage.cobertura.xml
         env:
           ASPNETCORE_ENVIRONMENT: Test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: TerraformRegistry.Tests/TestResults/coverage.cobertura.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: TerraformRegistry.Tests/TestResults/coverage.cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }} # Not required for public repos
