@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NpgsqlTypes;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL.Migrations;
@@ -8,16 +9,17 @@ using TerraformRegistry.PostgreSQL.Migrations;
 namespace TerraformRegistry.PostgreSQL;
 
 /// <summary>
-/// Implementation of a database service using PostgreSQL
+///     Implementation of a database service using PostgreSQL
 /// </summary>
 public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 {
-    private readonly string _connectionString;
     private readonly string _baseUrl;
-    private readonly MigrationManager _migrationManager;
+    private readonly string _connectionString;
     private readonly ILogger<PostgreSqlDatabaseService> _logger;
+    private readonly MigrationManager _migrationManager;
 
-    public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger, MigrationManager migrationManager)
+    public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger,
+        MigrationManager migrationManager)
     {
         _connectionString = connectionString;
         _baseUrl = baseUrl;
@@ -25,36 +27,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         _logger = logger;
     }
 
-    public async Task InitializeDatabase()
-    {
-        await InitializeDatabaseImpl();
-    }
-
-    private async Task InitializeDatabaseImpl()
-    {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        if (await _migrationManager.NeedsInitializationAsync(connection))
-        {
-            await using var transaction = await connection.BeginTransactionAsync();
-            try
-            {
-                await _migrationManager.InitializeDatabaseAsync(connection, transaction);
-                await transaction.CommitAsync();
-                _logger.LogInformation("Database initialization and migrations completed successfully");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error initializing database");
-                throw;
-            }
-        }
-    }
-
     /// <summary>
-    /// Lists all modules based on search criteria
+    ///     Lists all modules based on search criteria
     /// </summary>
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
     {
@@ -172,7 +146,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     }
 
     /// <summary>
-    /// Gets detailed information about a specific module
+    ///     Gets detailed information about a specific module
     /// </summary>
     public async Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
     {
@@ -217,10 +191,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
-        {
             // No matching module found
             return null;
-        }
 
         // Dependencies are stored as a JSON array in PostgreSQL
         var dependenciesJson = reader.GetString(7);
@@ -251,7 +223,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     }
 
     /// <summary>
-    /// Gets all versions of a specific module
+    ///     Gets all versions of a specific module
     /// </summary>
     public async Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
     {
@@ -277,10 +249,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var versions = new List<string>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            versions.Add(reader.GetString(0));
-        }
+        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
 
         // Return the updated ModuleVersions structure
         return new ModuleVersions
@@ -290,14 +259,15 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     }
 
     /// <summary>
-    /// Gets the storage path information for a specific module version
+    ///     Gets the storage path information for a specific module version
     /// </summary>
     /// <remarks>
-    /// This method retrieves the storage metadata that connects a module's metadata in the database 
-    /// with its physical file location in blob storage. The FilePath property is particularly important
-    /// as it's used by the blob storage service to locate and retrieve the actual module file.
+    ///     This method retrieves the storage metadata that connects a module's metadata in the database
+    ///     with its physical file location in blob storage. The FilePath property is particularly important
+    ///     as it's used by the blob storage service to locate and retrieve the actual module file.
     /// </remarks>
-    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider, string version)
+    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider,
+        string version)
     {
         var sql = @"
             SELECT 
@@ -328,10 +298,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
-        {
             // No matching module found
             return null;
-        }
 
         // Dependencies are stored as a JSON array in PostgreSQL
         var dependenciesJson = reader.GetString(7);
@@ -344,19 +312,19 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Provider = reader.GetString(2),
             Version = reader.GetString(3),
             Description = reader.GetString(4),
-            FilePath = reader.GetString(5),  // Critical field that maps to blob storage
+            FilePath = reader.GetString(5), // Critical field that maps to blob storage
             PublishedAt = reader.GetDateTime(6),
             Dependencies = dependencies
         };
     }
 
     /// <summary>
-    /// Adds a new module to the database
+    ///     Adds a new module to the database
     /// </summary>
     /// <remarks>
-    /// This method stores module metadata in the database, including a reference to the blob storage path
-    /// where the actual module file is stored. The storage_path column creates the link between database
-    /// records and physical files in the blob storage.
+    ///     This method stores module metadata in the database, including a reference to the blob storage path
+    ///     where the actual module file is stored. The storage_path column creates the link between database
+    ///     records and physical files in the blob storage.
     /// </remarks>
     public async Task<bool> AddModuleAsync(ModuleStorage module)
     {
@@ -399,9 +367,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             command.Parameters.AddWithValue("@provider", module.Provider);
             command.Parameters.AddWithValue("@version", module.Version);
             command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath);  // Link to blob storage path
+            command.Parameters.AddWithValue("@storagePath", module.FilePath); // Link to blob storage path
             command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
-            command.Parameters.AddWithValue("@dependencies", module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@dependencies",
+                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
 
             // Execute and get the ID of the inserted/updated row
             var result = await command.ExecuteScalarAsync();
@@ -410,13 +380,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database", module.Namespace, module.Name, module.Provider, module.Version);
+            _logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database",
+                module.Namespace, module.Name, module.Provider, module.Version);
             return false;
         }
     }
 
     /// <summary>
-    /// Removes a module from the database
+    ///     Removes a module from the database
     /// </summary>
     public async Task<bool> RemoveModuleAsync(ModuleStorage module)
     {
@@ -443,8 +414,37 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database", module.Namespace, module.Name, module.Provider, module.Version);
+            _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database",
+                module.Namespace, module.Name, module.Provider, module.Version);
             return false;
+        }
+    }
+
+    public async Task InitializeDatabase()
+    {
+        await InitializeDatabaseImpl();
+    }
+
+    private async Task InitializeDatabaseImpl()
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        if (await _migrationManager.NeedsInitializationAsync(connection))
+        {
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                await _migrationManager.InitializeDatabaseAsync(connection, transaction);
+                await transaction.CommitAsync();
+                _logger.LogInformation("Database initialization and migrations completed successfully");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error initializing database");
+                throw;
+            }
         }
     }
 }

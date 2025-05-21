@@ -13,12 +13,12 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 // Base class for integration tests
 public abstract class IntegrationTestBase : IAsyncLifetime
 {
-    protected readonly ITestOutputHelper _output;
     private readonly string _authToken;
+    private readonly CancellationTokenSource _logMonitorCts = new();
+    protected readonly ITestOutputHelper _output;
     protected HttpClient _client = null!;
     protected WebApplicationFactory<Program> _factory = null!;
     protected XunitLoggerProvider _loggerProvider = null!;
-    private readonly CancellationTokenSource _logMonitorCts = new();
     protected PostgreSqlContainer _postgresContainer = null!;
 
     protected IntegrationTestBase(ITestOutputHelper output, string authToken)

@@ -1,9 +1,8 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using TerraformRegistry.Models;
 
 namespace TerraformRegistry;
-
-using System.Text.Json.Serialization;
-using Models;
 
 [JsonSourceGenerationOptions(
     WriteIndented = false,

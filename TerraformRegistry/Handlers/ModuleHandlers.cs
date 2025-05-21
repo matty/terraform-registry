@@ -1,14 +1,13 @@
-namespace TerraformRegistry.Handlers;
-
-using Models;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
-using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.Http;
-using static Microsoft.AspNetCore.Http.Results;
+using TerraformRegistry.Models;
+
+namespace TerraformRegistry.Handlers;
+
+using static Results;
 
 /// <summary>
-/// Handlers for module operations
+///     Handlers for module operations
 /// </summary>
 public static class ModuleHandlers
 {
@@ -18,10 +17,7 @@ public static class ModuleHandlers
     static ModuleHandlers()
     {
         // Create a logger factory and get a logger instance
-        var loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder.AddConsole();
-        });
+        var loggerFactory = LoggerFactory.Create(builder => { builder.AddConsole(); });
 
         _logger = loggerFactory.CreateLogger("ModuleHandlers");
     }
@@ -29,11 +25,11 @@ public static class ModuleHandlers
     // Helper to return error responses in Terraform Registry format
     private static IResult Error(int statusCode, string message)
     {
-        return Results.Json(new { errors = new[] { message } }, statusCode: statusCode);
+        return Json(new { errors = new[] { message } }, statusCode: statusCode);
     }
 
     /// <summary>
-    /// Lists or searches modules
+    ///     Lists or searches modules
     /// </summary>
     public static async Task<IResult> ListModules(
         IModuleService moduleService,
@@ -60,7 +56,7 @@ public static class ModuleHandlers
     }
 
     /// <summary>
-    /// Gets a specific module
+    ///     Gets a specific module
     /// </summary>
     public static async Task<IResult> GetModule(
         string @namespace,
@@ -73,16 +69,13 @@ public static class ModuleHandlers
             @namespace, name, provider, version);
 
         var module = await moduleService.GetModuleAsync(@namespace, name, provider, version);
-        if (module == null)
-        {
-            return Error(404, "Module not found");
-        }
+        if (module == null) return Error(404, "Module not found");
 
         return Ok(module);
     }
 
     /// <summary>
-    /// Gets all versions of a specific module
+    ///     Gets all versions of a specific module
     /// </summary>
     public static async Task<IResult> GetModuleVersions(
         string @namespace,
@@ -95,14 +88,12 @@ public static class ModuleHandlers
 
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
         if (versions == null || versions.Versions == null || versions.Versions.Count == 0)
-        {
             return Error(404, "Module not found");
-        }
         return Ok(versions);
     }
 
     /// <summary>
-    /// Downloads a specific module version
+    ///     Downloads a specific module version
     /// </summary>
     public static async Task<IResult> DownloadModule(
         string @namespace,
@@ -116,17 +107,14 @@ public static class ModuleHandlers
             @namespace, name, provider, version);
 
         var downloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
-        if (downloadPath == null)
-        {
-            return Error(404, "Module not found");
-        }
+        if (downloadPath == null) return Error(404, "Module not found");
 
         context.Response.Headers["X-Terraform-Get"] = downloadPath;
-        return Results.NoContent();
+        return NoContent();
     }
 
     /// <summary>
-    /// Downloads the latest version of a module for a provider
+    ///     Downloads the latest version of a module for a provider
     /// </summary>
     public static async Task<IResult> DownloadLatestModule(
         string @namespace,
@@ -142,16 +130,13 @@ public static class ModuleHandlers
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
         var latest = versions?.Versions?.OrderByDescending(v => v, Comparer<string>.Create((a, b) =>
             SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault();
-        if (string.IsNullOrEmpty(latest))
-        {
-            return Error(404, "Module not found");
-        }
+        if (string.IsNullOrEmpty(latest)) return Error(404, "Module not found");
 
         return await DownloadModule(@namespace, name, provider, latest, moduleService, context);
     }
 
     /// <summary>
-    /// Uploads a new module version
+    ///     Uploads a new module version
     /// </summary>
     public static async Task<IResult> UploadModule(
         string @namespace,
@@ -168,27 +153,23 @@ public static class ModuleHandlers
         if (!SemVerValidator.IsValid(version))
         {
             _logger.LogWarning("Invalid version format: {Version}", version);
-            return Error(400, $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+            return Error(400,
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
         var form = await request.ReadFormAsync();
         var moduleFile = form.Files["moduleFile"];
         var description = form["description"].ToString() ?? string.Empty;
 
-        if (moduleFile == null || moduleFile.Length == 0)
-        {
-            return Error(400, "No file uploaded");
-        }
+        if (moduleFile == null || moduleFile.Length == 0) return Error(400, "No file uploaded");
 
         try
         {
             await using var stream = moduleFile.OpenReadStream();
-            var result = await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description);
+            var result =
+                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description);
 
-            if (!result)
-            {
-                return Error(409, "Module version already exists");
-            }
+            if (!result) return Error(409, "Module version already exists");
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };

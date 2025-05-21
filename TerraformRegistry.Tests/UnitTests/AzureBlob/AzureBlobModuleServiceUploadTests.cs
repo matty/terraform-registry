@@ -7,6 +7,7 @@ using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.AzureBlob;
 using TerraformRegistry.Models;
+
 // Required for Response<T>
 
 namespace TerraformRegistry.Tests.UnitTests.AzureBlob;

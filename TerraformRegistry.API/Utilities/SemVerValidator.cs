@@ -1,10 +1,10 @@
-namespace TerraformRegistry.API.Utilities;
-
 using System.Text.RegularExpressions;
 
+namespace TerraformRegistry.API.Utilities;
+
 /// <summary>
-/// Provides validation and parsing for Semantic Versioning 2.0.0.
-/// For full specification, see: https://semver.org/
+///     Provides validation and parsing for Semantic Versioning 2.0.0.
+///     For full specification, see: https://semver.org/
 /// </summary>
 public static class SemVerValidator
 {
@@ -15,7 +15,7 @@ public static class SemVerValidator
         RegexOptions.Compiled);
 
     /// <summary>
-    /// Determines whether the specified version string is a valid SemVer 2.0.0.
+    ///     Determines whether the specified version string is a valid SemVer 2.0.0.
     /// </summary>
     /// <param name="version">The version string to validate.</param>
     /// <returns>True if the string is a valid SemVer; otherwise, false.</returns>
@@ -28,7 +28,7 @@ public static class SemVerValidator
     }
 
     /// <summary>
-    /// Attempts to parse a version string into its semantic version components.
+    ///     Attempts to parse a version string into its semantic version components.
     /// </summary>
     /// <param name="version">The version string to parse.</param>
     /// <param name="major">When this method returns, contains the major version if successful; otherwise, 0.</param>
@@ -64,24 +64,22 @@ public static class SemVerValidator
     }
 
     /// <summary>
-    /// Compares two semantic version strings.
+    ///     Compares two semantic version strings.
     /// </summary>
     /// <param name="version1">The first version.</param>
     /// <param name="version2">The second version.</param>
     /// <returns>
-    /// A signed integer that indicates the relative values of version1 and version2:
-    /// Less than zero: version1 is less than version2.
-    /// Zero: version1 equals version2.
-    /// Greater than zero: version1 is greater than version2.
-    /// If either version is invalid, returns null.
+    ///     A signed integer that indicates the relative values of version1 and version2:
+    ///     Less than zero: version1 is less than version2.
+    ///     Zero: version1 equals version2.
+    ///     Greater than zero: version1 is greater than version2.
+    ///     If either version is invalid, returns null.
     /// </returns>
     public static int? Compare(string version1, string version2)
     {
         if (!TryParse(version1, out var major1, out var minor1, out var patch1, out var prerelease1, out _) ||
             !TryParse(version2, out var major2, out var minor2, out var patch2, out var prerelease2, out _))
-        {
             return null;
-        }
 
         // Compare major.minor.patch
         var result = major1.CompareTo(major2);
@@ -114,28 +112,20 @@ public static class SemVerValidator
             var id1 = identifiers1[i];
             var id2 = identifiers2[i];
 
-            bool isNum1 = int.TryParse(id1, out var num1);
-            bool isNum2 = int.TryParse(id2, out var num2);
+            var isNum1 = int.TryParse(id1, out var num1);
+            var isNum2 = int.TryParse(id2, out var num2);
 
             int result;
 
             // Numeric identifiers always have lower precedence than non-numeric identifiers
             if (isNum1 && isNum2)
-            {
                 result = num1.CompareTo(num2);
-            }
             else if (isNum1)
-            {
                 result = -1; // Numeric has lower precedence
-            }
             else if (isNum2)
-            {
                 result = 1; // Non-numeric has higher precedence
-            }
             else
-            {
                 result = string.Compare(id1, id2, StringComparison.Ordinal);
-            }
 
             if (result != 0)
                 return result;

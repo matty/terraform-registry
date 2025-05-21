@@ -1,9 +1,9 @@
-namespace TerraformRegistry.Models;
-
 using System.Text.Json.Serialization;
 
+namespace TerraformRegistry.Models;
+
 /// <summary>
-/// Represents a service discovery response for Terraform Registry
+///     Represents a service discovery response for Terraform Registry
 /// </summary>
 public class ServiceDiscovery
 {

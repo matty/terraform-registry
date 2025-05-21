@@ -1,24 +1,24 @@
-namespace TerraformRegistry.PostgreSQL.Migrations;
-
 using Npgsql;
 
+namespace TerraformRegistry.PostgreSQL.Migrations;
+
 /// <summary>
-/// Interface for database migrations
+///     Interface for database migrations
 /// </summary>
 public interface IDatabaseMigration
 {
     /// <summary>
-    /// Gets the migration version in SemVer format (e.g. 1.0.0)
+    ///     Gets the migration version in SemVer format (e.g. 1.0.0)
     /// </summary>
     string Version { get; }
 
     /// <summary>
-    /// Gets a description of what this migration does
+    ///     Gets a description of what this migration does
     /// </summary>
     string Description { get; }
 
     /// <summary>
-    /// Applies the migration to the database
+    ///     Applies the migration to the database
     /// </summary>
     Task ApplyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction);
 }

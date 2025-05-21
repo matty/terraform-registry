@@ -1,14 +1,14 @@
+using TerraformRegistry.Models;
+
 namespace TerraformRegistry.Handlers;
 
-using Models;
-
 /// <summary>
-/// Handlers for service discovery
+///     Handlers for service discovery
 /// </summary>
 public static class ServiceDiscoveryHandlers
 {
     /// <summary>
-    /// Terraform service discovery endpoint
+    ///     Terraform service discovery endpoint
     /// </summary>
     public static IResult GetServiceDiscovery()
     {

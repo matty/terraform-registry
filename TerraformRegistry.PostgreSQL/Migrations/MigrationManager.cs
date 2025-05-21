@@ -1,22 +1,20 @@
-namespace TerraformRegistry.PostgreSQL.Migrations;
-
-using System.Data;
 using System.Reflection;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
+namespace TerraformRegistry.PostgreSQL.Migrations;
+
 /// <summary>
-/// Manages database migrations
+///     Manages database migrations
 /// </summary>
 public class MigrationManager
 {
-    private readonly List<IDatabaseMigration> _migrations = new List<IDatabaseMigration>();
     private const string SchemaVersionTable = "schema_version";
     private readonly ILogger<MigrationManager> _logger;
+    private readonly List<IDatabaseMigration> _migrations = new();
 
     /// <summary>
-    /// Initializes a new instance of the MigrationManager class
+    ///     Initializes a new instance of the MigrationManager class
     /// </summary>
     public MigrationManager(ILogger<MigrationManager> logger)
     {
@@ -26,7 +24,7 @@ public class MigrationManager
     }
 
     /// <summary>
-    /// Uses reflection to find all classes that implement IDatabaseMigration
+    ///     Uses reflection to find all classes that implement IDatabaseMigration
     /// </summary>
     private void DiscoverMigrations()
     {
@@ -38,20 +36,16 @@ public class MigrationManager
             .Where(t => t.IsClass && !t.IsAbstract && migrationType.IsAssignableFrom(t));
 
         foreach (var type in migrationTypes)
-        {
             // Create an instance of each migration class and add it to our list
             if (Activator.CreateInstance(type) is IDatabaseMigration migration)
-            {
                 _migrations.Add(migration);
-            }
-        }
 
         // Sort migrations by version
         _migrations.Sort((a, b) => CompareVersions(a.Version, b.Version));
     }
 
     /// <summary>
-    /// Compares two version strings (SemVer format)
+    ///     Compares two version strings (SemVer format)
     /// </summary>
     private int CompareVersions(string versionA, string versionB)
     {
@@ -71,9 +65,10 @@ public class MigrationManager
     }
 
     /// <summary>
-    /// Checks if the database needs initialization by looking for a version table
+    ///     Checks if the database needs initialization by looking for a version table
     /// </summary>
-    public async Task<bool> NeedsInitializationAsync(NpgsqlConnection connection, CancellationToken cancellationToken = default)
+    public async Task<bool> NeedsInitializationAsync(NpgsqlConnection connection,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -88,10 +83,7 @@ public class MigrationManager
             await using var command = new NpgsqlCommand(sql, connection);
             var tableExists = (bool)await command.ExecuteScalarAsync(cancellationToken);
 
-            if (!tableExists)
-            {
-                return true; // Database needs initialization (table doesn't exist)
-            }
+            if (!tableExists) return true; // Database needs initialization (table doesn't exist)
 
             // Check if there are any migrations to run
             return await HasPendingMigrationsAsync(connection, cancellationToken);
@@ -104,9 +96,10 @@ public class MigrationManager
     }
 
     /// <summary>
-    /// Checks if there are any pending migrations that need to be applied
+    ///     Checks if there are any pending migrations that need to be applied
     /// </summary>
-    private async Task<bool> HasPendingMigrationsAsync(NpgsqlConnection connection, CancellationToken cancellationToken = default)
+    private async Task<bool> HasPendingMigrationsAsync(NpgsqlConnection connection,
+        CancellationToken cancellationToken = default)
     {
         // Get the current database schema version
         var currentVersion = await GetCurrentVersionAsync(connection, cancellationToken);
@@ -116,9 +109,10 @@ public class MigrationManager
     }
 
     /// <summary>
-    /// Gets the current version of the database schema
+    ///     Gets the current version of the database schema
     /// </summary>
-    private async Task<string> GetCurrentVersionAsync(NpgsqlConnection connection, CancellationToken cancellationToken = default)
+    private async Task<string> GetCurrentVersionAsync(NpgsqlConnection connection,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -135,7 +129,7 @@ public class MigrationManager
     }
 
     /// <summary>
-    /// Initializes the database schema and applies all pending migrations
+    ///     Initializes the database schema and applies all pending migrations
     /// </summary>
     public async Task InitializeDatabaseAsync(NpgsqlConnection connection, NpgsqlTransaction transaction)
     {
@@ -158,15 +152,14 @@ public class MigrationManager
 
         // Apply all migrations that have a higher version than the current version
         foreach (var migration in _migrations.Where(m => CompareVersions(m.Version, currentVersion) > 0))
-        {
             await ApplyMigrationAsync(connection, transaction, migration);
-        }
     }
 
     /// <summary>
-    /// Applies a single migration and records its version
+    ///     Applies a single migration and records its version
     /// </summary>
-    private async Task ApplyMigrationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, IDatabaseMigration migration)
+    private async Task ApplyMigrationAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        IDatabaseMigration migration)
     {
         try
         {
@@ -183,7 +176,8 @@ public class MigrationManager
             versionCommand.Parameters.AddWithValue("@description", migration.Description);
             await versionCommand.ExecuteNonQueryAsync();
 
-            _logger.LogInformation("Applied database migration to version {Version}: {Description}", migration.Version, migration.Description);
+            _logger.LogInformation("Applied database migration to version {Version}: {Description}", migration.Version,
+                migration.Description);
         }
         catch (Exception ex)
         {

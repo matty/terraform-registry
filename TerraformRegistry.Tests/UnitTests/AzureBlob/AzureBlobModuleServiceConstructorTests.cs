@@ -28,7 +28,8 @@ public class AzureBlobModuleServiceConstructorTests
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(It.IsAny<string>()))
             .Returns(_mockBlobContainerClient.Object);
         _mockBlobContainerClient.Setup(c =>
-                c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(), It.IsAny<BlobContainerEncryptionScopeOptions>(), It.IsAny<CancellationToken>()))
+                c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
+                    It.IsAny<BlobContainerEncryptionScopeOptions>(), It.IsAny<CancellationToken>()))
             .Returns(Mock.Of<Response<BlobContainerInfo>>());
     }
 
@@ -65,7 +66,8 @@ public class AzureBlobModuleServiceConstructorTests
         // Assert
         Assert.NotNull(service);
         _mockBlobServiceClient.Verify(s => s.GetBlobContainerClient(_containerName), Times.Once);
-        _mockBlobContainerClient.Verify(c => c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()), Times.Once);
+        _mockBlobContainerClient.Verify(
+            c => c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // Test: Should throw ArgumentNullException if ContainerName is missing from configuration
@@ -134,7 +136,7 @@ public class AzureBlobModuleServiceConstructorTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
             {
-                new KeyValuePair<string, string?>("AzureStorage:ContainerName", _containerName),
+                new KeyValuePair<string, string?>("AzureStorage:ContainerName", _containerName)
                 // No ConnectionString, no AccountName
             })
             .Build();
@@ -163,11 +165,14 @@ public class AzureBlobModuleServiceConstructorTests
         };
         var configuration = CreateConfiguration(settings);
         var testException = new Exception("fail");
-        _mockBlobContainerClient.Setup(c => c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()))
+        _mockBlobContainerClient.Setup(c =>
+                c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()))
             .Throws(testException);
-        _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName)).Returns(_mockBlobContainerClient.Object);
+        _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName))
+            .Returns(_mockBlobContainerClient.Object);
         var ex = Assert.Throws<Exception>(() =>
-            new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object, _mockBlobServiceClient.Object));
+            new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
+                _mockBlobServiceClient.Object));
         Assert.Equal(testException, ex);
         _mockLogger.Verify(x => x.Log(
             LogLevel.Error,

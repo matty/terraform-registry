@@ -1,4 +1,4 @@
-using System.Threading.Tasks;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Configuration;
@@ -7,32 +7,36 @@ using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.AzureBlob;
 using TerraformRegistry.Models;
-using Xunit;
 
 namespace TerraformRegistry.Tests.UnitTests.AzureBlob;
 
 public class AzureBlobModuleServiceDelegationTests
 {
+    private const string ContainerName = "test-container";
+    private readonly Mock<BlobServiceClient> _mockBlobServiceClient = new();
+    private readonly Mock<IConfiguration> _mockConfiguration = new();
+    private readonly Mock<BlobContainerClient> _mockContainerClient = new();
     private readonly Mock<IDatabaseService> _mockDatabaseService = new();
     private readonly Mock<ILogger<AzureBlobModuleService>> _mockLogger = new();
-    private readonly Mock<IConfiguration> _mockConfiguration = new();
-    private readonly Mock<BlobServiceClient> _mockBlobServiceClient = new();
-    private readonly Mock<BlobContainerClient> _mockContainerClient = new();
-    private const string ContainerName = "test-container";
 
     public AzureBlobModuleServiceDelegationTests()
     {
         _mockConfiguration.Setup(c => c["AzureStorage:ContainerName"]).Returns(ContainerName);
         _mockConfiguration.Setup(c => c["AzureStorage:SasTokenExpiryMinutes"]).Returns("5");
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(ContainerName)).Returns(_mockContainerClient.Object);
-        _mockContainerClient.Setup(c => c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(), default)).Returns(Mock.Of<Azure.Response<Azure.Storage.Blobs.Models.BlobContainerInfo>>());
+        _mockContainerClient
+            .Setup(c => c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
+                default)).Returns(Mock.Of<Response<BlobContainerInfo>>());
     }
 
-    private AzureBlobModuleService CreateService() => new(
-        _mockConfiguration.Object,
-        _mockDatabaseService.Object,
-        _mockLogger.Object,
-        _mockBlobServiceClient.Object);
+    private AzureBlobModuleService CreateService()
+    {
+        return new AzureBlobModuleService(
+            _mockConfiguration.Object,
+            _mockDatabaseService.Object,
+            _mockLogger.Object,
+            _mockBlobServiceClient.Object);
+    }
 
     [Fact]
     public async Task ListModulesAsync_Delegates_To_DatabaseService()

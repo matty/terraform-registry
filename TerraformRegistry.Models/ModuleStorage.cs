@@ -1,7 +1,7 @@
 namespace TerraformRegistry.Models;
 
 /// <summary>
-/// Represents a module storage model for internal use
+///     Represents a module storage model for internal use
 /// </summary>
 public class ModuleStorage
 {
