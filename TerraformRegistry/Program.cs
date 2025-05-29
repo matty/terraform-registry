@@ -86,7 +86,9 @@ builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolver = AppJsonSerializerContext.Default;
+    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    // Add other options as needed
 });
 
 var enableSwagger = false;
@@ -282,3 +284,4 @@ app.MapFallback(async context =>
 app.Run($"http://0.0.0.0:{portNumber}");
 
 public partial class Program;
+

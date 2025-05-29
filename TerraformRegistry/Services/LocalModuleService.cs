@@ -126,7 +126,7 @@ public class LocalModuleService : ModuleService
                     using var reader = new StreamReader(stream);
                     var content = reader.ReadToEnd();
 
-                    var metadata = JsonSerializer.Deserialize(content, AppJsonSerializerContext.Default.ModuleMetadata);
+                    var metadata = JsonSerializer.Deserialize<ModuleMetadata>(content);
 
                     if (metadata != null && !string.IsNullOrEmpty(metadata.Description))
                         description = metadata.Description;
@@ -287,3 +287,4 @@ public class LocalModuleService : ModuleService
         }
     }
 }
+
