@@ -7,10 +7,9 @@ namespace TerraformRegistry.Models;
 /// </summary>
 public class ServiceDiscovery
 {
-    [JsonPropertyName("modules")]
-    public Dictionary<string, string> Modules { get; set; } = new()
-    {
-        { "service-discovery", "/.well-known/terraform.json" },
-        { "modules", "/v1/modules/" }
-    };
+    [JsonPropertyName("modules.v1")]
+    public string ModulesV1 { get; set; } = "/v1/modules/";
+
+    // [JsonPropertyName("providers.v1")]
+    // public string ProvidersV1 { get; set; } = "/v1/providers/";
 }
