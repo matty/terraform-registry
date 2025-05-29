@@ -249,12 +249,16 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var versions = new List<string>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
-
-        // Return the updated ModuleVersions structure
+        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));        // Return the updated ModuleVersions structure with the format expected by Terraform
         return new ModuleVersions
         {
-            Versions = versions
+            Modules = new List<ModuleVersionInfo>
+            {
+                new ModuleVersionInfo
+                {
+                    Versions = versions.Select(v => new VersionInfo { Version = v }).ToList()
+                }
+            }
         };
     }
 

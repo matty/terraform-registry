@@ -107,12 +107,17 @@ public class LocalModuleServiceTests
     // Verifies that GetModuleVersionsAsync delegates to the database service and returns the expected versions
     [Fact]
     public async Task GetModuleVersionsAsync_DelegatesToDatabaseService()
-    {
-        // Arrange
+    {        // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
         var expected = new ModuleVersions
         {
-            Versions = new List<string>()
+            Modules = new List<ModuleVersionInfo>
+            {
+                new ModuleVersionInfo
+                {
+                    Versions = new List<VersionInfo>()
+                }
+            }
         };
         _mockDbService.Setup(x => x.GetModuleVersionsAsync("ns", "name", "provider")).ReturnsAsync(expected);
         // Act

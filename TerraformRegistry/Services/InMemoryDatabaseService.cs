@@ -114,7 +114,16 @@ public class InMemoryDatabaseService(string baseUrl) : IDatabaseService
             .OrderByDescending(v => v)
             .ToList();
 
-        return Task.FromResult(new ModuleVersions { Versions = versions });
+        return Task.FromResult(new ModuleVersions
+        {
+            Modules = new List<ModuleVersionInfo>
+            {
+                new ModuleVersionInfo
+                {
+                    Versions = versions.Select(v => new VersionInfo { Version = v }).ToList()
+                }
+            }
+        });
     }
 
     /// <summary>

@@ -87,7 +87,8 @@ public static class ModuleHandlers
             @namespace, name, provider);
 
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
-        if (versions == null || versions.Versions == null || versions.Versions.Count == 0)
+        if (versions == null || versions.Modules == null || !versions.Modules.Any() ||
+            versions.Modules.FirstOrDefault()?.Versions == null || !versions.Modules.FirstOrDefault()!.Versions.Any())
             return Error(404, "Module not found");
         return Ok(versions);
     }
@@ -128,8 +129,9 @@ public static class ModuleHandlers
 
         // Get all versions and pick the latest using SemVer sort
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
-        var latest = versions?.Versions?.OrderByDescending(v => v, Comparer<string>.Create((a, b) =>
-            SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault();
+        var latestVersions = versions?.Modules?.FirstOrDefault()?.Versions;
+        var latest = latestVersions?.OrderByDescending(v => v.Version, Comparer<string>.Create((a, b) =>
+            SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault()?.Version;
         if (string.IsNullOrEmpty(latest)) return Error(404, "Module not found");
 
         return await DownloadModule(@namespace, name, provider, latest, moduleService, context);

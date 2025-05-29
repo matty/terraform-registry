@@ -83,7 +83,13 @@ public class AzureBlobModuleServiceDelegationTests
     {
         var expected = new ModuleVersions
         {
-            Versions = new List<string>()
+            Modules = new List<ModuleVersionInfo>
+            {
+                new ModuleVersionInfo
+                {
+                    Versions = new List<VersionInfo>()
+                }
+            }
         };
         _mockDatabaseService.Setup(x => x.GetModuleVersionsAsync("ns", "name", "provider")).ReturnsAsync(expected);
         var service = CreateService();
