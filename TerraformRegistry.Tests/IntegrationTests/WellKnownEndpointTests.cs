@@ -15,31 +15,20 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
         var response = await _client.GetAsync("/.well-known/terraform.json");
         _output.WriteLine($"Received status code: {response.StatusCode}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var content = await response.Content.ReadAsStringAsync();
-        _output.WriteLine($"Received content: {content}");
+        var content = await response.Content.ReadAsStringAsync(); _output.WriteLine($"Received content: {content}");
 
         // Assert the JSON content
         var expectedJson = new
         {
-            modules = new
-            {
-                service_discovery = "/.well-known/terraform.json",
-                modules = "/v1/modules/"
-            }
+            modules_v1 = "/v1/modules/"
         };
 
         using var jsonDoc = JsonDocument.Parse(content);
         var actualJson = new
         {
-            modules = new
-            {
-                service_discovery = jsonDoc.RootElement.GetProperty("modules").GetProperty("service-discovery")
-                    .GetString(),
-                modules = jsonDoc.RootElement.GetProperty("modules").GetProperty("modules").GetString()
-            }
+            modules_v1 = jsonDoc.RootElement.GetProperty("modules.v1").GetString()
         };
 
-        Assert.Equal(expectedJson.modules.service_discovery, actualJson.modules.service_discovery);
-        Assert.Equal(expectedJson.modules.modules, actualJson.modules.modules);
+        Assert.Equal(expectedJson.modules_v1, actualJson.modules_v1);
     }
 }
