@@ -1,0 +1,1 @@
+import{e as r,c as a,v as o,o as t}from"./DfbLerQ4.js";const s={class:"min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800"},l=r({__name:"default",setup(n){return(e,c)=>(t(),a("div",s,[o(e.$slots,"default")]))}});export{l as default};
