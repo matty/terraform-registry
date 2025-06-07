@@ -69,25 +69,25 @@ _🔒 = Requires authentication_
 
 Configure the application using environment variables (prefix with `TF_REG_`):
 
-| Variable                                     | Description                           | Default                 | Required                  | Example                                  |
-| -------------------------------------------- | ------------------------------------- | ----------------------- | ------------------------- | ---------------------------------------- |
-| **Core Settings**                            |                                       |                         |                           |
-| `TF_REG_PORT`                                | Application port                      | `5131`                  | No                        | `80`                                     |
-| `TF_REG_BASEURL`                             | Registry base URL                     | `http://localhost:5131` | ⚠️ Yes                    | `https://registry.company.com`           |
-| `TF_REG_AUTHORIZATIONTOKEN`                  | API authentication token              | -                       | Recommended               | `your-secure-token-here`                 |
-| **Database Settings**                        |                                       |                         |                           |
-| `TF_REG_DATABASEPROVIDER`                    | Database type (`inmemory`/`postgres`) | `inmemory`              | No                        | `postgres`                               |
-| `TF_REG_POSTGRESQL__CONNECTIONSTRING`        | PostgreSQL connection                 | -                       | If using PostgreSQL       | `Host=localhost;Database=tfregistry;...` |
-| **Storage Settings**                         |                                       |                         |                           |
-| `TF_REG_STORAGEPROVIDER`                     | Storage type (`local`/`azure`)        | `local`                 | No                        | `azure`                                  |
-| `TF_REG_MODULESTORAGEPATH`                   | Local storage path                    | `modules`               | If using local            | `/data/modules`                          |
-| **Azure Storage Settings**                   |                                       |                         |                           |
-| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`      | Azure connection string               | -                       | If using Azure            | `DefaultEndpointsProtocol=https;...`     |
-| `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Storage account (Managed Identity)    | -                       | If using Managed Identity | `mystorageaccount`                       |
-| `TF_REG_AZURESTORAGE__CONTAINERNAME`         | Blob container name                   | `modules`               | If using Azure            | `terraform-modules`                      |
-| `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry                      | `5`                     | No                        | `10`                                     |
-| **Development Settings**                     |                                       |                         |                           |
-| `TF_REG_ENABLESWAGGER`                       | Enable Swagger UI                     | `true` (dev)            | No                        | `false`                                  |
+| Variable                                     | Description                           | Default                 | Required            | Example                                  |
+| -------------------------------------------- | ------------------------------------- | ----------------------- | ------------------- | ---------------------------------------- |
+| **Core Settings**                            |                                       |                         |                     |
+| `TF_REG_PORT`                                | Application port                      | `5131`                  | No                  | `80`                                     |
+| `TF_REG_BASEURL`                             | Registry base URL                     | `http://localhost:5131` | ⚠️ Yes              | `https://registry.company.com`           |
+| `TF_REG_AUTHORIZATIONTOKEN`                  | API authentication token              | -                       | Recommended         | `your-secure-token-here`                 |
+| **Database Settings**                        |                                       |                         |                     |
+| `TF_REG_DATABASEPROVIDER`                    | Database type (`inmemory`/`postgres`) | `inmemory`              | No                  | `postgres`                               |
+| `TF_REG_POSTGRESQL__CONNECTIONSTRING`        | PostgreSQL connection                 | -                       | If using PostgreSQL | `Host=localhost;Database=tfregistry;...` |
+| **Storage Settings**                         |                                       |                         |                     |
+| `TF_REG_STORAGEPROVIDER`                     | Storage type (`local`/`azure`)        | `local`                 | No                  | `azure`                                  |
+| `TF_REG_MODULESTORAGEPATH`                   | Local storage path                    | `modules`               | If using local      | `/data/modules`                          |
+| **Azure Storage Settings**                   |                                       |                         |                     |
+| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`      | Azure connection string               | -                       | ⚠️ If using Azure   | `DefaultEndpointsProtocol=https;...`     |
+| `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Storage account name                  | -                       | If using Azure      | `mystorageaccount`                       |
+| `TF_REG_AZURESTORAGE__CONTAINERNAME`         | Blob container name                   | `modules`               | If using Azure      | `terraform-modules`                      |
+| `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry                      | `5`                     | No                  | `10`                                     |
+| **Development Settings**                     |                                       |                         |                     |
+| `TF_REG_ENABLESWAGGER`                       | Enable Swagger UI                     | `true` (dev)            | No                  | `false`                                  |
 
 ### 🏗️ Architecture Options
 
@@ -117,8 +117,9 @@ TF_REG_MODULESTORAGEPATH=/data/modules
 TF_REG_DATABASEPROVIDER=postgres
 TF_REG_POSTGRESQL__CONNECTIONSTRING=Host=db.postgres.database.azure.com;...
 TF_REG_STORAGEPROVIDER=azure
+TF_REG_AZURESTORAGE__CONNECTIONSTRING=DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net
 TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount
-# Uses Managed Identity - no connection string needed!
+TF_REG_AZURESTORAGE__CONTAINERNAME=modules
 ```
 
 ## 🐳 Docker Deployment
@@ -169,6 +170,7 @@ az container create \
     TF_REG_PORT=80 \
     TF_REG_BASEURL=https://terraform-registry.eastus.azurecontainer.io \
     TF_REG_STORAGEPROVIDER=azure \
+    TF_REG_AZURESTORAGE__CONNECTIONSTRING="DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net" \
     TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount \
   --assign-identity \
   --scope /subscriptions/.../resourceGroups/.../providers/Microsoft.Storage/storageAccounts/mystorageaccount
@@ -252,9 +254,10 @@ curl -X POST \
 
 **"Azure Blob Storage access denied"**
 
-- ✅ Check Azure Storage connection string or Managed Identity setup
+- ✅ Check Azure Storage connection string is properly configured
 - ✅ Verify the storage account and container exist
-- ✅ Ensure proper RBAC permissions for Managed Identity
+- ✅ Ensure the connection string has the correct account name and access key
+- ✅ Check that the specified container name exists in the storage account
 
 ### 📊 Health Checks
 
