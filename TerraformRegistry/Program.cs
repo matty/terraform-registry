@@ -1,8 +1,9 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.FileProviders;
 using NSwag;
 using NSwag.Generation.Processors.Security;
-using TerraformRegistry;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.AzureBlob;
 using TerraformRegistry.Handlers;
@@ -86,8 +87,8 @@ builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-    options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     // Add other options as needed
 });
 
@@ -137,6 +138,9 @@ if (authToken == "default-auth-token")
         "WARNING: The default AuthorizationToken is in use. This is not secure. Please set a secure token in your configuration.");
 
 app.UseHttpsRedirection();
+
+// Add global exception handling middleware early in the pipeline
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 var webFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "web");
 if (Directory.Exists(webFolderPath))
@@ -284,4 +288,3 @@ app.MapFallback(async context =>
 app.Run($"http://0.0.0.0:{portNumber}");
 
 public partial class Program;
-

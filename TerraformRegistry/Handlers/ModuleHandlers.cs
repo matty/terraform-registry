@@ -1,5 +1,6 @@
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
+using TerraformRegistry.Middleware;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Handlers;
@@ -25,7 +26,7 @@ public static class ModuleHandlers
     // Helper to return error responses in Terraform Registry format
     private static IResult Error(int statusCode, string message)
     {
-        return Json(new { errors = new[] { message } }, statusCode: statusCode);
+        return ErrorResponseExtensions.TerraformError(statusCode, message);
     }
 
     /// <summary>
@@ -69,7 +70,7 @@ public static class ModuleHandlers
             @namespace, name, provider, version);
 
         var module = await moduleService.GetModuleAsync(@namespace, name, provider, version);
-        if (module == null) return Error(404, "Module not found");
+        if (module == null) return ErrorResponseExtensions.NotFound("Module not found");
 
         return Ok(module);
     }
@@ -89,7 +90,7 @@ public static class ModuleHandlers
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
         if (versions == null || versions.Modules == null || !versions.Modules.Any() ||
             versions.Modules.FirstOrDefault()?.Versions == null || !versions.Modules.FirstOrDefault()!.Versions.Any())
-            return Error(404, "Module not found");
+            return ErrorResponseExtensions.NotFound("Module not found");
         return Ok(versions);
     }
 
@@ -108,7 +109,7 @@ public static class ModuleHandlers
             @namespace, name, provider, version);
 
         var downloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
-        if (downloadPath == null) return Error(404, "Module not found");
+        if (downloadPath == null) return ErrorResponseExtensions.NotFound("Module not found");
 
         context.Response.Headers["X-Terraform-Get"] = downloadPath;
         return NoContent();
@@ -132,7 +133,7 @@ public static class ModuleHandlers
         var latestVersions = versions?.Modules?.FirstOrDefault()?.Versions;
         var latest = latestVersions?.OrderByDescending(v => v.Version, Comparer<string>.Create((a, b) =>
             SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault()?.Version;
-        if (string.IsNullOrEmpty(latest)) return Error(404, "Module not found");
+        if (string.IsNullOrEmpty(latest)) return ErrorResponseExtensions.NotFound("Module not found");
 
         return await DownloadModule(@namespace, name, provider, latest, moduleService, context);
     }
@@ -155,7 +156,7 @@ public static class ModuleHandlers
         if (!SemVerValidator.IsValid(version))
         {
             _logger.LogWarning("Invalid version format: {Version}", version);
-            return Error(400,
+            return ErrorResponseExtensions.BadRequest(
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
@@ -163,7 +164,7 @@ public static class ModuleHandlers
         var moduleFile = form.Files["moduleFile"];
         var description = form["description"].ToString() ?? string.Empty;
 
-        if (moduleFile == null || moduleFile.Length == 0) return Error(400, "No file uploaded");
+        if (moduleFile == null || moduleFile.Length == 0) return ErrorResponseExtensions.BadRequest("No file uploaded");
 
         try
         {
@@ -171,7 +172,7 @@ public static class ModuleHandlers
             var result =
                 await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description);
 
-            if (!result) return Error(409, "Module version already exists");
+            if (!result) return ErrorResponseExtensions.Conflict("Module version already exists");
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
@@ -179,13 +180,15 @@ public static class ModuleHandlers
         }
         catch (ArgumentException ex) when (ex.Message.Contains("Version"))
         {
-            _logger.LogWarning("Invalid version format: {Version}", version);
-            return Error(400, ex.Message);
+            _logger.LogWarning("Invalid version format: {Version} - {Message}", version, ex.Message);
+            return ErrorResponseExtensions.BadRequest(ex.Message);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
         {
-            _logger.LogError(ex, "Error uploading module");
-            return Error(500, "An error occurred while uploading the module");
+            _logger.LogInformation("Module version already exists: {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            return ErrorResponseExtensions.Conflict(ex.Message);
         }
+        // Let other exceptions bubble up to the global exception handler
     }
 }
