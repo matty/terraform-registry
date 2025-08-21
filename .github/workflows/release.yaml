@@ -18,15 +18,6 @@ on:
     paths:
       - "TerraformRegistry**/**"
   workflow_dispatch:
-    inputs:
-      use_postgresql:
-        description: "Include PostgreSQL support"
-        required: false
-        default: "true"
-      use_azure_blob:
-        description: "Include Azure Blob support"
-        required: false
-        default: "true"
 
 jobs:
   build:
@@ -72,9 +63,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          build-args: |
-            USE_POSTGRESQL=${{ github.event.inputs.use_postgresql || 'true' }}
-            USE_AZURE_BLOB=${{ github.event.inputs.use_azure_blob || 'true' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/terraform-registry:${{ steps.set-version.outputs.semVer }}
