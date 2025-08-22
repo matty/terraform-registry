@@ -6,19 +6,16 @@ A lightweight, feature-rich private Terraform Registry implementation with full 
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker)](https://docker.com/)
 [![Azure](https://img.shields.io/badge/Azure-Compatible-0078d4?style=flat-square&logo=microsoftazure)](https://azure.microsoft.com/)
 
-## ✨ Features
+## Features
 
-- 📦 **Full Terraform Registry Protocol v1** support for modules
-- 🗄️ **Multiple Storage Backends**: Local filesystem and Azure Blob Storage
-- 💾 **Multiple Database Options**: In-memory and PostgreSQL
-- 🔐 **Authentication**: Token-based API security
-- 📚 **OpenAPI Documentation**: Built-in Swagger UI
-- 🌐 **Web Interface**: Included frontend for browsing modules
-- 🐳 **Container Ready**: Easy deployment with Docker
-- ☁️ **Azure Integration**: Managed Identity support for seamless cloud deployment
-- ✅ **SemVer Validation**: Strict semantic versioning enforcement
+- Full Terraform Registry Protocol v1 for modules
+- Local filesystem and Azure Blob Storage support
+- PostgreSQL database
+- Token-based API authentication
+- Built-in web UI and OpenAPI (Swagger) documentation
+- Docker-ready deployment
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Using Docker (Recommended)
 
@@ -40,32 +37,32 @@ cd terraform-registry/TerraformRegistry
 dotnet run
 ```
 
-Visit `http://localhost:5131` to access the web interface! 🌐
+Visit `http://localhost:5131` to access the web interface!
 
-## 📋 API Endpoints
+## API Endpoints
 
-### 🔍 Service Discovery
+### Service Discovery
 
 - `GET /.well-known/terraform.json` - Terraform service discovery endpoint
 
-### 📦 Module Operations
+### Module Operations
 
 - `GET /v1/modules` - List or search modules with filtering
 - `GET /v1/modules/{namespace}/{name}/{provider}/{version}` - Get specific module details
 - `GET /v1/modules/{namespace}/{name}/{provider}/versions` - Get all module versions
 - `GET /v1/modules/{namespace}/{name}/{provider}/{version}/download` - Download specific version
 - `GET /v1/modules/{namespace}/{name}/{provider}/download` - Download latest version
-- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module 🔒
+- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module (auth required)
 
-### 📖 Documentation
+### Documentation
 
 - `GET /swagger` - Interactive API documentation (when enabled)
 
-_🔒 = Requires authentication_
+_Endpoints requiring authentication are marked accordingly._
 
-## ⚙️ Configuration
+## Configuration
 
-### 🌍 Environment Variables
+### Environment Variables
 
 Configure the application using environment variables (prefix with `TF_REG_`):
 
@@ -73,34 +70,36 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | -------------------------------------------- | ------------------------------------- | ----------------------- | ------------------- | ---------------------------------------- |
 | **Core Settings**                            |                                       |                         |                     |
 | `TF_REG_PORT`                                | Application port                      | `5131`                  | No                  | `80`                                     |
-| `TF_REG_BASEURL`                             | Registry base URL                     | `http://localhost:5131` | ⚠️ Yes              | `https://registry.company.com`           |
+| `TF_REG_BASEURL`                             | Registry base URL                     | `http://localhost:5131` | Yes                 | `https://registry.company.com`           |
 | `TF_REG_AUTHORIZATIONTOKEN`                  | API authentication token              | -                       | Recommended         | `your-secure-token-here`                 |
 | **Database Settings**                        |                                       |                         |                     |
-| `TF_REG_DATABASEPROVIDER`                    | Database type (`inmemory`/`postgres`) | `inmemory`              | No                  | `postgres`                               |
+| `TF_REG_DATABASEPROVIDER`                    | Database type (`sqlite`/`postgres`)   | `sqlite`               | No                  | `postgres`                               |
+| `TF_REG_SQLITE__CONNECTIONSTRING`            | SQLite connection string              | `Data Source=terraform.db` | If using SQLite     | `Data Source=/data/terraform.db`          |
 | `TF_REG_POSTGRESQL__CONNECTIONSTRING`        | PostgreSQL connection                 | -                       | If using PostgreSQL | `Host=localhost;Database=tfregistry;...` |
 | **Storage Settings**                         |                                       |                         |                     |
 | `TF_REG_STORAGEPROVIDER`                     | Storage type (`local`/`azure`)        | `local`                 | No                  | `azure`                                  |
 | `TF_REG_MODULESTORAGEPATH`                   | Local storage path                    | `modules`               | If using local      | `/data/modules`                          |
 | **Azure Storage Settings**                   |                                       |                         |                     |
-| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`      | Azure connection string               | -                       | ⚠️ If using Azure   | `DefaultEndpointsProtocol=https;...`     |
+| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`      | Azure connection string               | -                       | If using Azure      | `DefaultEndpointsProtocol=https;...`     |
 | `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Storage account name                  | -                       | If using Azure      | `mystorageaccount`                       |
 | `TF_REG_AZURESTORAGE__CONTAINERNAME`         | Blob container name                   | `modules`               | If using Azure      | `terraform-modules`                      |
 | `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry                      | `5`                     | No                  | `10`                                     |
 | **Development Settings**                     |                                       |                         |                     |
 | `TF_REG_ENABLESWAGGER`                       | Enable Swagger UI                     | `true` (dev)            | No                  | `false`                                  |
 
-### 🏗️ Architecture Options
+### Architecture Options
 
-#### 🏠 **Local Development**
+#### Local Development
 
 ```bash
-# In-memory database + local file storage
-TF_REG_DATABASEPROVIDER=inmemory
+# SQLite database (default) + local file storage
+TF_REG_DATABASEPROVIDER=sqlite
+TF_REG_SQLITE__CONNECTIONSTRING="Data Source=terraform.db"
 TF_REG_STORAGEPROVIDER=local
 TF_REG_MODULESTORAGEPATH=./modules
 ```
 
-#### 🏢 **Production (PostgreSQL + Local)**
+#### Production (PostgreSQL + Local)
 
 ```bash
 # PostgreSQL database + local file storage
@@ -110,7 +109,7 @@ TF_REG_STORAGEPROVIDER=local
 TF_REG_MODULESTORAGEPATH=/data/modules
 ```
 
-#### ☁️ **Cloud (PostgreSQL + Azure)**
+#### Cloud (PostgreSQL + Azure)
 
 ```bash
 # PostgreSQL database + Azure Blob Storage
@@ -122,9 +121,9 @@ TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount
 TF_REG_AZURESTORAGE__CONTAINERNAME=modules
 ```
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
-### 📝 Docker Compose Example
+### Docker Compose Example
 
 ```yaml
 version: "3.8"
@@ -157,7 +156,7 @@ volumes:
   postgres_data:
 ```
 
-### ☁️ Azure Container Instances
+### Azure Container Instances
 
 ```bash
 az container create \
@@ -176,9 +175,9 @@ az container create \
   --scope /subscriptions/.../resourceGroups/.../providers/Microsoft.Storage/storageAccounts/mystorageaccount
 ```
 
-## 🔧 Usage with Terraform
+## Usage with Terraform
 
-### 📝 Configure Terraform CLI
+### Configure Terraform CLI
 
 Create or update `~/.terraformrc`:
 
@@ -194,7 +193,7 @@ host "registry.company.com" {
 }
 ```
 
-### 🏗️ Use Modules in Terraform
+### Use Modules in Terraform
 
 ```hcl
 terraform {
@@ -216,7 +215,7 @@ module "vpc" {
 }
 ```
 
-### 📤 Upload Modules
+### Upload Modules
 
 ```bash
 # Create a module archive
@@ -230,36 +229,36 @@ curl -X POST \
   "https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3"
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
-### ❌ Common Issues
+### Common Issues
 
 **"Module not found"**
 
-- ✅ Check if the module was uploaded successfully
-- ✅ Verify the namespace/name/provider/version combination
-- ✅ Ensure your Terraform configuration matches the uploaded module
+- Check if the module was uploaded successfully
+- Verify the namespace/name/provider/version combination
+- Ensure your Terraform configuration matches the uploaded module
 
 **"Authentication failed"**
 
-- ✅ Verify your auth token in `~/.terraformrc`
-- ✅ Check that `TF_REG_AUTHORIZATIONTOKEN` is set correctly
-- ✅ Ensure the token matches between client and server
+- Verify your auth token in `~/.terraformrc`
+- Check that `TF_REG_AUTHORIZATIONTOKEN` is set correctly
+- Ensure the token matches between client and server
 
 **"Database connection failed"**
 
-- ✅ Verify PostgreSQL connection string
-- ✅ Check if the database server is running
-- ✅ Ensure the database exists and user has permissions
+- Verify PostgreSQL connection string
+- Check if the database server is running
+- Ensure the database exists and user has permissions
 
 **"Azure Blob Storage access denied"**
 
-- ✅ Check Azure Storage connection string is properly configured
-- ✅ Verify the storage account and container exist
-- ✅ Ensure the connection string has the correct account name and access key
-- ✅ Check that the specified container name exists in the storage account
+- Check Azure Storage connection string is properly configured
+- Verify the storage account and container exist
+- Ensure the connection string has the correct account name and access key
+- Check that the specified container name exists in the storage account
 
-### 📊 Health Checks
+### Health Checks
 
 ```bash
 # Check service discovery
@@ -272,15 +271,15 @@ curl https://registry.company.com/v1/modules
 curl https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3
 ```
 
-## 🏗️ Development
+## Development
 
-### 🛠️ Prerequisites
+### Prerequisites
 
 - .NET 8.0 SDK
 - PostgreSQL (optional, for database testing)
 - Azure Storage Emulator (optional, for Azure testing)
 
-### 🚀 Run Locally
+### Run Locally
 
 ```bash
 cd TerraformRegistry
@@ -288,25 +287,25 @@ dotnet restore
 dotnet run
 ```
 
-### 🧪 Run Tests
+### Run Tests
 
 ```bash
 dotnet test
 ```
 
-### 📦 Build Docker Image
+### Build Docker Image
 
 ```bash
 docker build -t terraform-registry .
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🙋‍♂️ Support
+## Support
 
-- 📖 Check the [API documentation](http://localhost:5131/swagger) when running locally
-- 🐛 Report issues on GitHub
+- Check the [API documentation](http://localhost:5131/swagger) when running locally
+- Report issues on GitHub
 
 ---

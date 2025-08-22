@@ -206,9 +206,9 @@ public class LocalModuleServiceTests
         }
 
         public Task<bool> CallUploadModuleAsyncImpl(string ns, string name, string provider, string version,
-            Stream content, string desc)
+            Stream content, string desc, bool replace = false)
         {
-            return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc);
+            return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc, replace);
         }
     }
 }

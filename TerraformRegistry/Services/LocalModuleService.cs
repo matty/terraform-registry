@@ -218,7 +218,7 @@ public class LocalModuleService : ModuleService
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description)
+        string version, Stream moduleContent, string description, bool replace)
     {
         var namespaceDir = Path.Combine(_moduleStoragePath, @namespace);
         if (!Directory.Exists(namespaceDir)) Directory.CreateDirectory(namespaceDir);
@@ -246,6 +246,26 @@ public class LocalModuleService : ModuleService
                 PublishedAt = DateTime.UtcNow,
                 Dependencies = []
             };
+
+            if (replace)
+            {
+                try
+                {
+                    await _databaseService.RemoveModuleAsync(module);
+                }
+                catch
+                {
+                    // ignore DB remove failures here; Add will handle existence
+                }
+                try
+                {
+                    if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
+                }
+                catch
+                {
+                    // ignore file delete errors; we'll overwrite if possible
+                }
+            }
 
             var dbResult = await _databaseService.AddModuleAsync(module);
             if (dbResult)

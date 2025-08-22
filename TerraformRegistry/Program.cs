@@ -20,7 +20,7 @@ builder.Configuration
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", true, true)
     .AddEnvironmentVariables("TF_REG_");
 
-// Register MigrationManager and IInitializableDb for postgres
+// Register MigrationManager and IInitializableDb for database initialization
 builder.Services.AddSingleton<MigrationManager>();
 builder.Services.AddSingleton<IInitializableDb>(provider =>
 {
@@ -35,7 +35,7 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
     var config = provider.GetRequiredService<IConfiguration>();
     var loggerDb = provider.GetRequiredService<ILogger<PostgreSqlDatabaseService>>();
     var migrationManager = provider.GetRequiredService<MigrationManager>();
-    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "inmemory";
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
     var baseUrl = config["BaseUrl"] ?? "http://localhost:5131";
 
     if (string.IsNullOrEmpty(baseUrl))
@@ -48,8 +48,10 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
                 throw new InvalidOperationException(
                     "PostgreSQL connection string is missing or empty. Please check your configuration.");
             return new PostgreSqlDatabaseService(connectionString, baseUrl, loggerDb, migrationManager);
-        case "inmemory":
-            return new InMemoryDatabaseService(baseUrl);
+        case "sqlite":
+            var sqliteConn = config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db";
+            var sqliteLogger = provider.GetRequiredService<ILogger<SqliteDatabaseService>>();
+            return new SqliteDatabaseService(sqliteConn, baseUrl, sqliteLogger);
         default:
             throw new Exception($"Invalid database provider specified: '{databaseProvider}'. Check configuration.");
     }
@@ -126,7 +128,7 @@ var app = builder.Build();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var config = app.Services.GetRequiredService<IConfiguration>();
 logger.LogInformation("Using {DatabaseProvider} database for module metadata",
-    config["DatabaseProvider"] ?? "inmemory");
+    config["DatabaseProvider"] ?? "sqlite");
 logger.LogInformation("Using {StorageProvider} storage for module storage", config["StorageProvider"] ?? "local");
 
 var authToken = app.Configuration["AuthorizationToken"];

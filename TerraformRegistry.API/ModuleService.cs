@@ -34,7 +34,7 @@ public abstract class ModuleService : IModuleService
     ///     Uploads a new module with SemVer validation
     /// </summary>
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description)
+        Stream moduleContent, string description, bool replace = false)
     {
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
@@ -43,12 +43,12 @@ public abstract class ModuleService : IModuleService
                 nameof(version));
 
         // Delegate to the implementation-specific upload method
-        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description);
+        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace);
     }
 
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description);
+        Stream moduleContent, string description, bool replace);
 }

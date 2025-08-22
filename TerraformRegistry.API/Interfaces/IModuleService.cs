@@ -31,5 +31,5 @@ public interface IModuleService
     ///     Uploads a new module
     /// </summary>
     Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,
-        string description);
+        string description, bool replace = false);
 }

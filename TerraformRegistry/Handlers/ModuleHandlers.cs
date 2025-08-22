@@ -168,11 +168,30 @@ public static class ModuleHandlers
 
         try
         {
+            // Parse optional replace parameter from form or query
+            bool replace = false;
+            var replaceRaw = form["replace"].ToString();
+            if (string.IsNullOrWhiteSpace(replaceRaw) && request.Query.ContainsKey("replace"))
+            {
+                replaceRaw = request.Query["replace"].ToString();
+            }
+            if (!string.IsNullOrWhiteSpace(replaceRaw))
+            {
+                var val = replaceRaw.Trim();
+                if (string.Equals(val, "true", StringComparison.OrdinalIgnoreCase) || val == "1")
+                    replace = true;
+                else if (string.Equals(val, "false", StringComparison.OrdinalIgnoreCase) || val == "0")
+                    replace = false;
+            }
+
             await using var stream = moduleFile.OpenReadStream();
             var result =
-                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description);
+                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description, replace);
 
-            if (!result) return ErrorResponseExtensions.Conflict("Module version already exists");
+            if (!result)
+            {
+                return ErrorResponseExtensions.Conflict("Module version already exists");
+            }
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };

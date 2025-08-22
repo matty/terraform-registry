@@ -194,17 +194,31 @@ public class AzureBlobModuleService : ModuleService
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description)
+        string version, Stream moduleContent, string description, bool replace)
     {
         // Create a consistent blob path format for easy retrieval
         var blobPath = $"{@namespace}/{name}-{provider}-{version}.zip";
         var blobClient = _containerClient.GetBlobClient(blobPath);
 
-        // Check if blob already exists to avoid duplication
+        // Check if blob already exists to avoid duplication or allow replacement
         if (await blobClient.ExistsAsync())
         {
-            _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
-            return false;
+            if (!replace)
+            {
+                _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
+                return false;
+            }
+
+            // Replace requested: delete existing blob
+            try
+            {
+                await blobClient.DeleteIfExistsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Failed to delete existing blob for {@namespace}/{name}/{provider}/{version}");
+                return false;
+            }
         }
 
         try
@@ -236,6 +250,18 @@ public class AzureBlobModuleService : ModuleService
                 PublishedAt = DateTime.UtcNow,
                 Dependencies = new List<string>() // Simplified, no dependencies
             };
+
+            if (replace)
+            {
+                try
+                {
+                    await _databaseService.RemoveModuleAsync(module);
+                }
+                catch
+                {
+                    // ignore DB remove failures; Add will handle upsert where supported
+                }
+            }
 
             // Add to database - this stores metadata and the blob path reference
             var result = await _databaseService.AddModuleAsync(module);
