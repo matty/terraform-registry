@@ -1,0 +1,191 @@
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Moq;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
+using TerraformRegistry.Services;
+using Xunit;
+
+namespace TerraformRegistry.Tests.UnitTests.Database;
+
+public class SqliteDatabaseServiceTests : IAsyncLifetime
+{
+    private string _dbPath = null!;
+    private string _connectionString = null!;
+
+    public Task InitializeAsync()
+    {
+        // Create a unique temporary file-based SQLite database for each test class instance
+        var tempDir = Path.Combine(Path.GetTempPath(), "TerraformRegistryTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        _dbPath = Path.Combine(tempDir, "test.db");
+        _connectionString = $"Data Source={_dbPath}";
+        return Task.CompletedTask;
+    }
+
+    public Task DisposeAsync()
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_dbPath))
+            {
+                var dir = Path.GetDirectoryName(_dbPath)!;
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+        }
+        catch
+        {
+            // ignore cleanup issues
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static SqliteDatabaseService CreateService(string connStr, string baseUrl = "http://localhost")
+    {
+        var logger = new Mock<ILogger<SqliteDatabaseService>>();
+        return new SqliteDatabaseService(connStr, baseUrl, logger.Object);
+    }
+
+    private static ModuleStorage MakeModule(
+        string ns = "hashicorp",
+        string name = "vpc",
+        string provider = "aws",
+        string version = "1.0.0",
+        string? desc = "VPC module",
+        string? filePath = "/modules/vpc/1.0.0.zip",
+        DateTime? publishedAt = null,
+        params string[] deps)
+    {
+        return new ModuleStorage
+        {
+            Namespace = ns,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            Description = desc ?? string.Empty,
+            FilePath = filePath ?? string.Empty,
+            PublishedAt = publishedAt ?? DateTime.UtcNow,
+            Dependencies = deps.ToList()
+        };
+    }
+
+    [Fact]
+    public async Task InitializeDatabase_CreatesSchemaAndAllowsInsertAndFetch()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule();
+        var added = await svc.AddModuleAsync(mod);
+        Assert.True(added);
+
+        var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(fetched);
+        Assert.Equal(mod.Namespace, fetched!.Namespace);
+        Assert.Equal(mod.Name, fetched.Name);
+        Assert.Equal(mod.Provider, fetched.Provider);
+        Assert.Equal(mod.Version, fetched.Version);
+        Assert.Equal("http://localhost/v1/modules/hashicorp/vpc/aws/1.0.0/download", fetched.DownloadUrl);
+        Assert.Contains("1.0.0", fetched.Versions);
+    }
+
+    [Fact]
+    public async Task AddModule_IsUpsertOnConflict_UpdatesDescriptionAndPath()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(desc: "desc1", filePath: "/path/one.zip");
+        Assert.True(await svc.AddModuleAsync(mod));
+
+        // Update with same PK and new values
+        var modUpdated = MakeModule(desc: "desc2", filePath: "/path/two.zip");
+        Assert.True(await svc.AddModuleAsync(modUpdated));
+
+        var storage = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(storage);
+        Assert.Equal("desc2", storage!.Description);
+        Assert.Equal("/path/two.zip", storage.FilePath);
+    }
+
+    [Fact]
+    public async Task ListModules_ReturnsLatestVersionPerTuple_AndSupportsFilters()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        // Insert multiple versions and different providers
+        await svc.AddModuleAsync(MakeModule(version: "1.0.0", desc: "alpha vpc"));
+        await svc.AddModuleAsync(MakeModule(version: "1.1.0", desc: "beta vpc"));
+        await svc.AddModuleAsync(MakeModule(provider: "azurerm", version: "0.1.0", desc: "azure vpc"));
+
+        // No filter should return one entry per (ns,name,provider) with latest version
+        var all = await svc.ListModulesAsync(new ModuleSearchRequest { Limit = 50, Offset = 0 });
+        Assert.Equal(2, all.Modules.Count);
+        var awsEntry = all.Modules.First(m => m.Provider == "aws");
+        Assert.Equal("1.1.0", awsEntry.Version);
+        Assert.Contains("1.0.0", awsEntry.Versions);
+        Assert.Contains("1.1.0", awsEntry.Versions);
+
+        // Filter by provider
+        var awsOnly = await svc.ListModulesAsync(new ModuleSearchRequest { Provider = "aws", Limit = 50 });
+        Assert.Single(awsOnly.Modules);
+
+        // Filter by namespace and search query (name/description)
+        var search = await svc.ListModulesAsync(new ModuleSearchRequest { Namespace = "hashicorp", Q = "azure" });
+        Assert.Single(search.Modules);
+        Assert.Equal("azurerm", search.Modules[0].Provider);
+    }
+
+    [Fact]
+    public async Task GetModuleVersions_ReturnsDescendingVersionList()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(version: "1.2.0"));
+        await svc.AddModuleAsync(MakeModule(version: "1.1.1"));
+
+        var versions = await svc.GetModuleVersionsAsync("hashicorp", "vpc", "aws");
+        var list = versions.Modules.Single().Versions.Select(v => v.Version).ToList();
+
+        // Service orders DESC
+        Assert.Equal(new[] { "1.2.0", "1.1.1", "1.0.0" }, list);
+    }
+
+    [Fact]
+    public async Task GetModuleStorage_ReturnsDependenciesAndFields()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var published = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        await svc.AddModuleAsync(MakeModule(version: "2.0.0", publishedAt: published, deps: ["a", "b"]));
+
+        var storage = await svc.GetModuleStorageAsync("hashicorp", "vpc", "aws", "2.0.0");
+        Assert.NotNull(storage);
+        Assert.Equal(["a", "b"], storage!.Dependencies);
+        Assert.Equal(published, storage.PublishedAt);
+    }
+
+    [Fact]
+    public async Task RemoveModule_DeletesRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "3.0.0");
+        await svc.AddModuleAsync(mod);
+
+        var removed = await svc.RemoveModuleAsync(mod);
+        Assert.True(removed);
+
+        var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.Null(fetched);
+    }
+}

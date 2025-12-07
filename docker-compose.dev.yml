@@ -1,5 +1,4 @@
 ---
-
 # Development-specific overrides
 services:
   # app:
@@ -22,15 +21,15 @@ services:
   #     - TF_REG_EnableSwagger=true
 
   postgres:
-    image: postgres:17
+    image: postgres:18
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql
     environment:
       POSTGRES_USER: terraform_reg_user
       POSTGRES_PASSWORD: terraform_reg_password
-      POSTGRES_DB: terraform_registry_dev
+      POSTGRES_DB: terraform_registry
 
   # Adding a database admin tool for development
   pgadmin:

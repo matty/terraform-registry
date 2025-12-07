@@ -292,3 +292,24 @@ npm-debug.log
 yarn-error.log
 
 # End of https://www.toptal.com/developers/gitignore/api/dotnetcore,aspnetcore,dotenv,vuejs
+
+# Created by https://www.toptal.com/developers/gitignore/api/nuxtjs
+# Edit at https://www.toptal.com/developers/gitignore?templates=nuxtjs
+
+### NuxtJS ###
+# Generated dirs
+dist
+.nuxt
+.nuxt-*
+.output
+.gen
+
+# Node dependencies
+node_modules
+
+# System files
+*.log
+
+# End of https://www.toptal.com/developers/gitignore/api/nuxtjs
+
+run-dev.ps1

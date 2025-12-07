@@ -112,7 +112,21 @@ public static class ModuleHandlers
         if (downloadPath == null) return ErrorResponseExtensions.NotFound("Module not found");
 
         context.Response.Headers["X-Terraform-Get"] = downloadPath;
-        return NoContent();
+
+        // Terraform CLI expects 204 + X-Terraform-Get. Portal/browser should follow a redirect.
+        var userAgent = context.Request.Headers["User-Agent"].ToString();
+        var accept = context.Request.Headers["Accept"].ToString();
+        var isTerraformClient = userAgent.Contains("Terraform", StringComparison.OrdinalIgnoreCase) ||
+                                 accept.Contains("terraform", StringComparison.OrdinalIgnoreCase);
+
+        if (isTerraformClient)
+        {
+            return NoContent();
+        }
+
+        context.Response.Headers.Location = downloadPath;
+        context.Response.StatusCode = StatusCodes.Status302Found;
+        return Empty;
     }
 
     /// <summary>

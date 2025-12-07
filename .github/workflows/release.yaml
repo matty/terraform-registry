@@ -9,15 +9,21 @@ on:
       - "hotfix/**"
     tags:
       - "v*.*.*"
-    paths:
-      - "TerraformRegistry**/**"
   pull_request:
     branches:
       - main
       - develop
-    paths:
-      - "TerraformRegistry**/**"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override"
+        required: false
+        type: string
+      push_image:
+        description: "Push image to GHCR"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -38,7 +44,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v0.10.2
@@ -51,8 +57,18 @@ jobs:
         with:
           useConfigFile: true
 
+      - name: Resolve Version
+        id: resolved-version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ steps.set-version.outputs.semVer }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -63,9 +79,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image) }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/terraform-registry:${{ steps.set-version.outputs.semVer }}
+            ghcr.io/${{ github.repository_owner }}/terraform-registry:${{ env.VERSION }}
             ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/terraform-registry:latest', github.repository_owner) || '' }}
             ${{ startsWith(github.ref, 'refs/heads/develop') && format('ghcr.io/{0}/terraform-registry:develop', github.repository_owner) || '' }}
             ${{ startsWith(github.ref, 'refs/heads/release/') && format('ghcr.io/{0}/terraform-registry:release', github.repository_owner) || '' }}

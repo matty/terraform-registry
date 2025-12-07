@@ -1,18 +1,22 @@
-export default defineNuxtRouteMiddleware((to) => {
-  // Skip middleware for login page
-  if (to.path === '/login') {
-    return
+export default defineNuxtRouteMiddleware(async (to) => {
+  // Skip middleware for login and callback pages
+  if (to.path === "/login" || to.path === "/callback") {
+    return;
   }
 
-  const { isAuthenticated } = useAuth()
-  
-  // If not authenticated and trying to access protected routes, redirect to login
-  if (!isAuthenticated.value && to.path !== '/') {
-    return navigateTo('/login')
+  const { checkSession, isAuthenticated, apiToken, isLoading } = useAuth();
+
+  // Wait for loading to complete if on client side
+  if (import.meta.client && isLoading.value) {
+    await checkSession();
   }
-  
-  // If authenticated and on root, redirect to modules
-  if (isAuthenticated.value && to.path === '/') {
-    return navigateTo('/modules')
+
+  // Check for either OIDC session or API token
+  const hasSession = isAuthenticated.value;
+  const hasApiToken = !!apiToken.value;
+
+  // If not authenticated, redirect to login
+  if (!hasSession && !hasApiToken) {
+    return navigateTo("/login");
   }
-})
+});

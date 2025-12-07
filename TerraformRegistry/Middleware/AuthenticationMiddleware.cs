@@ -1,13 +1,18 @@
+using System.Security.Claims;
+using TerraformRegistry.Services;
+
 namespace TerraformRegistry.Middleware;
 
 public class AuthenticationMiddleware(
     RequestDelegate next,
     string authToken,
+    JwtService jwtService,
     ILogger<AuthenticationMiddleware> logger)
 {
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
-    private static readonly string[] ProtectedPathPrefixes = new[] { "/v1/" };
+    private const string SessionCookieName = "tf-session";
+    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys"];
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -15,15 +20,117 @@ public class AuthenticationMiddleware(
         if (ProtectedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
         {
             var header = context.Request.Headers[AuthorizationHeader].FirstOrDefault();
-            if (string.IsNullOrEmpty(header) || !header.Equals($"{BearerPrefix}{authToken}", StringComparison.Ordinal))
+
+            // Check 1: Static API token (Legacy/System)
+            if (!string.IsNullOrEmpty(header) && header.Equals($"{BearerPrefix}{authToken}", StringComparison.Ordinal))
             {
-                logger.LogWarning("Unauthorized request to {Path} from {RemoteIp}", path,
-                    context.Connection.RemoteIpAddress);
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.Headers["WWW-Authenticate"] = "Bearer";
-                await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
+                await next(context);
                 return;
             }
+
+            // Check 2: Database API Keys (Try if not a JWT)
+            if (!string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var token = header.Substring(BearerPrefix.Length);
+
+                // Heuristic: JWTs usually have 2 dots. API keys don't.
+                // If it doesn't look like a JWT, try API key validation first.
+                if (!token.Contains('.') || token.Count(c => c == '.') != 2)
+                {
+                    using var scope = context.RequestServices.CreateScope(); // Service is scoped usually
+                    var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+                    var apiKey = await apiKeyService.ValidateApiKeyAsync(token);
+
+                    if (apiKey != null)
+                    {
+                        // Set user principal if tied to key; Terraform CLI uses ApiKey identity.
+                        var claims = new List<Claim>
+                        {
+                            new(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()),
+                            new(ClaimTypes.AuthenticationMethod, "ApiKey")
+                        };
+                        var identity = new ClaimsIdentity(claims, "ApiKey");
+                        context.User = new ClaimsPrincipal(identity);
+
+                        await next(context);
+                        return;
+                    }
+                }
+            }
+
+            // Check 3: JWT from session cookie (Portal)
+            var sessionToken = context.Request.Cookies[SessionCookieName];
+            if (!string.IsNullOrEmpty(sessionToken))
+            {
+                logger.LogInformation("Processing request for {Path}. Found session cookie.", path);
+                var principal = jwtService.ValidateToken(sessionToken);
+                if (principal != null)
+                {
+                    context.User = principal;
+                    logger.LogInformation("Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
+                        path,
+                        principal.Identity?.Name,
+                        context.User.Identity?.IsAuthenticated,
+                        context.User.Identity?.AuthenticationType);
+
+                    logger.LogInformation("AuthenticationMiddleware: Calling next middleware for {Path}", path);
+                    await next(context);
+                    return;
+                }
+                else
+                {
+                    logger.LogWarning("Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path, sessionToken.Substring(0, Math.Min(10, sessionToken.Length)));
+                }
+            }
+            else
+            {
+                logger.LogInformation("Processing request for {Path}. No session cookie found.", path);
+            }
+
+            // Check 4: JWT in Authorization header (Bearer token)
+            if (!string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var jwtToken = header.Substring(BearerPrefix.Length);
+                // If we are here, it might be a JWT (or an invalid API key)
+                // Only try JWT validation if it looks like one
+                if (jwtToken.Contains('.') && jwtToken.Count(c => c == '.') == 2)
+                {
+                    var principal = jwtService.ValidateToken(jwtToken);
+                    if (principal != null)
+                    {
+                        context.User = principal;
+                        await next(context);
+                        return;
+                    }
+                }
+            }
+
+            // No valid authentication found
+            logger.LogWarning("Unauthorized request to {Path} from {RemoteIp}", path,
+                context.Connection.RemoteIpAddress);
+
+            // For /api/keys, we let the [Authorize] attribute handle the challenge
+            if (path.StartsWith("/api/keys", StringComparison.OrdinalIgnoreCase))
+            {
+                await next(context);
+                return;
+            }
+
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.Headers["WWW-Authenticate"] = "Bearer";
+            var accept = context.Request.Headers["Accept"].ToString();
+            var prefersJson = accept.Contains("application/json", StringComparison.OrdinalIgnoreCase) ||
+                              accept.Contains("text/html", StringComparison.OrdinalIgnoreCase);
+
+            if (prefersJson)
+            {
+                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", path });
+            }
+            else
+            {
+                await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
+            }
+            return;
         }
 
         await next(context);

@@ -36,4 +36,19 @@ public interface IDatabaseService
     ///     Removes a module from the database
     /// </summary>
     Task<bool> RemoveModuleAsync(ModuleStorage module);
+
+    // User & API Key Methods
+    Task<User?> GetUserByEmailAsync(string email);
+    Task<User?> GetUserByIdAsync(string id);
+    Task AddUserAsync(User user);
+    Task UpdateUserAsync(User user);
+    Task DeleteUserAsync(string userId);
+
+    Task AddApiKeyAsync(ApiKey apiKey);
+    Task<ApiKey?> GetApiKeyAsync(Guid id);
+    Task<IEnumerable<ApiKey>> GetApiKeysByUserAsync(string userId);
+    Task<IEnumerable<ApiKey>> GetSharedApiKeysAsync();
+    Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix);
+    Task UpdateApiKeyAsync(ApiKey apiKey);
+    Task DeleteApiKeyAsync(ApiKey apiKey);
 }

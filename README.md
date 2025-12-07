@@ -2,17 +2,18 @@
 
 A lightweight, feature-rich private Terraform Registry implementation with full support for modules!
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-purple?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-10-purple?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker)](https://docker.com/)
 [![Azure](https://img.shields.io/badge/Azure-Compatible-0078d4?style=flat-square&logo=microsoftazure)](https://azure.microsoft.com/)
 
 ## Features
 
 - Full Terraform Registry Protocol v1 for modules
+- Built-in web UI and OpenAPI (Swagger) documentation
+- OIDC Authentication for web portal (GitHub, Azure AD)
+- API Token authentication for Terraform CLI (currently set via env vars)
 - Local filesystem and Azure Blob Storage support
 - PostgreSQL database
-- Token-based API authentication
-- Built-in web UI and OpenAPI (Swagger) documentation
 - Docker-ready deployment
 
 ## Quick Start
@@ -84,6 +85,14 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Storage account name                  | -                       | If using Azure      | `mystorageaccount`                       |
 | `TF_REG_AZURESTORAGE__CONTAINERNAME`         | Blob container name                   | `modules`               | If using Azure      | `terraform-modules`                      |
 | `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry                      | `5`                     | No                  | `10`                                     |
+| **OIDC Authentication Settings**             |                                       |                         |                     |
+| `TF_REG_OIDC__JWTSECRETKEY`                  | JWT signing key (min 32 chars)        | -                       | Yes (for OIDC)      | `your-256-bit-secret-key-here...`        |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID`   | GitHub OAuth App Client ID            | -                       | If using GitHub     | `Iv1.xxxxxxxxxxxx`                       |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET` | GitHub OAuth App Client Secret      | -                       | If using GitHub     | `xxxxxxxxxxxx`                           |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__ENABLED`    | Enable GitHub OIDC                    | `false`                 | No                  | `true`                                   |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTID`  | Azure AD App Client ID                | -                       | If using Azure AD   | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`   |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTSECRET` | Azure AD App Client Secret         | -                       | If using Azure AD   | `xxxxxxxxxxxx`                           |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__ENABLED`   | Enable Azure AD OIDC                  | `false`                 | No                  | `true`                                   |
 | **Development Settings**                     |                                       |                         |                     |
 | `TF_REG_ENABLESWAGGER`                       | Enable Swagger UI                     | `true` (dev)            | No                  | `false`                                  |
 
@@ -275,7 +284,7 @@ curl https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3
 
 ### Prerequisites
 
-- .NET 8.0 SDK
+- .NET 10 SDK
 - PostgreSQL (optional, for database testing)
 - Azure Storage Emulator (optional, for Azure testing)
 

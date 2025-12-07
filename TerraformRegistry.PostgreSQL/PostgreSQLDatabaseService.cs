@@ -191,15 +191,12 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
-            // No matching module found
             return null;
 
-        // Dependencies are stored as a JSON array in PostgreSQL
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
         var versions = reader.GetFieldValue<string[]>(8);
 
-        // Create and return the module
         return new Module
         {
             Id = $"{@namespace}/{name}/{provider}/{version}",
@@ -213,11 +210,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             PublishedAt = reader.GetDateTime(6).ToString("o"),
             DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
             Versions = versions.ToList(),
-            Root = "main", // Set the root directory name as a string
-            Submodules = new List<ModuleSubmodule>(), // No submodules for simplicity
+            Root = "main",
+            Submodules = new List<ModuleSubmodule>(),
             Providers = new Dictionary<string, string>
             {
-                { provider, "*" } // Adding required Providers property with a default value
+                { provider, "*" }
             }
         };
     }
@@ -249,7 +246,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var versions = new List<string>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));        // Return the updated ModuleVersions structure with the format expected by Terraform
+        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
+
         return new ModuleVersions
         {
             Modules = new List<ModuleVersionInfo>
@@ -265,11 +263,6 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     /// <summary>
     ///     Gets the storage path information for a specific module version
     /// </summary>
-    /// <remarks>
-    ///     This method retrieves the storage metadata that connects a module's metadata in the database
-    ///     with its physical file location in blob storage. The FilePath property is particularly important
-    ///     as it's used by the blob storage service to locate and retrieve the actual module file.
-    /// </remarks>
     public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider,
         string version)
     {
@@ -302,10 +295,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
-            // No matching module found
             return null;
 
-        // Dependencies are stored as a JSON array in PostgreSQL
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
 
@@ -316,7 +307,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Provider = reader.GetString(2),
             Version = reader.GetString(3),
             Description = reader.GetString(4),
-            FilePath = reader.GetString(5), // Critical field that maps to blob storage
+            FilePath = reader.GetString(5),
             PublishedAt = reader.GetDateTime(6),
             Dependencies = dependencies
         };
@@ -325,11 +316,6 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     /// <summary>
     ///     Adds a new module to the database
     /// </summary>
-    /// <remarks>
-    ///     This method stores module metadata in the database, including a reference to the blob storage path
-    ///     where the actual module file is stored. The storage_path column creates the link between database
-    ///     records and physical files in the blob storage.
-    /// </remarks>
     public async Task<bool> AddModuleAsync(ModuleStorage module)
     {
         var sql = @"
@@ -371,15 +357,13 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             command.Parameters.AddWithValue("@provider", module.Provider);
             command.Parameters.AddWithValue("@version", module.Version);
             command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath); // Link to blob storage path
+            command.Parameters.AddWithValue("@storagePath", module.FilePath);
             command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
                     module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            // Execute and get the ID of the inserted/updated row
             var result = await command.ExecuteScalarAsync();
-
             return result != null;
         }
         catch (Exception ex)
@@ -422,6 +406,235 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 module.Namespace, module.Name, module.Provider, module.Version);
             return false;
         }
+    }
+
+    // User Methods
+    public async Task<User?> GetUserByEmailAsync(string email)
+    {
+        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = @email";
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@email", email);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        return new User
+        {
+            Id = reader.GetString(0),
+            Email = reader.GetString(1),
+            Provider = reader.GetString(2),
+            ProviderId = reader.GetString(3),
+            CreatedAt = reader.GetDateTime(4),
+            UpdatedAt = reader.GetDateTime(5)
+        };
+    }
+
+    public async Task<User?> GetUserByIdAsync(string id)
+    {
+        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE id = @id";
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        return new User
+        {
+            Id = reader.GetString(0),
+            Email = reader.GetString(1),
+            Provider = reader.GetString(2),
+            ProviderId = reader.GetString(3),
+            CreatedAt = reader.GetDateTime(4),
+            UpdatedAt = reader.GetDateTime(5)
+        };
+    }
+
+    public async Task AddUserAsync(User user)
+    {
+        const string sql = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES (@id, @email, @provider, @providerId, @createdAt, @updatedAt)";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("@id", user.Id);
+        command.Parameters.AddWithValue("@email", user.Email);
+        command.Parameters.AddWithValue("@provider", user.Provider);
+        command.Parameters.AddWithValue("@providerId", user.ProviderId);
+        command.Parameters.AddWithValue("@createdAt", user.CreatedAt);
+        command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateUserAsync(User user)
+    {
+        const string sql = "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, updated_at=@updatedAt WHERE id=@id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("@id", user.Id);
+        command.Parameters.AddWithValue("@email", user.Email);
+        command.Parameters.AddWithValue("@provider", user.Provider);
+        command.Parameters.AddWithValue("@providerId", user.ProviderId);
+        command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteUserAsync(string userId)
+    {
+        const string sql = "DELETE FROM users WHERE id = @id";
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", userId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    // ApiKey Methods
+    public async Task AddApiKeyAsync(ApiKey apiKey)
+    {
+        const string sql = @"
+            INSERT INTO api_keys (id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at)
+            VALUES (@id, @userId, @description, @tokenHash, @prefix, @isShared, @createdAt, @expiresAt, @lastUsedAt)";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("@id", apiKey.Id);
+        command.Parameters.AddWithValue("@userId", apiKey.UserId);
+        command.Parameters.AddWithValue("@description", apiKey.Description);
+        command.Parameters.AddWithValue("@tokenHash", apiKey.TokenHash);
+        command.Parameters.AddWithValue("@prefix", apiKey.Prefix);
+        command.Parameters.AddWithValue("@isShared", apiKey.IsShared);
+        command.Parameters.AddWithValue("@createdAt", apiKey.CreatedAt);
+        command.Parameters.AddWithValue("@expiresAt", apiKey.ExpiresAt ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("@lastUsedAt", apiKey.LastUsedAt ?? (object)DBNull.Value);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<ApiKey?> GetApiKeyAsync(Guid id)
+    {
+        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = @id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        return MapReaderToApiKey(reader);
+    }
+
+    public async Task<IEnumerable<ApiKey>> GetApiKeysByUserAsync(string userId)
+    {
+        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = @userId ORDER BY created_at DESC";
+        var keys = new List<ApiKey>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@userId", userId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            keys.Add(MapReaderToApiKey(reader));
+        }
+
+        return keys;
+    }
+
+    public async Task<IEnumerable<ApiKey>> GetSharedApiKeysAsync()
+    {
+        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = TRUE ORDER BY created_at DESC";
+        var keys = new List<ApiKey>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            keys.Add(MapReaderToApiKey(reader));
+        }
+        return keys;
+    }
+
+    public async Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix)
+    {
+        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = @prefix";
+        var keys = new List<ApiKey>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@prefix", prefix);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            keys.Add(MapReaderToApiKey(reader));
+        }
+        return keys;
+    }
+
+    public async Task UpdateApiKeyAsync(ApiKey apiKey)
+    {
+        const string sql = "UPDATE api_keys SET description=@description, is_shared=@isShared, last_used_at=@lastUsedAt WHERE id=@id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("@id", apiKey.Id);
+        command.Parameters.AddWithValue("@description", apiKey.Description);
+        command.Parameters.AddWithValue("@isShared", apiKey.IsShared);
+        command.Parameters.AddWithValue("@lastUsedAt", apiKey.LastUsedAt ?? (object)DBNull.Value);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteApiKeyAsync(ApiKey apiKey)
+    {
+        const string sql = "DELETE FROM api_keys WHERE id = @id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", apiKey.Id);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private ApiKey MapReaderToApiKey(NpgsqlDataReader reader)
+    {
+        return new ApiKey
+        {
+            Id = reader.GetGuid(0),
+            UserId = reader.GetString(1),
+            Description = reader.GetString(2),
+            TokenHash = reader.GetString(3),
+            Prefix = reader.GetString(4),
+            IsShared = reader.GetBoolean(5),
+            CreatedAt = reader.GetDateTime(6),
+            ExpiresAt = reader.IsDBNull(7) ? null : reader.GetDateTime(7),
+            LastUsedAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8)
+        };
     }
 
     public async Task InitializeDatabase()

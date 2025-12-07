@@ -20,6 +20,9 @@ builder.Configuration
     .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", true, true)
     .AddEnvironmentVariables("TF_REG_");
 
+// Register database retry options
+builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
+
 // Register MigrationManager and IInitializableDb for database initialization
 builder.Services.AddSingleton<MigrationManager>();
 builder.Services.AddSingleton<IInitializableDb>(provider =>
@@ -87,6 +90,31 @@ builder.Services.AddSingleton<IModuleService>(provider =>
 
 builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
+// Register HttpClientFactory for OAuth flows
+builder.Services.AddHttpClient();
+
+// Register Controllers (for ApiKeyController)
+builder.Services.AddControllers();
+
+// Register Authentication (required for [Authorize] attribute)
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = "CustomBearer";
+    options.DefaultChallengeScheme = "CustomBearer";
+})
+.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TerraformRegistry.Middleware.CustomBearerHandler>("CustomBearer", options => { });
+
+// Register OIDC configuration and services
+var oidcOptions = new OidcOptions();
+builder.Configuration.GetSection("Oidc").Bind(oidcOptions);
+builder.Services.AddSingleton(oidcOptions);
+builder.Services.AddSingleton<JwtService>();
+
+builder.Services.AddSingleton<OAuthService>();
+
+// Register API Key Service
+builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -152,7 +180,16 @@ if (Directory.Exists(webFolderPath))
         RequestPath = ""
     });
 
-app.UseMiddleware<AuthenticationMiddleware>(authToken);
+// Portal authentication middleware (validates JWT sessions for portal routes)
+var jwtService = app.Services.GetRequiredService<JwtService>();
+app.UseMiddleware<PortalAuthenticationMiddleware>(jwtService);
+
+// API key authentication middleware (for /v1/* routes used by Terraform CLI)
+// Supports both static token and JWT session authentication
+app.UseMiddleware<AuthenticationMiddleware>(authToken, jwtService);
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (enableSwagger)
 {
@@ -178,13 +215,49 @@ app.MapGet("/", async context =>
     }
 });
 
+// OIDC Authentication endpoints
+var oauthService = app.Services.GetRequiredService<OAuthService>();
+
+app.MapGet("/api/auth/providers", () => AuthHandlers.GetProviders(oauthService))
+    .WithTags("Authentication")
+    .WithDescription("Returns list of enabled OIDC providers");
+
+app.MapGet("/api/auth/login/{provider}", (string provider, HttpContext context) =>
+        AuthHandlers.Login(provider, oauthService, context))
+    .WithTags("Authentication")
+    .WithDescription("Initiates OIDC login flow for the specified provider");
+
+app.MapGet("/api/auth/callback/{provider}", async (string provider, string? code, string? state, string? error,
+        HttpContext context, IApiKeyService apiKeyService, ILogger<Program> authLogger) =>
+        await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService, context, authLogger))
+    .WithTags("Authentication")
+    .WithDescription("Handles OIDC callback after provider authentication");
+
+app.MapGet("/api/auth/me", (HttpContext context) => AuthHandlers.GetCurrentUser(jwtService, context))
+    .WithTags("Authentication")
+    .WithDescription("Returns current user info from session");
+
+app.MapPost("/api/auth/logout", (HttpContext context) => AuthHandlers.Logout(context))
+    .WithTags("Authentication")
+    .WithDescription("Logs out the current user");
+
+app.MapDelete("/api/auth/me", (HttpContext context, IApiKeyService apiKeyService, IDatabaseService dbService) =>
+        AuthHandlers.DeleteAccount(context, apiKeyService, dbService))
+    .WithTags("Authentication")
+    .WithDescription("Deletes the current user account")
+    .RequireAuthorization();
+
+app.MapGet("/api/auth/session", (HttpContext context) => AuthHandlers.CheckSession(jwtService, context))
+    .WithTags("Authentication")
+    .WithDescription("Checks if user has a valid session");
+
 app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDiscovery)
     .WithTags("Service Discovery")
     .WithDescription("Terraform service discovery endpoint")
     .Produces<ServiceDiscovery>();
 
 app.MapGet("/v1/modules",
-        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset, int limit) =>
+        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0, int limit = 10) =>
             ModuleHandlers.ListModules(moduleService, q, @namespace, provider, offset, limit))
     .WithTags("Modules")
     .WithDescription("Lists or searches modules")
@@ -253,22 +326,12 @@ app.MapGet("/module/download", async context =>
     await context.Response.SendFileAsync(filePath);
 });
 
+app.MapControllers();
+
 app.MapFallback(async context =>
 {
-    // Serve index.html only at root
-    if (context.Request.Path == "/")
-    {
-        var indexPath = Path.Combine(webFolderPath, "index.html");
-        if (File.Exists(indexPath))
-        {
-            context.Response.ContentType = "text/html";
-            await context.Response.SendFileAsync(indexPath);
-            return;
-        }
-    }
-
-    // If path starts with /v1/, return problem JSON
-    if (context.Request.Path.StartsWithSegments("/v1"))
+    // If path starts with /v1/ or /api/, return problem JSON (API routes)
+    if (context.Request.Path.StartsWithSegments("/v1") || context.Request.Path.StartsWithSegments("/api"))
     {
         context.Response.StatusCode = 404;
         context.Response.ContentType = "application/problem+json";
@@ -283,7 +346,16 @@ app.MapFallback(async context =>
         return;
     }
 
-    // All other paths: 404
+    // For all other paths, serve index.html (SPA fallback)
+    var indexPath = Path.Combine(webFolderPath, "index.html");
+    if (File.Exists(indexPath))
+    {
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync(indexPath);
+        return;
+    }
+
+    // If no index.html exists, return 404
     context.Response.StatusCode = 404;
 });
 
