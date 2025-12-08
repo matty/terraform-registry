@@ -21,7 +21,8 @@ public class OidcOptions
 {
     public string JwtSecretKey { get; set; } = string.Empty;
     public int JwtExpiryHours { get; set; } = 24;
-    public Dictionary<string, OidcProviderOptions> Providers { get; set; } = new();
+    public Dictionary<string, OidcProviderOptions> Providers { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>

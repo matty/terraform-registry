@@ -38,19 +38,20 @@ public class OAuthService
             if (!config.Enabled || string.IsNullOrEmpty(config.ClientId))
                 continue;
 
+            var normalizedName = name.ToLowerInvariant();
             providers.Add(new OidcProviderInfo
             {
-                Name = name.ToLowerInvariant(),
-                DisplayName = name switch
+                Name = normalizedName,
+                DisplayName = normalizedName switch
                 {
-                    "GitHub" => "GitHub",
-                    "AzureAD" => "Microsoft",
+                    "github" => "GitHub",
+                    "azuread" => "Azure AD",
                     _ => name
                 },
-                Icon = name switch
+                Icon = normalizedName switch
                 {
-                    "GitHub" => "i-simple-icons-github",
-                    "AzureAD" => "i-simple-icons-microsoft",
+                    "github" => "i-simple-icons-github",
+                    "azuread" => "i-simple-icons-microsoft",
                     _ => "i-lucide-key"
                 }
             });

@@ -41,7 +41,7 @@
             :disabled="isLoading"
             class="w-full justify-center font-medium"
             size="xl"
-            :color="provider.name === 'github' ? 'neutral' : 'primary'"
+            color="neutral"
             variant="solid"
             @click="handleOidcLogin(provider.name)"
           >
