@@ -67,34 +67,36 @@ _Endpoints requiring authentication are marked accordingly._
 
 Configure the application using environment variables (prefix with `TF_REG_`):
 
-| Variable                                     | Description                           | Default                 | Required            | Example                                  |
-| -------------------------------------------- | ------------------------------------- | ----------------------- | ------------------- | ---------------------------------------- |
-| **Core Settings**                            |                                       |                         |                     |
-| `TF_REG_PORT`                                | Application port                      | `5131`                  | No                  | `80`                                     |
-| `TF_REG_BASEURL`                             | Registry base URL                     | `http://localhost:5131` | Yes                 | `https://registry.company.com`           |
-| `TF_REG_AUTHORIZATIONTOKEN`                  | API authentication token              | -                       | Recommended         | `your-secure-token-here`                 |
-| **Database Settings**                        |                                       |                         |                     |
-| `TF_REG_DATABASEPROVIDER`                    | Database type (`sqlite`/`postgres`)   | `sqlite`               | No                  | `postgres`                               |
-| `TF_REG_SQLITE__CONNECTIONSTRING`            | SQLite connection string              | `Data Source=terraform.db` | If using SQLite     | `Data Source=/data/terraform.db`          |
-| `TF_REG_POSTGRESQL__CONNECTIONSTRING`        | PostgreSQL connection                 | -                       | If using PostgreSQL | `Host=localhost;Database=tfregistry;...` |
-| **Storage Settings**                         |                                       |                         |                     |
-| `TF_REG_STORAGEPROVIDER`                     | Storage type (`local`/`azure`)        | `local`                 | No                  | `azure`                                  |
-| `TF_REG_MODULESTORAGEPATH`                   | Local storage path                    | `modules`               | If using local      | `/data/modules`                          |
-| **Azure Storage Settings**                   |                                       |                         |                     |
-| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`      | Azure connection string               | -                       | If using Azure      | `DefaultEndpointsProtocol=https;...`     |
-| `TF_REG_AZURESTORAGE__ACCOUNTNAME`           | Storage account name                  | -                       | If using Azure      | `mystorageaccount`                       |
-| `TF_REG_AZURESTORAGE__CONTAINERNAME`         | Blob container name                   | `modules`               | If using Azure      | `terraform-modules`                      |
-| `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES` | SAS token expiry                      | `5`                     | No                  | `10`                                     |
-| **OIDC Authentication Settings**             |                                       |                         |                     |
-| `TF_REG_OIDC__JWTSECRETKEY`                  | JWT signing key (min 32 chars)        | -                       | Yes (for OIDC)      | `your-256-bit-secret-key-here...`        |
-| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID`   | GitHub OAuth App Client ID            | -                       | If using GitHub     | `Iv1.xxxxxxxxxxxx`                       |
-| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET` | GitHub OAuth App Client Secret      | -                       | If using GitHub     | `xxxxxxxxxxxx`                           |
-| `TF_REG_OIDC__PROVIDERS__GITHUB__ENABLED`    | Enable GitHub OIDC                    | `false`                 | No                  | `true`                                   |
-| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTID`  | Azure AD App Client ID                | -                       | If using Azure AD   | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`   |
-| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTSECRET` | Azure AD App Client Secret         | -                       | If using Azure AD   | `xxxxxxxxxxxx`                           |
-| `TF_REG_OIDC__PROVIDERS__AZUREAD__ENABLED`   | Enable Azure AD OIDC                  | `false`                 | No                  | `true`                                   |
-| **Development Settings**                     |                                       |                         |                     |
-| `TF_REG_ENABLESWAGGER`                       | Enable Swagger UI                     | `true` (dev)            | No                  | `false`                                  |
+| Variable                                                 | Description                                         | Default                                                          | Required            | Example                                                               |
+| -------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------- |
+| **Core Settings**                                        |                                                     |                                                                  |                     |
+| `TF_REG_PORT`                                            | Application port                                    | `5131`                                                           | No                  | `80`                                                                  |
+| `TF_REG_BASEURL`                                         | Registry base URL                                   | `http://localhost:5131`                                          | Yes                 | `https://registry.company.com`                                        |
+| `TF_REG_AUTHORIZATIONTOKEN`                              | API authentication token                            | -                                                                | Recommended         | `your-secure-token-here`                                              |
+| **Database Settings**                                    |                                                     |                                                                  |                     |
+| `TF_REG_DATABASEPROVIDER`                                | Database type (`sqlite`/`postgres`)                 | `sqlite`                                                         | No                  | `postgres`                                                            |
+| `TF_REG_SQLITE__CONNECTIONSTRING`                        | SQLite connection string                            | `Data Source=terraform.db`                                       | If using SQLite     | `Data Source=/data/terraform.db`                                      |
+| `TF_REG_POSTGRESQL__CONNECTIONSTRING`                    | PostgreSQL connection                               | -                                                                | If using PostgreSQL | `Host=localhost;Database=tfregistry;...`                              |
+| **Storage Settings**                                     |                                                     |                                                                  |                     |
+| `TF_REG_STORAGEPROVIDER`                                 | Storage type (`local`/`azure`)                      | `local`                                                          | No                  | `azure`                                                               |
+| `TF_REG_MODULESTORAGEPATH`                               | Local storage path                                  | `modules`                                                        | If using local      | `/data/modules`                                                       |
+| **Azure Storage Settings**                               |                                                     |                                                                  |                     |
+| `TF_REG_AZURESTORAGE__CONNECTIONSTRING`                  | Azure connection string                             | -                                                                | If using Azure      | `DefaultEndpointsProtocol=https;...`                                  |
+| `TF_REG_AZURESTORAGE__ACCOUNTNAME`                       | Storage account name                                | -                                                                | If using Azure      | `mystorageaccount`                                                    |
+| `TF_REG_AZURESTORAGE__CONTAINERNAME`                     | Blob container name                                 | `modules`                                                        | If using Azure      | `terraform-modules`                                                   |
+| `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES`             | SAS token expiry                                    | `5`                                                              | No                  | `10`                                                                  |
+| **OIDC Authentication Settings**                         |                                                     |                                                                  |                     |
+| `TF_REG_OIDC__JWTSECRETKEY`                              | JWT signing key (min 32 chars)                      | -                                                                | Yes (for OIDC)      | `your-256-bit-secret-key-here...`                                     |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID`               | GitHub OAuth App Client ID                          | -                                                                | If using GitHub     | `Iv1.xxxxxxxxxxxx`                                                    |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET`           | GitHub OAuth App Client Secret                      | -                                                                | If using GitHub     | `xxxxxxxxxxxx`                                                        |
+| `TF_REG_OIDC__PROVIDERS__GITHUB__ENABLED`                | Enable GitHub OIDC                                  | `false`                                                          | No                  | `true`                                                                |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTID`              | Azure AD App Client ID                              | -                                                                | If using Azure AD   | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`                                |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__CLIENTSECRET`          | Azure AD App Client Secret                          | -                                                                | If using Azure AD   | `xxxxxxxxxxxx`                                                        |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__ENABLED`               | Enable Azure AD OIDC                                | `false`                                                          | No                  | `true`                                                                |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__AUTHORIZATIONENDPOINT` | Azure AD auth URL (use tenant ID if single-tenant)  | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | If overriding       | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize` |
+| `TF_REG_OIDC__PROVIDERS__AZUREAD__TOKENENDPOINT`         | Azure AD token URL (use tenant ID if single-tenant) | `https://login.microsoftonline.com/common/oauth2/v2.0/token`     | If overriding       | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token`     |
+| **Development Settings**                                 |                                                     |                                                                  |                     |
+| `TF_REG_ENABLESWAGGER`                                   | Enable Swagger UI                                   | `true` (dev)                                                     | No                  | `false`                                                               |
 
 ### Architecture Options
 
@@ -266,6 +268,14 @@ curl -X POST \
 - Verify the storage account and container exist
 - Ensure the connection string has the correct account name and access key
 - Check that the specified container name exists in the storage account
+
+**"AADSTS50194" when using Azure AD**
+
+- If your Azure AD app is single-tenant, replace `common` in the OAuth endpoints with your tenant ID via env vars:
+  - `TF_REG_OIDC__PROVIDERS__AZUREAD__AUTHORIZATIONENDPOINT=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize`
+  - `TF_REG_OIDC__PROVIDERS__AZUREAD__TOKENENDPOINT=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token`
+- Or configure the app registration as multi-tenant so `.../common/...` works.
+- Ensure the redirect URI matches your `TF_REG_BASEURL`: `<BaseUrl>/api/auth/callback/azure`.
 
 ### Health Checks
 
