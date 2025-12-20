@@ -33,17 +33,6 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             CreatedAt = DateTime.UtcNow
         };
 
-        // We need direct access to DbContext if IDatabaseService doesn't expose generic Add/Save.
-        // Assuming IDatabaseService has generic methods or exposes valid Sets.
-        // Or we might need to cast to specific implementation or add methods to IDatabaseService.
-        // For now, assuming we can access DbSet via a method or property, OR use the repository pattern properly.
-        // Let's check IDatabaseService. If it's limited, we might need to update it.
-        // Checking previous file reads, it seems IDatabaseService is generic or we need to add methods.
-        // Actually, let's implement the logic assuming we can add methods to IDatabaseService or accessing DbContext.
-        // But since `IDatabaseService` seems custom, let's look at `PostgreSqlDatabaseService`.
-        // It likely inherits from `DbContext` or wraps it.
-        // Wait, `PostgreSqlDatabaseService` was just DI'd.
-
         await dbService.AddApiKeyAsync(apiKey);
 
         logger.LogInformation("Created new API key {KeyId} for user {UserId}", apiKey.Id, userId);

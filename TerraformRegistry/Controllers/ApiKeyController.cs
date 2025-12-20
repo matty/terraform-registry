@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
-namespace TerraformRegistry.API.Controllers;
+namespace TerraformRegistry.Controllers;
 
 [ApiController]
 [Route("api/keys")]

@@ -1,31 +1,5 @@
 ---
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: terraform-registry-app-dev
-    ports:
-      - "5131:80"
-      - "5132:443"
-    volumes:
-      - module_data:/app/modules
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - TF_REG_DatabaseProvider=postgres
-      - TF_REG_PostgreSQL__ConnectionString=Host=postgres;Database=terraform_registry;Username=terraform_reg_user;Password=terraform_reg_password
-      - TF_REG_BaseUrl=http://localhost:5131
-      - TF_REG_StorageProvider=local
-      - TF_REG_EnableSwagger=true
-      - TF_REG_OIDC__JWTSECRETKEY=
-      - TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID=
-      - TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET=
-      - TF_REG_OIDC__PROVIDERS__GITHUB__ENABLED=false
-      - TF_REG_AUTHORIZATIONTOKEN=MY_TOKEN_123
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   postgres:
     image: postgres:18
     ports:

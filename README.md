@@ -240,43 +240,6 @@ curl -X POST \
   "https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3"
 ```
 
-## Troubleshooting
-
-### Common Issues
-
-**"Module not found"**
-
-- Check if the module was uploaded successfully
-- Verify the namespace/name/provider/version combination
-- Ensure your Terraform configuration matches the uploaded module
-
-**"Authentication failed"**
-
-- Verify your auth token in `~/.terraformrc`
-- Check that `TF_REG_AUTHORIZATIONTOKEN` is set correctly
-- Ensure the token matches between client and server
-
-**"Database connection failed"**
-
-- Verify PostgreSQL connection string
-- Check if the database server is running
-- Ensure the database exists and user has permissions
-
-**"Azure Blob Storage access denied"**
-
-- Check Azure Storage connection string is properly configured
-- Verify the storage account and container exist
-- Ensure the connection string has the correct account name and access key
-- Check that the specified container name exists in the storage account
-
-**"AADSTS50194" when using Azure AD**
-
-- If your Azure AD app is single-tenant, replace `common` in the OAuth endpoints with your tenant ID via env vars:
-  - `TF_REG_OIDC__PROVIDERS__AZUREAD__AUTHORIZATIONENDPOINT=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize`
-  - `TF_REG_OIDC__PROVIDERS__AZUREAD__TOKENENDPOINT=https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token`
-- Or configure the app registration as multi-tenant so `.../common/...` works.
-- Ensure the redirect URI matches your `TF_REG_BASEURL`: `<BaseUrl>/api/auth/callback/azure`.
-
 ### Health Checks
 
 ```bash
