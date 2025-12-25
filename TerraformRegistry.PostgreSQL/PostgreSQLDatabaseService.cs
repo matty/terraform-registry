@@ -664,4 +664,259 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             }
         }
     }
+
+    // Provider Implementation
+
+    public async Task<ProviderVersions?> GetProviderVersionsAsync(string @namespace, string type)
+    {
+        var sql = @"
+            SELECT
+                version,
+                protocols,
+                os,
+                arch
+            FROM
+                providers
+            WHERE
+                namespace = @namespace AND
+                type = @type
+            ORDER BY
+                version DESC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@type", type);
+
+        var versionMap = new Dictionary<string, ProviderVersionInfo>();
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var version = reader.GetString(0);
+            var protocolsJson = reader.GetString(1);
+            var os = reader.GetString(2);
+            var arch = reader.GetString(3);
+
+            var protocols = JsonSerializer.Deserialize<List<string>>(protocolsJson) ?? new List<string>();
+
+            if (!versionMap.ContainsKey(version))
+            {
+                versionMap[version] = new ProviderVersionInfo
+                {
+                    Version = version,
+                    Protocols = protocols,
+                    Platforms = new List<PlatformInfo>()
+                };
+            }
+
+            versionMap[version].Platforms.Add(new PlatformInfo { Os = os, Arch = arch });
+        }
+
+        if (versionMap.Count == 0) return null;
+
+        return new ProviderVersions
+        {
+            Versions = versionMap.Values.ToList()
+        };
+    }
+
+    public async Task<ProviderPackage?> GetProviderPackageAsync(string @namespace, string type, string version, string os, string arch)
+    {
+        return await GetProviderPackageWithKeyAsync(@namespace, type, version, os, arch);
+    }
+
+    public async Task AddProviderPackageAsync(string @namespace, string type, string version, string os, string arch, string filename, string downloadUrl, string shasum, string protocolsJson, string signingKeyId)
+    {
+        var sql = @"
+            INSERT INTO providers (
+                namespace,
+                type,
+                version,
+                os,
+                arch,
+                filename,
+                download_url,
+                shasum,
+                protocols,
+                signing_key_id
+            )
+            VALUES (
+                @namespace,
+                @type,
+                @version,
+                @os,
+                @arch,
+                @filename,
+                @downloadUrl,
+                @shasum,
+                @protocols,
+                @signingKeyId
+            )
+            ON CONFLICT (namespace, type, version, os, arch)
+            DO UPDATE SET
+                filename = @filename,
+                download_url = @downloadUrl,
+                shasum = @shasum,
+                protocols = @protocols,
+                signing_key_id = @signingKeyId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@type", type);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@os", os);
+        command.Parameters.AddWithValue("@arch", arch);
+        command.Parameters.AddWithValue("@filename", filename);
+        command.Parameters.AddWithValue("@downloadUrl", downloadUrl);
+        command.Parameters.AddWithValue("@shasum", shasum);
+        command.Parameters.AddWithValue("@protocols", protocolsJson);
+        command.Parameters.AddWithValue("@signingKeyId", signingKeyId);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<ProviderPackage?> GetProviderPackageWithKeyAsync(string @namespace, string type, string version, string os, string arch)
+    {
+         var sql = @"
+            SELECT
+                p.filename,
+                p.download_url,
+                p.shasum,
+                p.protocols,
+                p.signing_key_id,
+                k.ascii_armor,
+                k.trust_signature
+            FROM
+                providers p
+            LEFT JOIN
+                gpg_keys k ON p.signing_key_id = k.key_id
+            WHERE
+                p.namespace = @namespace AND
+                p.type = @type AND
+                p.version = @version AND
+                p.os = @os AND
+                p.arch = @arch";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@type", type);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@os", os);
+        command.Parameters.AddWithValue("@arch", arch);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        var filename = reader.GetString(0);
+        var downloadUrl = reader.GetString(1);
+        var shasum = reader.GetString(2);
+        var protocolsJson = reader.GetString(3);
+        var keyId = reader.GetString(4);
+        var asciiArmor = reader.IsDBNull(5) ? "" : reader.GetString(5);
+        var trustSignature = reader.IsDBNull(6) ? "" : reader.GetString(6);
+
+        var protocols = JsonSerializer.Deserialize<List<string>>(protocolsJson) ?? new List<string>();
+
+        return new ProviderPackage
+        {
+            Protocols = protocols,
+            Os = os,
+            Arch = arch,
+            Filename = filename,
+            DownloadUrl = downloadUrl,
+            Shasum = shasum,
+            SigningKeys = new SigningKeys
+            {
+                GpgPublicKeys = new List<GpgPublicKey>
+                {
+                    new GpgPublicKey
+                    {
+                        KeyId = keyId,
+                        AsciiArmor = asciiArmor,
+                        TrustSignature = trustSignature,
+                        Source = "Terraform Registry",
+                        SourceUrl = $"{_baseUrl}/v1/providers/{@namespace}/keys/{keyId}"
+                    }
+                }
+            }
+        };
+    }
+
+    public async Task<GpgKey?> GetGpgKeyAsync(string @namespace, string keyId)
+    {
+        var sql = "SELECT key_id, namespace, ascii_armor, trust_signature, created_at FROM gpg_keys WHERE namespace = @namespace AND key_id = @keyId";
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@keyId", keyId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        return new GpgKey
+        {
+            KeyId = reader.GetString(0),
+            Namespace = reader.GetString(1),
+            AsciiArmor = reader.GetString(2),
+            TrustSignature = reader.GetString(3),
+            CreatedAt = reader.GetDateTime(4)
+        };
+    }
+
+    public async Task<IEnumerable<GpgKey>> GetGpgKeysAsync(string @namespace)
+    {
+        var sql = "SELECT key_id, namespace, ascii_armor, trust_signature, created_at FROM gpg_keys WHERE namespace = @namespace";
+        var keys = new List<GpgKey>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            keys.Add(new GpgKey
+            {
+                KeyId = reader.GetString(0),
+                Namespace = reader.GetString(1),
+                AsciiArmor = reader.GetString(2),
+                TrustSignature = reader.GetString(3),
+                CreatedAt = reader.GetDateTime(4)
+            });
+        }
+        return keys;
+    }
+
+    public async Task AddGpgKeyAsync(GpgKey key)
+    {
+        var sql = @"
+            INSERT INTO gpg_keys (key_id, namespace, ascii_armor, trust_signature, created_at)
+            VALUES (@keyId, @namespace, @asciiArmor, @trustSignature, @createdAt)
+            ON CONFLICT (key_id) DO NOTHING"; // Or update?
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@keyId", key.KeyId);
+        command.Parameters.AddWithValue("@namespace", key.Namespace);
+        command.Parameters.AddWithValue("@asciiArmor", key.AsciiArmor);
+        command.Parameters.AddWithValue("@trustSignature", key.TrustSignature);
+        command.Parameters.AddWithValue("@createdAt", key.CreatedAt);
+
+        await command.ExecuteNonQueryAsync();
+    }
 }

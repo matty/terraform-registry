@@ -51,4 +51,12 @@ public interface IDatabaseService
     Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix);
     Task UpdateApiKeyAsync(ApiKey apiKey);
     Task DeleteApiKeyAsync(ApiKey apiKey);
+
+    // Provider Methods
+    Task<ProviderVersions?> GetProviderVersionsAsync(string @namespace, string type);
+    Task<ProviderPackage?> GetProviderPackageAsync(string @namespace, string type, string version, string os, string arch);
+    Task AddProviderPackageAsync(string @namespace, string type, string version, string os, string arch, string filename, string downloadUrl, string shasum, string protocolsJson, string signingKeyId);
+    Task<GpgKey?> GetGpgKeyAsync(string @namespace, string keyId);
+    Task<IEnumerable<GpgKey>> GetGpgKeysAsync(string @namespace);
+    Task AddGpgKeyAsync(GpgKey key);
 }

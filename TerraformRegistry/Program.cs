@@ -60,6 +60,28 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
     }
 });
 
+// Register Provider Storage Service
+builder.Services.AddSingleton<IProviderStorageService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var logger = provider.GetRequiredService<ILogger<LocalProviderStorageService>>();
+    var storageProvider = config["StorageProvider"]?.ToLower() ?? "local";
+
+    switch (storageProvider)
+    {
+        case "azure":
+             var azureLogger = provider.GetRequiredService<ILogger<AzureBlobProviderStorageService>>();
+             return new AzureBlobProviderStorageService(config, azureLogger);
+        case "local":
+            return new LocalProviderStorageService(config, logger);
+        default:
+            return new LocalProviderStorageService(config, logger);
+    }
+});
+
+// Register Provider Service
+builder.Services.AddSingleton<IProviderService, ProviderService>();
+
 // Register module storage service using DI factory
 builder.Services.AddSingleton<IModuleService>(provider =>
 {
@@ -255,6 +277,68 @@ app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDis
     .WithTags("Service Discovery")
     .WithDescription("Terraform service discovery endpoint")
     .Produces<ServiceDiscovery>();
+
+app.MapGet("/v1/providers/{namespace}/{type}/versions",
+        (string @namespace, string type, IProviderService providerService) =>
+            ProviderHandlers.ListProviderVersions(@namespace, type, providerService))
+    .WithTags("Providers")
+    .WithDescription("Lists available versions for a provider")
+    .Produces<ProviderVersions>()
+    .ProducesProblem(404);
+
+app.MapGet("/v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}",
+        (string @namespace, string type, string version, string os, string arch, IProviderService providerService) =>
+            ProviderHandlers.GetProviderPackage(@namespace, type, version, os, arch, providerService))
+    .WithTags("Providers")
+    .WithDescription("Finds a specific provider package")
+    .Produces<ProviderPackage>()
+    .ProducesProblem(404);
+
+app.MapGet("/v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}/file",
+        async (string @namespace, string type, string version, string os, string arch, IProviderStorageService storageService, IConfiguration config) =>
+            await ProviderHandlers.DownloadProviderFile(@namespace, type, version, os, arch, storageService, config))
+    .WithTags("Providers")
+    .WithDescription("Downloads the actual provider binary (Local Storage)");
+
+app.MapGet("/v1/providers/{namespace}/{type}/{version}/SHA256SUMS",
+        (string @namespace, string type, string version, IProviderStorageService storageService) =>
+            ProviderHandlers.DownloadShasums(@namespace, type, version, storageService))
+    .WithTags("Providers")
+    .WithDescription("Downloads the SHA256SUMS file");
+
+app.MapGet("/v1/providers/{namespace}/{type}/{version}/SHA256SUMS.sig",
+        (string @namespace, string type, string version, IProviderStorageService storageService) =>
+            ProviderHandlers.DownloadShasumsSig(@namespace, type, version, storageService))
+    .WithTags("Providers")
+    .WithDescription("Downloads the SHA256SUMS.sig file");
+
+app.MapPost("/v1/providers/{namespace}/{type}/{version}",
+        async (string @namespace, string type, string version, HttpRequest request, IProviderService providerService) =>
+            await ProviderHandlers.UploadProviderVersion(@namespace, type, version, request, providerService))
+    .WithTags("Providers")
+    .WithDescription("Uploads a new provider version (Protected)")
+    .RequireAuthorization()
+    .Accepts<IFormFile>("multipart/form-data");
+
+// GPG Key Management Endpoints (Protected)
+app.MapPost("/v1/providers/{namespace}/gpg-keys",
+        async (string @namespace, GpgKey key, IProviderService providerService, HttpContext context) =>
+            await GpgHandlers.AddGpgKey(@namespace, key, providerService, context))
+    .WithTags("Providers - GPG")
+    .WithDescription("Adds a GPG key for a namespace")
+    .RequireAuthorization();
+
+app.MapGet("/v1/providers/{namespace}/gpg-keys",
+        (string @namespace, IProviderService providerService) =>
+            GpgHandlers.GetGpgKeys(@namespace, providerService))
+    .WithTags("Providers - GPG")
+    .WithDescription("Lists GPG keys for a namespace");
+
+app.MapGet("/v1/providers/{namespace}/keys/{keyId}",
+        (string @namespace, string keyId, IProviderService providerService) =>
+            GpgHandlers.GetGpgKey(@namespace, keyId, providerService))
+    .WithTags("Providers - GPG")
+    .WithDescription("Gets a specific GPG key");
 
 app.MapGet("/v1/modules",
         (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0, int limit = 10) =>

@@ -10,6 +10,6 @@ public class ServiceDiscovery
     [JsonPropertyName("modules.v1")]
     public string ModulesV1 { get; set; } = "/v1/modules/";
 
-    // [JsonPropertyName("providers.v1")]
-    // public string ProvidersV1 { get; set; } = "/v1/providers/";
+    [JsonPropertyName("providers.v1")]
+    public string ProvidersV1 { get; set; } = "/v1/providers/";
 }
