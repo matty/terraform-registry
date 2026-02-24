@@ -33,9 +33,35 @@ public interface IDatabaseService
     Task<bool> AddModuleAsync(ModuleStorage module);
 
     /// <summary>
-    ///     Removes a module from the database
+    ///     Removes a module from the database (permanent delete)
     /// </summary>
     Task<bool> RemoveModuleAsync(ModuleStorage module);
+
+    /// <summary>
+    ///     Soft deletes a module by setting deleted_at timestamp
+    /// </summary>
+    Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Restores a soft-deleted module by clearing deleted_at
+    /// </summary>
+    Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Lists all soft-deleted modules
+    /// </summary>
+    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+
+    /// <summary>
+    ///     Gets a module including soft-deleted ones
+    /// </summary>
+    Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name, string provider,
+        string version);
+
+    /// <summary>
+    ///     Updates the description for all active versions of a module
+    /// </summary>
+    Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
 
     // User & API Key Methods
     Task<User?> GetUserByEmailAsync(string email);

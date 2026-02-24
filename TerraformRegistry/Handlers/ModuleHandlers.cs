@@ -117,7 +117,7 @@ public static class ModuleHandlers
         var userAgent = context.Request.Headers["User-Agent"].ToString();
         var accept = context.Request.Headers["Accept"].ToString();
         var isTerraformClient = userAgent.Contains("Terraform", StringComparison.OrdinalIgnoreCase) ||
-                                 accept.Contains("terraform", StringComparison.OrdinalIgnoreCase);
+                                accept.Contains("terraform", StringComparison.OrdinalIgnoreCase);
 
         if (isTerraformClient)
         {
@@ -189,6 +189,7 @@ public static class ModuleHandlers
             {
                 replaceRaw = request.Query["replace"].ToString();
             }
+
             if (!string.IsNullOrWhiteSpace(replaceRaw))
             {
                 var val = replaceRaw.Trim();
@@ -200,7 +201,8 @@ public static class ModuleHandlers
 
             await using var stream = moduleFile.OpenReadStream();
             var result =
-                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description, replace);
+                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description,
+                    replace);
 
             if (!result)
             {
@@ -223,5 +225,120 @@ public static class ModuleHandlers
             return ErrorResponseExtensions.Conflict(ex.Message);
         }
         // Let other exceptions bubble up to the global exception handler
+    }
+
+    /// <summary>
+    ///     Soft deletes a module version
+    /// </summary>
+    public static async Task<IResult> DeleteModuleVersion(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        IModuleService moduleService)
+    {
+        _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
+            @namespace, name, provider, version);
+
+        var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
+        if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
+
+        return NoContent();
+    }
+
+    /// <summary>
+    ///     Restores a soft-deleted module version
+    /// </summary>
+    public static async Task<IResult> RestoreModuleVersion(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        IModuleService moduleService)
+    {
+        _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
+            @namespace, name, provider, version);
+
+        var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
+        if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
+
+        return NoContent();
+    }
+
+    /// <summary>
+    ///     Permanently deletes a module version (purge)
+    /// </summary>
+    public static async Task<IResult> PurgeModuleVersion(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        IModuleService moduleService)
+    {
+        _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
+            @namespace, name, provider, version);
+
+        var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
+        if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
+
+        return NoContent();
+    }
+
+    /// <summary>
+    ///     Lists all soft-deleted modules
+    /// </summary>
+    public static async Task<IResult> ListDeletedModules(
+        IModuleService moduleService,
+        string? q = null,
+        string? @namespace = null,
+        string? provider = null,
+        int offset = 0,
+        int limit = 10)
+    {
+        _logger.LogInformation(
+            "Listing deleted modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
+            q, @namespace, provider);
+
+        var request = new ModuleSearchRequest
+        {
+            Q = q,
+            Namespace = @namespace,
+            Provider = provider,
+            Offset = offset,
+            Limit = limit
+        };
+
+        var result = await moduleService.ListDeletedModulesAsync(request);
+        return Ok(result);
+    }
+
+    /// <summary>
+    ///     Updates the description for a module
+    /// </summary>
+    public static async Task<IResult> UpdateDescription(
+        string @namespace, string name, string provider,
+        HttpRequest request, IModuleService moduleService)
+    {
+        _logger.LogInformation("Updating description for module {Namespace}/{Name}/{Provider}",
+            @namespace, name, provider);
+
+        try
+        {
+            using var reader = new StreamReader(request.Body);
+            var body = await reader.ReadToEndAsync();
+            var json = System.Text.Json.JsonDocument.Parse(body);
+            var description = json.RootElement.GetProperty("description").GetString() ?? string.Empty;
+
+            var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+            if (!result) return ErrorResponseExtensions.NotFound("Module not found");
+
+            return Ok(new { description });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating description for module {Namespace}/{Name}/{Provider}",
+                @namespace, name, provider);
+            return Error(400, "Invalid request body");
+        }
     }
 }

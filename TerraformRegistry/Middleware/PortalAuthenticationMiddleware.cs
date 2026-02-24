@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Middleware;
@@ -9,7 +10,9 @@ namespace TerraformRegistry.Middleware;
 public class PortalAuthenticationMiddleware(
     RequestDelegate next,
     JwtService jwtService,
-    ILogger<PortalAuthenticationMiddleware> logger)
+    ILogger<PortalAuthenticationMiddleware> logger,
+    IHostEnvironment environment,
+    IConfiguration configuration)
 {
     private const string SessionCookieName = "tf-session";
 
@@ -17,14 +20,26 @@ public class PortalAuthenticationMiddleware(
     private static readonly string[] ProtectedPortalPaths = ["/modules"];
 
     // Routes that bypass auth; login/callback flows are explicitly skipped so auth endpoints can set Context.User.
-    private static readonly string[] PublicPaths = ["/", "/login", "/callback", "/api/auth/login", "/api/auth/callback", "/api/auth/providers"];
+    private static readonly string[] PublicPaths =
+        ["/", "/login", "/callback", "/api/auth/login", "/api/auth/callback", "/api/auth/providers"];
 
     public async Task InvokeAsync(HttpContext context)
     {
         var path = context.Request.Path.Value ?? string.Empty;
 
+        // Dev bypass - skip all auth in dev mode
+        if (environment.IsDevelopment() && IsDevAuthBypassEnabled())
+        {
+            var devUser = GetDevUserPrincipal();
+            context.User = devUser;
+            logger.LogWarning("DEV AUTH BYPASS (Portal): Auto-authenticated as dev user for {Path}", path);
+            await next(context);
+            return;
+        }
+
         // Skip auth for API routes handled by API key middleware; portal uses cookie auth.
-        if (path.StartsWith("/v1/", StringComparison.OrdinalIgnoreCase) || path.StartsWith("/api/keys", StringComparison.OrdinalIgnoreCase))
+        if (path.StartsWith("/v1/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/keys", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
@@ -46,7 +61,8 @@ public class PortalAuthenticationMiddleware(
             if (principal != null)
             {
                 context.User = principal;
-                logger.LogInformation("Portal session validated for {Path}. User: {User}", path, principal.Identity?.Name);
+                logger.LogInformation("Portal session validated for {Path}. User: {User}", path,
+                    principal.Identity?.Name);
             }
         }
 
@@ -74,7 +90,7 @@ public class PortalAuthenticationMiddleware(
     private static bool IsPublicPath(string path)
     {
         return PublicPaths.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase) ||
-                                  path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase));
+                                    path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsProtectedPortalPath(string path)
@@ -86,7 +102,39 @@ public class PortalAuthenticationMiddleware(
 
     private static bool IsStaticFile(string path)
     {
-        var extensions = new[] { ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".map" };
+        var extensions = new[]
+            { ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".map" };
         return extensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Reads the DevAuthBypass config flag.
+    /// </summary>
+    private bool IsDevAuthBypassEnabled()
+    {
+        var devBypass = configuration["DevAuthBypass"];
+        return !string.IsNullOrEmpty(devBypass) &&
+               bool.TryParse(devBypass, out var enabled) && enabled;
+    }
+
+    /// <summary>
+    /// Builds a ClaimsPrincipal for local dev use.
+    /// </summary>
+    private ClaimsPrincipal GetDevUserPrincipal()
+    {
+        var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
+        var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
+        var devName = configuration["DevAuthBypass:Name"] ?? "Dev User";
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, devUserId),
+            new(ClaimTypes.Email, devEmail),
+            new(ClaimTypes.Name, devName),
+            new(ClaimTypes.AuthenticationMethod, "DevBypass")
+        };
+
+        var identity = new ClaimsIdentity(claims, "DevBypass");
+        return new ClaimsPrincipal(identity);
     }
 }

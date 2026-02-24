@@ -149,8 +149,9 @@ public class LocalModuleService : ModuleService
             Description = description,
             FilePath = zipFilePath,
             PublishedAt = File.GetCreationTimeUtc(zipFilePath),
-            Dependencies = [] };
-        
+            Dependencies = []
+        };
+
         _databaseService.AddModuleAsync(module).Wait();
     }
 
@@ -257,6 +258,7 @@ public class LocalModuleService : ModuleService
                 {
                     // ignore DB remove failures here; Add will handle existence
                 }
+
                 try
                 {
                     if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
@@ -305,6 +307,57 @@ public class LocalModuleService : ModuleService
             if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             return false;
         }
+    }
+
+    public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version)
+    {
+        return _databaseService.SoftDeleteModuleAsync(@namespace, name, provider, version);
+    }
+
+    public override Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        return _databaseService.RestoreModuleAsync(@namespace, name, provider, version);
+    }
+
+    public override async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage =
+            await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+        if (moduleStorage == null)
+            return false;
+
+        // Delete from database first (permanent delete)
+        var dbResult = await _databaseService.RemoveModuleAsync(moduleStorage);
+        if (!dbResult)
+            return false;
+
+        // Delete the file from disk
+        try
+        {
+            if (File.Exists(moduleStorage.FilePath))
+                File.Delete(moduleStorage.FilePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete file for purged module {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            // DB deletion succeeded, file deletion may have failed - still return true
+        }
+
+        return true;
+    }
+
+    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    {
+        return _databaseService.ListDeletedModulesAsync(request);
+    }
+
+    public override Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description)
+    {
+        return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
     }
 }
 

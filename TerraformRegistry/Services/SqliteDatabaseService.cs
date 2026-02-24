@@ -39,6 +39,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             storage_path TEXT NOT NULL,
             published_at TEXT NOT NULL,
             dependencies TEXT NOT NULL,
+            deleted_at TEXT NULL,
             UNIQUE(namespace, name, provider, version)
         );";
 
@@ -46,11 +47,29 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         cmd.CommandText = createSql;
         await cmd.ExecuteNonQueryAsync();
 
+        // Add deleted_at column if it doesn't exist (for existing databases)
+        try
+        {
+            await using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE modules ADD COLUMN deleted_at TEXT NULL;";
+            await alterCmd.ExecuteNonQueryAsync();
+        }
+        catch (SqliteException)
+        {
+            // Column already exists, ignore
+        }
+
         // Helpful index for lookups
         var indexSql = "CREATE INDEX IF NOT EXISTS idx_modules_lookup ON modules(namespace, name, provider);";
         await using var idx = connection.CreateCommand();
         idx.CommandText = indexSql;
         await idx.ExecuteNonQueryAsync();
+
+        // Index for soft delete queries
+        var deletedIndexSql = "CREATE INDEX IF NOT EXISTS idx_modules_deleted_at ON modules(deleted_at);";
+        await using var deletedIdx = connection.CreateCommand();
+        deletedIdx.CommandText = deletedIndexSql;
+        await deletedIdx.ExecuteNonQueryAsync();
 
         var createUsersSql = @"
         CREATE TABLE IF NOT EXISTS users (
@@ -98,17 +117,18 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        // Get latest version per (namespace,name,provider)
+        // Get latest version per (namespace,name,provider), excluding soft-deleted
         var sql = @"
             WITH latest AS (
                 SELECT namespace, name, provider, MAX(version) AS latest_version
                 FROM modules
+                WHERE deleted_at IS NULL
                 GROUP BY namespace, name, provider
             )
             SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at
             FROM modules m
             INNER JOIN latest l ON m.namespace = l.namespace AND m.name = l.name AND m.provider = l.provider AND m.version = l.latest_version
-            WHERE 1=1";
+            WHERE m.deleted_at IS NULL";
 
         var conditions = new List<string>();
         var parameters = new List<SqliteParameter>();
@@ -118,11 +138,13 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             conditions.Add(" AND (lower(m.name) LIKE lower($q) OR lower(m.description) LIKE lower($q))");
             parameters.Add(new SqliteParameter("$q", $"%{request.Q}%"));
         }
+
         if (!string.IsNullOrWhiteSpace(request.Namespace))
         {
             conditions.Add(" AND m.namespace = $ns");
             parameters.Add(new SqliteParameter("$ns", request.Namespace));
         }
+
         if (!string.IsNullOrWhiteSpace(request.Provider))
         {
             conditions.Add(" AND m.provider = $prov");
@@ -237,7 +259,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         };
     }
 
-    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider, string version)
+    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider,
+        string version)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -342,11 +365,197 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
-    private static async Task<List<string>> GetVersionsInternal(SqliteConnection connection, string @namespace, string name, string provider)
+    public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"UPDATE modules SET deleted_at = $deletedAt 
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", @namespace);
+            cmd.Parameters.AddWithValue("$name", name);
+            cmd.Parameters.AddWithValue("$prov", provider);
+            cmd.Parameters.AddWithValue("$ver", version);
+            cmd.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o"));
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error soft deleting module {Namespace}/{Name}/{Provider}/{Version} from SQLite",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"UPDATE modules SET deleted_at = NULL 
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NOT NULL";
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", @namespace);
+            cmd.Parameters.AddWithValue("$name", name);
+            cmd.Parameters.AddWithValue("$prov", provider);
+            cmd.Parameters.AddWithValue("$ver", version);
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error restoring module {Namespace}/{Name}/{Provider}/{Version} in SQLite",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    {
+        var modules = new List<ModuleListItem>();
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = @"SELECT namespace, name, provider, version, description, published_at
+            FROM modules WHERE deleted_at IS NOT NULL";
+
+        var conditions = new List<string>();
+        var parameters = new List<SqliteParameter>();
+
+        if (!string.IsNullOrWhiteSpace(request.Q))
+        {
+            conditions.Add(" AND (lower(name) LIKE lower($q) OR lower(description) LIKE lower($q))");
+            parameters.Add(new SqliteParameter("$q", $"%{request.Q}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Namespace))
+        {
+            conditions.Add(" AND namespace = $ns");
+            parameters.Add(new SqliteParameter("$ns", request.Namespace));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Provider))
+        {
+            conditions.Add(" AND provider = $prov");
+            parameters.Add(new SqliteParameter("$prov", request.Provider));
+        }
+
+        sql += string.Join("", conditions);
+        sql += " ORDER BY namespace, name, provider, version LIMIT $limit OFFSET $offset";
+        parameters.Add(new SqliteParameter("$limit", request.Limit));
+        parameters.Add(new SqliteParameter("$offset", request.Offset));
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var p in parameters) command.Parameters.Add(p);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            modules.Add(new ModuleListItem
+            {
+                Id = $"{reader.GetString(0)}/{reader.GetString(1)}/{reader.GetString(2)}/{reader.GetString(3)}",
+                Owner = reader.GetString(0),
+                Namespace = reader.GetString(0),
+                Name = reader.GetString(1),
+                Version = reader.GetString(3),
+                Provider = reader.GetString(2),
+                Description = reader.GetString(4),
+                PublishedAt = reader.GetString(5),
+                Versions = new List<string> { reader.GetString(3) },
+                DownloadUrl =
+                    $"{_baseUrl}/v1/modules/{reader.GetString(0)}/{reader.GetString(1)}/{reader.GetString(2)}/{reader.GetString(3)}/download"
+            });
+        }
+
+        return new ModuleList
+        {
+            Modules = modules,
+            Meta = new Dictionary<string, string>
+            {
+                { "limit", request.Limit.ToString() },
+                { "current_offset", request.Offset.ToString() }
+            }
+        };
+    }
+
+    public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name,
+        string provider, string version)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$prov", provider);
+        cmd.Parameters.AddWithValue("$ver", version);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        var depsJson = reader.GetString(7);
+        var deps = string.IsNullOrWhiteSpace(depsJson)
+            ? new List<string>()
+            : (JsonSerializer.Deserialize<List<string>>(depsJson) ?? new List<string>());
+
+        return new ModuleStorage
+        {
+            Namespace = reader.GetString(0),
+            Name = reader.GetString(1),
+            Provider = reader.GetString(2),
+            Version = reader.GetString(3),
+            Description = reader.GetString(4),
+            FilePath = reader.GetString(5),
+            PublishedAt = DateTime.Parse(reader.GetString(6)),
+            Dependencies = deps
+        };
+    }
+
+    public async Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description)
+    {
+        var sql = @"UPDATE modules SET description = $desc
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND deleted_at IS NULL";
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", @namespace);
+            cmd.Parameters.AddWithValue("$name", name);
+            cmd.Parameters.AddWithValue("$prov", provider);
+            cmd.Parameters.AddWithValue("$desc", description);
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating description for module {Namespace}/{Name}/{Provider} in SQLite",
+                @namespace, name, provider);
+            return false;
+        }
+    }
+
+    private static async Task<List<string>> GetVersionsInternal(SqliteConnection connection, string @namespace,
+        string name, string provider)
     {
         var versions = new List<string>();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = @"SELECT version FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov ORDER BY version DESC";
+        cmd.CommandText =
+            @"SELECT version FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND deleted_at IS NULL ORDER BY version DESC";
         cmd.Parameters.AddWithValue("$ns", @namespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
@@ -361,7 +570,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = $email";
+        cmd.CommandText =
+            "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = $email";
         cmd.Parameters.AddWithValue("$email", email);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -466,8 +676,10 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         cmd.Parameters.AddWithValue("$prefix", apiKey.Prefix);
         cmd.Parameters.AddWithValue("$shared", apiKey.IsShared ? 1 : 0);
         cmd.Parameters.AddWithValue("$created", apiKey.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$expires", apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o") : DBNull.Value);
-        cmd.Parameters.AddWithValue("$lastUsed", apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
+        cmd.Parameters.AddWithValue("$expires",
+            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o") : DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastUsed",
+            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -477,7 +689,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = $id";
+        cmd.CommandText =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", id.ToString());
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -492,7 +705,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = $uid ORDER BY created_at DESC";
+        cmd.CommandText =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = $uid ORDER BY created_at DESC";
         cmd.Parameters.AddWithValue("$uid", userId);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -500,6 +714,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         {
             keys.Add(MapApiKey(reader));
         }
+
         return keys;
     }
 
@@ -509,13 +724,15 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = 1 ORDER BY created_at DESC";
+        cmd.CommandText =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = 1 ORDER BY created_at DESC";
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             keys.Add(MapApiKey(reader));
         }
+
         return keys;
     }
 
@@ -525,7 +742,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = $prefix";
+        cmd.CommandText =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = $prefix";
         cmd.Parameters.AddWithValue("$prefix", prefix);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -533,6 +751,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         {
             keys.Add(MapApiKey(reader));
         }
+
         return keys;
     }
 
@@ -548,7 +767,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         cmd.Parameters.AddWithValue("$id", apiKey.Id.ToString());
         cmd.Parameters.AddWithValue("$desc", apiKey.Description);
         cmd.Parameters.AddWithValue("$shared", apiKey.IsShared ? 1 : 0);
-        cmd.Parameters.AddWithValue("$lastUsed", apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastUsed",
+            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
     }

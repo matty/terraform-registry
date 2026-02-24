@@ -51,4 +51,32 @@ public abstract class ModuleService : IModuleService
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
         Stream moduleContent, string description, bool replace);
+
+    /// <summary>
+    ///     Soft deletes a module version
+    /// </summary>
+    public abstract Task<bool>
+        DeleteModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Restores a soft-deleted module version
+    /// </summary>
+    public abstract Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+        string version);
+
+    /// <summary>
+    ///     Permanently deletes a module version (purge)
+    /// </summary>
+    public abstract Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Lists all soft-deleted modules
+    /// </summary>
+    public abstract Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+
+    /// <summary>
+    ///     Updates the description for all active versions of a module
+    /// </summary>
+    public abstract Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description);
 }

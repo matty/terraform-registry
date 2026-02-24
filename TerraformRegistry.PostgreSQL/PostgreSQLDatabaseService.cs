@@ -46,6 +46,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                     MAX(version) AS latest_version
                 FROM 
                     modules
+                WHERE deleted_at IS NULL
                 GROUP BY 
                     namespace, name, provider
             )
@@ -63,7 +64,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                     WHERE 
                         namespace = m.namespace AND 
                         name = m.name AND 
-                        provider = m.provider
+                        provider = m.provider AND
+                        deleted_at IS NULL
                     ORDER BY version DESC
                 ) AS versions
             FROM 
@@ -74,7 +76,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                     m.name = lv.name AND 
                     m.provider = lv.provider AND 
                     m.version = lv.latest_version
-            WHERE 1=1";
+            WHERE m.deleted_at IS NULL";
 
         if (!string.IsNullOrWhiteSpace(request.Q))
         {
@@ -232,7 +234,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             WHERE 
                 namespace = @namespace AND
                 name = @name AND
-                provider = @provider
+                provider = @provider AND
+                deleted_at IS NULL
             ORDER BY 
                 version DESC";
 
@@ -408,10 +411,194 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"UPDATE modules SET deleted_at = @deletedAt 
+            WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NULL";
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@provider", provider);
+            command.Parameters.AddWithValue("@version", version);
+            command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
+            var rows = await command.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error soft deleting module {Namespace}/{Name}/{Provider}/{Version} from PostgreSQL",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"UPDATE modules SET deleted_at = NULL 
+            WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NOT NULL";
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@provider", provider);
+            command.Parameters.AddWithValue("@version", version);
+            var rows = await command.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error restoring module {Namespace}/{Name}/{Provider}/{Version} in PostgreSQL",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    {
+        var modules = new List<ModuleListItem>();
+        var conditions = new List<string>();
+        var parameters = new List<NpgsqlParameter>();
+        var paramCounter = 0;
+
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at
+            FROM modules WHERE deleted_at IS NOT NULL";
+
+        if (!string.IsNullOrWhiteSpace(request.Q))
+        {
+            conditions.Add($" AND (name ILIKE @p{paramCounter} OR description ILIKE @p{paramCounter})");
+            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", $"%{request.Q}%"));
+            paramCounter++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Namespace))
+        {
+            conditions.Add($" AND namespace = @p{paramCounter}");
+            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Namespace));
+            paramCounter++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Provider))
+        {
+            conditions.Add($" AND provider = @p{paramCounter}");
+            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Provider));
+            paramCounter++;
+        }
+
+        sql += string.Join(" ", conditions);
+        sql += $" ORDER BY namespace, name, provider, version LIMIT @p{paramCounter} OFFSET @p{paramCounter + 1}";
+        parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Limit));
+        parameters.Add(new NpgsqlParameter($"@p{paramCounter + 1}", request.Offset));
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddRange(parameters.ToArray());
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var ns = reader.GetString(0);
+            var n = reader.GetString(1);
+            var p = reader.GetString(2);
+            var v = reader.GetString(3);
+            modules.Add(new ModuleListItem
+            {
+                Id = $"{ns}/{n}/{p}/{v}",
+                Owner = ns,
+                Namespace = ns,
+                Name = n,
+                Version = v,
+                Provider = p,
+                Description = reader.GetString(4),
+                PublishedAt = reader.GetDateTime(6).ToString("o"),
+                Versions = new List<string> { v },
+                DownloadUrl = $"{_baseUrl}/v1/modules/{ns}/{n}/{p}/{v}/download"
+            });
+        }
+
+        return new ModuleList
+        {
+            Modules = modules,
+            Meta = new Dictionary<string, string>
+            {
+                { "limit", request.Limit.ToString() },
+                { "current_offset", request.Offset.ToString() }
+            }
+        };
+    }
+
+    public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name,
+        string provider, string version)
+    {
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            FROM modules WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+
+        var dependenciesJson = reader.GetString(7);
+        var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
+
+        return new ModuleStorage
+        {
+            Namespace = reader.GetString(0),
+            Name = reader.GetString(1),
+            Provider = reader.GetString(2),
+            Version = reader.GetString(3),
+            Description = reader.GetString(4),
+            FilePath = reader.GetString(5),
+            PublishedAt = reader.GetDateTime(6),
+            Dependencies = dependencies
+        };
+    }
+
+    public async Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description)
+    {
+        var sql = @"UPDATE modules SET description = @description
+            WHERE namespace = @namespace AND name = @name AND provider = @provider AND deleted_at IS NULL";
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@provider", provider);
+            command.Parameters.AddWithValue("@description", description);
+            var rows = await command.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating description for module {Namespace}/{Name}/{Provider} in PostgreSQL",
+                @namespace, name, provider);
+            return false;
+        }
+    }
+
     // User Methods
     public async Task<User?> GetUserByEmailAsync(string email)
     {
-        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = @email";
+        const string sql =
+            "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = @email";
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
@@ -475,7 +662,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task UpdateUserAsync(User user)
     {
-        const string sql = "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, updated_at=@updatedAt WHERE id=@id";
+        const string sql =
+            "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, updated_at=@updatedAt WHERE id=@id";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -526,7 +714,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task<ApiKey?> GetApiKeyAsync(Guid id)
     {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = @id";
+        const string sql =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = @id";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -541,7 +730,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task<IEnumerable<ApiKey>> GetApiKeysByUserAsync(string userId)
     {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = @userId ORDER BY created_at DESC";
+        const string sql =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = @userId ORDER BY created_at DESC";
         var keys = new List<ApiKey>();
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -560,7 +750,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task<IEnumerable<ApiKey>> GetSharedApiKeysAsync()
     {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = TRUE ORDER BY created_at DESC";
+        const string sql =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = TRUE ORDER BY created_at DESC";
         var keys = new List<ApiKey>();
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -572,12 +763,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         {
             keys.Add(MapReaderToApiKey(reader));
         }
+
         return keys;
     }
 
     public async Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix)
     {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = @prefix";
+        const string sql =
+            "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = @prefix";
         var keys = new List<ApiKey>();
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -590,12 +783,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         {
             keys.Add(MapReaderToApiKey(reader));
         }
+
         return keys;
     }
 
     public async Task UpdateApiKeyAsync(ApiKey apiKey)
     {
-        const string sql = "UPDATE api_keys SET description=@description, is_shared=@isShared, last_used_at=@lastUsedAt WHERE id=@id";
+        const string sql =
+            "UPDATE api_keys SET description=@description, is_shared=@isShared, last_used_at=@lastUsedAt WHERE id=@id";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();

@@ -14,12 +14,19 @@ export interface OidcProvider {
   icon: string;
 }
 
+// Dev bypass status from /api/auth/dev-status
+export interface DevBypassStatus {
+  enabled: boolean;
+  environment: string;
+}
+
 export const useAuth = () => {
   // Session-based auth (OIDC) - checked via cookie on server
   const isAuthenticated = useState<boolean>("auth-authenticated", () => false);
   const user = useState<UserInfo | null>("auth-user", () => null);
   const providers = useState<OidcProvider[]>("auth-providers", () => []);
   const isLoading = useState<boolean>("auth-loading", () => true);
+  const devBypassEnabled = useState<boolean>("auth-dev-bypass", () => false);
 
   // API token for Terraform CLI operations (stored in cookie)
   const apiToken = useCookie<string | null>("auth-token", {
@@ -68,6 +75,48 @@ export const useAuth = () => {
     }
   };
 
+  // Try to auto-login via dev bypass (dev mode only)
+  const checkDevBypass = async () => {
+    if (import.meta.dev) {
+      try {
+        // Hit the dev-login endpoint; 404 in prod, 400 if not enabled
+        const response = await $fetch<{ enabled: boolean }>("/api/auth/dev-login", {
+          method: "POST",
+        });
+        devBypassEnabled.value = true;
+        // Success — session was created
+        isAuthenticated.value = true;
+        await fetchUser();
+        return true;
+      } catch (error: any) {
+        if (error?.statusCode === 400) {
+          // Exists but not enabled
+          devBypassEnabled.value = false;
+        } else {
+          // Not available
+          devBypassEnabled.value = false;
+        }
+        return false;
+      }
+    }
+    return false;
+  };
+
+  // Login via dev bypass (Development mode only)
+  const loginDevBypass = async (): Promise<boolean> => {
+    if (import.meta.dev) {
+      try {
+        await $fetch("/api/auth/dev-login", { method: "POST" });
+        isAuthenticated.value = true;
+        await fetchUser();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
   // Initiate OIDC login flow
   const loginWithOidc = (provider: string) => {
     window.location.href = `/api/auth/login/${provider}`;
@@ -108,15 +157,19 @@ export const useAuth = () => {
     providers: readonly(providers),
     isLoading: readonly(isLoading),
     apiToken: readonly(apiToken),
+    devBypassEnabled: readonly(devBypassEnabled),
     hasOidcProviders,
 
     // Actions
     checkSession,
     fetchUser,
     fetchProviders,
+    checkDevBypass,
+    loginDevBypass,
     loginWithOidc,
     loginWithToken,
     logout,
     getAuthHeaders,
   };
 };
+

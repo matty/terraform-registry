@@ -7,7 +7,9 @@ public class AuthenticationMiddleware(
     RequestDelegate next,
     string authToken,
     JwtService jwtService,
-    ILogger<AuthenticationMiddleware> logger)
+    ILogger<AuthenticationMiddleware> logger,
+    IHostEnvironment environment,
+    IConfiguration configuration)
 {
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
@@ -19,6 +21,16 @@ public class AuthenticationMiddleware(
         var path = context.Request.Path.Value ?? string.Empty;
         if (ProtectedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
         {
+            // Dev bypass - skip all auth checks in dev mode
+            if (environment.IsDevelopment() && IsDevAuthBypassEnabled())
+            {
+                var devUser = GetDevUserPrincipal();
+                context.User = devUser;
+                logger.LogWarning("DEV AUTH BYPASS: Auto-authenticated as dev user for {Path}", path);
+                await next(context);
+                return;
+            }
+
             var header = context.Request.Headers[AuthorizationHeader].FirstOrDefault();
 
             // Check 1: Static API token (Legacy/System)
@@ -67,7 +79,8 @@ public class AuthenticationMiddleware(
                 if (principal != null)
                 {
                     context.User = principal;
-                    logger.LogInformation("Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
+                    logger.LogInformation(
+                        "Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
                         path,
                         principal.Identity?.Name,
                         context.User.Identity?.IsAuthenticated,
@@ -79,7 +92,8 @@ public class AuthenticationMiddleware(
                 }
                 else
                 {
-                    logger.LogWarning("Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path, sessionToken.Substring(0, Math.Min(10, sessionToken.Length)));
+                    logger.LogWarning("Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path,
+                        sessionToken.Substring(0, Math.Min(10, sessionToken.Length)));
                 }
             }
             else
@@ -130,9 +144,41 @@ public class AuthenticationMiddleware(
             {
                 await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
             }
+
             return;
         }
 
         await next(context);
+    }
+
+    /// <summary>
+    /// Reads the DevAuthBypass config flag.
+    /// </summary>
+    private bool IsDevAuthBypassEnabled()
+    {
+        var devBypass = configuration["DevAuthBypass"];
+        return !string.IsNullOrEmpty(devBypass) &&
+               bool.TryParse(devBypass, out var enabled) && enabled;
+    }
+
+    /// <summary>
+    /// Builds a ClaimsPrincipal for local dev use.
+    /// </summary>
+    private ClaimsPrincipal GetDevUserPrincipal()
+    {
+        var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
+        var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
+        var devName = configuration["DevAuthBypass:Name"] ?? "Dev User";
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, devUserId),
+            new(ClaimTypes.Email, devEmail),
+            new(ClaimTypes.Name, devName),
+            new(ClaimTypes.AuthenticationMethod, "DevBypass")
+        };
+
+        var identity = new ClaimsIdentity(claims, "DevBypass");
+        return new ClaimsPrincipal(identity);
     }
 }

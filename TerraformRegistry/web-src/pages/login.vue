@@ -3,13 +3,8 @@
     <div class="max-w-md w-full">
       <!-- Header -->
       <div class="text-center mb-8">
-        <div
-          class="w-16 h-16 mx-auto mb-6 bg-neutral-800 rounded-2xl flex items-center justify-center"
-        >
-          <UIcon name="i-lucide-box" class="text-3xl text-white" />
-        </div>
-        <h1 class="text-3xl font-bold text-slate-100 mb-2">Welcome</h1>
-        <p class="text-slate-400">Sign in to access your Terraform Registry</p>
+        <h1 class="text-3xl font-bold text-white mb-2">Welcome</h1>
+        <p class="text-neutral-400">Sign in to access your Terraform Registry</p>
       </div>
 
       <!-- Error Alert -->
@@ -28,7 +23,7 @@
         <div v-if="isLoadingProviders" class="flex justify-center py-8">
           <UIcon
             name="i-lucide-loader-2"
-            class="animate-spin text-3xl text-blue-500"
+            class="animate-spin text-3xl text-neutral-400"
           />
         </div>
 
@@ -56,7 +51,7 @@
             name="i-lucide-triangle-alert"
             class="text-4xl text-amber-500 mb-4"
           />
-          <p class="text-slate-400">No authentication providers configured.</p>
+          <p class="text-neutral-400">No authentication providers configured.</p>
         </div>
       </UCard>
     </div>

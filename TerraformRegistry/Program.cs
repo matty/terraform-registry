@@ -98,11 +98,12 @@ builder.Services.AddControllers();
 
 // Register Authentication (required for [Authorize] attribute)
 builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = "CustomBearer";
-    options.DefaultChallengeScheme = "CustomBearer";
-})
-.AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TerraformRegistry.Middleware.CustomBearerHandler>("CustomBearer", options => { });
+    {
+        options.DefaultAuthenticateScheme = "CustomBearer";
+        options.DefaultChallengeScheme = "CustomBearer";
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+        TerraformRegistry.Middleware.CustomBearerHandler>("CustomBearer", options => { });
 
 // Register OIDC configuration and services
 var oidcOptions = new OidcOptions();
@@ -228,8 +229,9 @@ app.MapGet("/api/auth/login/{provider}", (string provider, HttpContext context) 
     .WithDescription("Initiates OIDC login flow for the specified provider");
 
 app.MapGet("/api/auth/callback/{provider}", async (string provider, string? code, string? state, string? error,
-        HttpContext context, IApiKeyService apiKeyService, ILogger<Program> authLogger) =>
-        await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService, context, authLogger))
+            HttpContext context, IApiKeyService apiKeyService, ILogger<Program> authLogger) =>
+        await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService, context,
+            authLogger))
     .WithTags("Authentication")
     .WithDescription("Handles OIDC callback after provider authentication");
 
@@ -251,13 +253,21 @@ app.MapGet("/api/auth/session", (HttpContext context) => AuthHandlers.CheckSessi
     .WithTags("Authentication")
     .WithDescription("Checks if user has a valid session");
 
+// Dev-only login endpoint
+app.MapPost("/api/auth/dev-login",
+        (JwtService jwt, IConfiguration cfg, IHostEnvironment env, HttpContext ctx) =>
+            AuthHandlers.DevLogin(jwt, cfg, env, ctx))
+    .WithTags("Authentication")
+    .WithDescription("Creates a dev session (Development only, requires TF_REG_DevAuthBypass=true)");
+
 app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDiscovery)
     .WithTags("Service Discovery")
     .WithDescription("Terraform service discovery endpoint")
     .Produces<ServiceDiscovery>();
 
 app.MapGet("/v1/modules",
-        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0, int limit = 10) =>
+        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
+                int limit = 10) =>
             ModuleHandlers.ListModules(moduleService, q, @namespace, provider, offset, limit))
     .WithTags("Modules")
     .WithDescription("Lists or searches modules")
@@ -303,6 +313,47 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
     .ProducesProblem(400)
     .ProducesProblem(409)
     .Produces(201);
+
+// Module version management - soft delete, restore, purge
+app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
+            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService))
+    .WithTags("Modules")
+    .WithDescription("Soft deletes a module version")
+    .Produces(204)
+    .ProducesProblem(404);
+
+app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}/restore",
+        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
+            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService))
+    .WithTags("Modules")
+    .WithDescription("Restores a soft-deleted module version")
+    .Produces(204)
+    .ProducesProblem(404);
+
+app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}/purge",
+        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
+            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService))
+    .WithTags("Modules")
+    .WithDescription("Permanently deletes a module version")
+    .Produces(204)
+    .ProducesProblem(404);
+
+app.MapGet("/v1/modules/trash",
+        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
+                int limit = 10) =>
+            ModuleHandlers.ListDeletedModules(moduleService, q, @namespace, provider, offset, limit))
+    .WithTags("Modules")
+    .WithDescription("Lists all soft-deleted modules")
+    .Produces<ModuleList>();
+
+app.MapPatch("/v1/modules/{namespace}/{name}/{provider}/description",
+        (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService) =>
+            ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService))
+    .WithTags("Modules")
+    .WithDescription("Updates the description for a module")
+    .Produces(200)
+    .ProducesProblem(404);
 
 app.MapGet("/module/download", async context =>
 {

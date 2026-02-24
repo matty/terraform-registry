@@ -199,4 +199,57 @@ public static class AuthHandlers
 
         return Results.Ok();
     }
+
+    /// <summary>
+    /// Creates a dev session (Development only, requires DevAuthBypass).
+    /// </summary>
+    public static IResult DevLogin(
+        JwtService jwtService,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        HttpContext context)
+    {
+        // Never allow this in prod
+        if (!environment.IsDevelopment())
+        {
+            return Results.NotFound();
+        }
+
+        // Bail if bypass isn't turned on
+        var devBypass = configuration["DevAuthBypass"];
+        if (string.IsNullOrEmpty(devBypass) || !bool.TryParse(devBypass, out var enabled) || !enabled)
+        {
+            return Results.BadRequest(new { error = "Dev auth bypass is not enabled. Set TF_REG_DevAuthBypass=true" });
+        }
+
+        // Dev user details (overridable via config)
+        var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
+        var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
+        var devName = configuration["DevAuthBypass:Name"] ?? "Dev User";
+
+        // Generate session token
+        var token = jwtService.GenerateToken(
+            devUserId,
+            devEmail,
+            devName,
+            "DevBypass",
+            "" // No avatar for dev user
+        );
+
+        // Set session cookie
+        context.Response.Cookies.Append(SessionCookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = context.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            MaxAge = TimeSpan.FromHours(24)
+        });
+
+        return Results.Ok(new
+        {
+            message = "Dev session created",
+            user = new { id = devUserId, email = devEmail, name = devName, provider = "DevBypass" }
+        });
+    }
 }
+
