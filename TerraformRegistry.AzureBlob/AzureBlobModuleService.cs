@@ -201,22 +201,36 @@ public class AzureBlobModuleService : ModuleService
         var blobClient = _containerClient.GetBlobClient(blobPath);
 
         // Check if blob already exists to avoid duplication or allow replacement
-        if (await blobClient.ExistsAsync())
+        var blobExists = await blobClient.ExistsAsync();
+        if (blobExists)
         {
             if (!replace)
             {
-                _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
-                return false;
-            }
+                var existingModule = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+                if (existingModule == null)
+                {
+                    var repairedModule = new ModuleStorage
+                    {
+                        Namespace = @namespace,
+                        Name = name,
+                        Provider = provider,
+                        Version = version,
+                        Description = description,
+                        FilePath = blobPath,
+                        PublishedAt = DateTime.UtcNow,
+                        Dependencies = []
+                    };
 
-            // Replace requested: delete existing blob
-            try
-            {
-                await blobClient.DeleteIfExistsAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Failed to delete existing blob for {@namespace}/{name}/{provider}/{version}");
+                    var repaired = await _databaseService.AddModuleAsync(repairedModule);
+                    if (repaired)
+                        _logger.LogInformation(
+                            $"Repaired orphaned database entry for module {@namespace}/{name}/{provider}/{version}");
+                    else
+                        _logger.LogError(
+                            $"Failed to repair orphaned database entry for module {@namespace}/{name}/{provider}/{version}");
+                }
+
+                _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
                 return false;
             }
         }
@@ -251,27 +265,24 @@ public class AzureBlobModuleService : ModuleService
                 Dependencies = new List<string>() // Simplified, no dependencies
             };
 
-            if (replace)
-            {
-                try
-                {
-                    await _databaseService.RemoveModuleAsync(module);
-                }
-                catch
-                {
-                    // ignore DB remove failures; Add will handle upsert where supported
-                }
-            }
-
             // Add to database - this stores metadata and the blob path reference
             var result = await _databaseService.AddModuleAsync(module);
 
             if (!result)
             {
-                // Clean up the blob if database insertion fails to maintain consistency
-                await blobClient.DeleteAsync();
-                _logger.LogError(
-                    $"Failed to add module {@namespace}/{name}/{provider}/{version} to database, cleaned up blob storage");
+                // For new uploads, clean up the blob if database insertion fails to maintain consistency.
+                // For replace uploads, avoid deleting to prevent purging an existing module blob on DB errors.
+                if (!replace || !blobExists)
+                {
+                    await blobClient.DeleteAsync();
+                    _logger.LogError(
+                        $"Failed to add module {@namespace}/{name}/{provider}/{version} to database, cleaned up blob storage");
+                }
+                else
+                {
+                    _logger.LogError(
+                        $"Failed to update module {@namespace}/{name}/{provider}/{version} in database; blob was kept to avoid accidental purge");
+                }
             }
 
             return result;
