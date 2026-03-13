@@ -403,11 +403,18 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             var rowsAffected = await command.ExecuteNonQueryAsync();
             return rowsAffected > 0;
         }
+        catch (PostgresException ex) when (ex.SqlState == "23503") // FK violation
+        {
+            _logger.LogError(ex,
+                "Cannot remove module {Namespace}/{Name}/{Provider}/{Version}: referenced by download records",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database",
                 module.Namespace, module.Name, module.Provider, module.Version);
-            return false;
+            throw;
         }
     }
 
