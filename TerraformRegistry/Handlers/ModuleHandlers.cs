@@ -240,6 +240,13 @@ public static class ModuleHandlers
         _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
+        if (!SemVerValidator.IsValid(version))
+        {
+            _logger.LogWarning("Invalid version format: {Version}", version);
+            return ErrorResponseExtensions.BadRequest(
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+        }
+
         var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
@@ -259,6 +266,13 @@ public static class ModuleHandlers
         _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
+        if (!SemVerValidator.IsValid(version))
+        {
+            _logger.LogWarning("Invalid version format: {Version}", version);
+            return ErrorResponseExtensions.BadRequest(
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+        }
+
         var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
@@ -277,6 +291,13 @@ public static class ModuleHandlers
     {
         _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
+
+        if (!SemVerValidator.IsValid(version))
+        {
+            _logger.LogWarning("Invalid version format: {Version}", version);
+            return ErrorResponseExtensions.BadRequest(
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+        }
 
         var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
