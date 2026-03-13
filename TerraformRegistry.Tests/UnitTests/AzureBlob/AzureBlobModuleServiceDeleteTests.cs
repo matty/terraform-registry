@@ -89,7 +89,9 @@ public class AzureBlobModuleServiceDeleteTests
         };
 
         var blobClient = new Mock<BlobClient>();
-        blobClient.Setup(x => x.ExistsAsync(default)).ReturnsAsync(Response.FromValue(false, Mock.Of<Response>()));
+        blobClient
+            .Setup(x => x.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(), It.IsAny<BlobRequestConditions>(), default))
+            .ReturnsAsync(Response.FromValue(false, Mock.Of<Response>()));
 
         _mockContainerClient.Setup(x => x.GetBlobClient(storage.FilePath)).Returns(blobClient.Object);
         _mockDatabaseService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);

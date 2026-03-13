@@ -69,13 +69,16 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task Delete_MissingModule_ReturnsNoContent()
+    public async Task Delete_NonExistentModule_ReturnsNoContent_Idempotent()
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
-        var deleteResponse = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/9.9.9");
-        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+        var firstDeleteResponse = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/9.9.9");
+        var secondDeleteResponse = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/9.9.9");
+
+        Assert.Equal(HttpStatusCode.NoContent, firstDeleteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, secondDeleteResponse.StatusCode);
     }
 
     private async Task UploadTestModule(HttpClient client, string version)

@@ -329,11 +329,10 @@ public class AzureBlobModuleService : ModuleService
         var storageClean = true;
         try
         {
-            if (await blobClient.ExistsAsync())
-            {
-                var deleteResult = await blobClient.DeleteIfExistsAsync();
-                storageClean = deleteResult.Value;
-            }
+            var deleteResult = await blobClient.DeleteIfExistsAsync();
+            if (!deleteResult.Value)
+                _logger.LogInformation("Module blob already absent for {Namespace}/{Name}/{Provider}/{Version}",
+                    @namespace, name, provider, version);
         }
         catch (Exception ex)
         {
