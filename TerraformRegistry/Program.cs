@@ -304,6 +304,15 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
     .ProducesProblem(409)
     .Produces(201);
 
+app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
+            ModuleHandlers.DeleteModule(@namespace, name, provider, version, moduleService))
+    .WithTags("Modules")
+    .WithDescription("Deletes a specific module version")
+    .Produces(204)
+    .ProducesProblem(400)
+    .ProducesProblem(500);
+
 app.MapGet("/module/download", async context =>
 {
     var token = context.Request.Query["token"].ToString();

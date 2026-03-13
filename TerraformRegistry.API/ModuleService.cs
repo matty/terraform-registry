@@ -51,4 +51,22 @@ public abstract class ModuleService : IModuleService
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
         Stream moduleContent, string description, bool replace);
+
+    /// <summary>
+    ///     Deletes a module with SemVer validation
+    /// </summary>
+    public async Task<bool> DeleteModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        if (!SemVerValidator.IsValid(version))
+            throw new ArgumentException(
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]",
+                nameof(version));
+
+        return await DeleteModuleAsyncImpl(@namespace, name, provider, version);
+    }
+
+    /// <summary>
+    ///     Implementation-specific method to delete a module after validation
+    /// </summary>
+    protected abstract Task<bool> DeleteModuleAsyncImpl(string @namespace, string name, string provider, string version);
 }

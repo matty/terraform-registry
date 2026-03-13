@@ -56,6 +56,44 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Delete_ExistingModule_ReturnsNoContent()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        await UploadTestModule(client, "1.1.0");
+
+        var deleteResponse = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/1.1.0");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_MissingModule_ReturnsNoContent()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        var deleteResponse = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/9.9.9");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    private async Task UploadTestModule(HttpClient client, string version)
+    {
+        var projectDir = GetProjectDirectory();
+        var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
+        var fileName = Path.GetFileName(moduleFilePath);
+
+        await using var fileStream = File.OpenRead(moduleFilePath);
+        using var content = new MultipartFormDataContent();
+        using var streamContent = new StreamContent(fileStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
+        content.Add(streamContent, "moduleFile", fileName);
+
+        var uploadResponse = await client.PostAsync($"/v1/modules/test-ns/test-name/test-provider/{version}", content);
+        Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
+    }
+
     /// <summary>
     ///     Gets the test project directory path
     /// </summary>

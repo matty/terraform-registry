@@ -306,6 +306,45 @@ public class AzureBlobModuleService : ModuleService
         }
     }
 
+    protected override async Task<bool> DeleteModuleAsyncImpl(string @namespace, string name, string provider,
+        string version)
+    {
+        var defaultBlobPath = $"{@namespace}/{name}-{provider}-{version}.zip";
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var blobPath = moduleStorage?.FilePath ?? defaultBlobPath;
+
+        var dbClean = moduleStorage == null;
+        if (!dbClean)
+            try
+            {
+                dbClean = await _databaseService.RemoveModuleAsync(moduleStorage!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to remove module metadata for {Namespace}/{Name}/{Provider}/{Version}",
+                    @namespace, name, provider, version);
+            }
+
+        var blobClient = _containerClient.GetBlobClient(blobPath);
+        var storageClean = true;
+        try
+        {
+            if (await blobClient.ExistsAsync())
+            {
+                var deleteResult = await blobClient.DeleteIfExistsAsync();
+                storageClean = deleteResult.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            storageClean = false;
+            _logger.LogError(ex, "Failed to delete module blob for {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+        }
+
+        return dbClean && storageClean;
+    }
+
     /// <summary>
     ///     Scans the blob container and loads existing modules into memory
     /// </summary>

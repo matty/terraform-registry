@@ -306,5 +306,39 @@ public class LocalModuleService : ModuleService
             return false;
         }
     }
-}
 
+    protected override async Task<bool> DeleteModuleAsyncImpl(string @namespace, string name, string provider,
+        string version)
+    {
+        var expectedFilePath = Path.Combine(_moduleStoragePath, @namespace, $"{name}-{provider}-{version}.zip");
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var filePath = moduleStorage?.FilePath ?? expectedFilePath;
+
+        var dbClean = moduleStorage == null;
+        if (!dbClean)
+            try
+            {
+                dbClean = await _databaseService.RemoveModuleAsync(moduleStorage!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to remove module metadata for {Namespace}/{Name}/{Provider}/{Version}",
+                    @namespace, name, provider, version);
+            }
+
+        var storageClean = !File.Exists(filePath);
+        if (!storageClean)
+            try
+            {
+                File.Delete(filePath);
+                storageClean = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete module file for {Namespace}/{Name}/{Provider}/{Version}",
+                    @namespace, name, provider, version);
+            }
+
+        return dbClean && storageClean;
+    }
+}

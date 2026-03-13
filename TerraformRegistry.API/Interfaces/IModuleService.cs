@@ -32,4 +32,9 @@ public interface IModuleService
     /// </summary>
     Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,
         string description, bool replace = false);
+
+    /// <summary>
+    ///     Deletes a specific module version
+    /// </summary>
+    Task<bool> DeleteModuleAsync(string @namespace, string name, string provider, string version);
 }

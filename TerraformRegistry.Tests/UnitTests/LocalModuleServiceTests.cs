@@ -197,6 +197,81 @@ public class LocalModuleServiceTests
         Assert.True(File.Exists(filePath));
     }
 
+    [Fact]
+    public async Task DeleteModuleAsyncImpl_Removes_Db_Entry_And_File()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var filePath = Path.Combine(_testModulePath, "ns", "name-provider-1.0.0.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(filePath, "dummy");
+
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = filePath,
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+        _mockDbService.Setup(x => x.RemoveModuleAsync(storage)).ReturnsAsync(true);
+
+        var result = await service.CallDeleteModuleAsyncImpl("ns", "name", "provider", "1.0.0");
+
+        Assert.True(result);
+        Assert.False(File.Exists(filePath));
+        _mockDbService.Verify(x => x.RemoveModuleAsync(storage), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteModuleAsyncImpl_Cleans_Orphaned_Db_Entry_When_File_Missing()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var filePath = Path.Combine(_testModulePath, "ns", "name-provider-1.0.0.zip");
+
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = filePath,
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+        _mockDbService.Setup(x => x.RemoveModuleAsync(storage)).ReturnsAsync(true);
+
+        var result = await service.CallDeleteModuleAsyncImpl("ns", "name", "provider", "1.0.0");
+
+        Assert.True(result);
+        _mockDbService.Verify(x => x.RemoveModuleAsync(storage), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteModuleAsyncImpl_Cleans_Orphaned_File_When_Db_Entry_Missing()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var filePath = Path.Combine(_testModulePath, "ns", "name-provider-1.0.0.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(filePath, "dummy");
+
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0"))
+            .ReturnsAsync((ModuleStorage?)null);
+
+        var result = await service.CallDeleteModuleAsyncImpl("ns", "name", "provider", "1.0.0");
+
+        Assert.True(result);
+        Assert.False(File.Exists(filePath));
+        _mockDbService.Verify(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+    }
+
     // Helper to expose protected method for testing
     private class TestableLocalModuleService : LocalModuleService
     {
@@ -209,6 +284,11 @@ public class LocalModuleServiceTests
             Stream content, string desc, bool replace = false)
         {
             return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc, replace);
+        }
+
+        public Task<bool> CallDeleteModuleAsyncImpl(string ns, string name, string provider, string version)
+        {
+            return base.DeleteModuleAsyncImpl(ns, name, provider, version);
         }
     }
 }

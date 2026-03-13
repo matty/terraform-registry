@@ -224,4 +224,30 @@ public static class ModuleHandlers
         }
         // Let other exceptions bubble up to the global exception handler
     }
+
+    /// <summary>
+    ///     Deletes a specific module version
+    /// </summary>
+    public static async Task<IResult> DeleteModule(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        IModuleService moduleService)
+    {
+        _logger.LogInformation("Deleting module: {Namespace}/{Name}/{Provider}/{Version}",
+            @namespace, name, provider, version);
+
+        if (!SemVerValidator.IsValid(version))
+        {
+            _logger.LogWarning("Invalid version format: {Version}", version);
+            return ErrorResponseExtensions.BadRequest(
+                $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
+        }
+
+        var result = await moduleService.DeleteModuleAsync(@namespace, name, provider, version);
+        if (!result) return Error(StatusCodes.Status500InternalServerError, "Failed to delete module");
+
+        return NoContent();
+    }
 }
