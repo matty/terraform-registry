@@ -16,12 +16,6 @@ A lightweight, feature-rich private Terraform Registry implementation with full 
 - PostgreSQL database
 - Docker-ready deployment
 
-## Screenshots
-
-![Login](screenshots/login.png)
-![Dashboard](screenshots/dashboard.png)
-![Dashboard Settings](screenshots/dashboard_settings.png)
-
 ## Quick Start
 
 ### Using Docker (Recommended)
