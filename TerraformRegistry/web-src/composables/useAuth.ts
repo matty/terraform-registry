@@ -27,6 +27,8 @@ export const useAuth = () => {
   const providers = useState<OidcProvider[]>("auth-providers", () => []);
   const isLoading = useState<boolean>("auth-loading", () => true);
   const devBypassEnabled = useState<boolean>("auth-dev-bypass", () => false);
+  const permissions = useState<string[]>("auth-permissions", () => []);
+  const roles = useState<string[]>("auth-roles", () => []);
 
   // API token for Terraform CLI operations (stored in cookie)
   const apiToken = useCookie<string | null>("auth-token", {
@@ -50,6 +52,8 @@ export const useAuth = () => {
     } catch {
       isAuthenticated.value = false;
       user.value = null;
+      permissions.value = [];
+      roles.value = [];
     } finally {
       isLoading.value = false;
     }
@@ -58,10 +62,14 @@ export const useAuth = () => {
   // Fetch current user info
   const fetchUser = async () => {
     try {
-      const userInfo = await $fetch<UserInfo>("/api/auth/me");
-      user.value = userInfo;
+      const response = await $fetch<UserInfo & { permissions?: string[], roles?: string[] }>("/api/auth/me");
+      user.value = response;
+      permissions.value = response.permissions ?? [];
+      roles.value = response.roles ?? [];
     } catch {
       user.value = null;
+      permissions.value = [];
+      roles.value = [];
     }
   };
 
@@ -123,6 +131,8 @@ export const useAuth = () => {
     user.value = null;
     isAuthenticated.value = false;
     apiToken.value = null;
+    permissions.value = [];
+    roles.value = [];
     navigateTo("/login");
   };
 
@@ -144,6 +154,8 @@ export const useAuth = () => {
     isLoading: readonly(isLoading),
     apiToken: readonly(apiToken),
     devBypassEnabled: readonly(devBypassEnabled),
+    permissions: readonly(permissions),
+    roles: readonly(roles),
     hasOidcProviders,
 
     // Actions

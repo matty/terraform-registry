@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
+import { usePermissions } from "~/composables/usePermissions";
 
 const { isAuthenticated } = useAuth();
 const { isSidebarOpen, isSidebarCollapsed } = useDashboard();
+const { isAdmin } = usePermissions();
 const route = useRoute();
 
 // Settings sub-menu expansion state
 const isSettingsExpanded = ref(true);
+const isAdminExpanded = ref(true);
 
 // Navigation sections
 const mainLinks = [
@@ -45,6 +48,11 @@ const settingsLinks = [
   },
 ];
 
+const adminLinks = [
+  { label: 'Roles', icon: 'i-lucide-shield', to: '/admin/roles' },
+  { label: 'Users', icon: 'i-lucide-users', to: '/admin/users' },
+];
+
 const isActive = (path: string) => {
   if (path === '/') return route.path === '/';
   return route.path.startsWith(path);
@@ -54,12 +62,20 @@ const isSettingsActive = computed(() =>
   route.path.startsWith('/settings')
 );
 
+const isAdminActive = computed(() =>
+  route.path.startsWith('/admin')
+);
+
 const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value;
 };
 
 const toggleSettings = () => {
   isSettingsExpanded.value = !isSettingsExpanded.value;
+};
+
+const toggleAdmin = () => {
+  isAdminExpanded.value = !isAdminExpanded.value;
 };
 </script>
 
@@ -157,10 +173,53 @@ const toggleSettings = () => {
             </NuxtLink>
           </div>
         </div>
+
+        <!-- Admin Section -->
+        <div v-if="isAdmin" class="pt-4 border-t border-neutral-800">
+          <button
+            v-if="!isSidebarCollapsed"
+            @click="toggleAdmin"
+            :class="[
+              'flex items-center justify-between w-full px-2 mb-2 group',
+              isAdminActive ? 'text-white' : 'text-neutral-500 hover:text-neutral-300'
+            ]"
+          >
+            <span class="text-[10px] font-medium uppercase tracking-wider">Admin</span>
+            <UIcon
+              :name="isAdminExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+              class="text-xs transition-transform"
+            />
+          </button>
+          <p v-else class="px-2 mb-2 text-[10px] font-medium text-neutral-500 uppercase tracking-wider text-center">
+            A
+          </p>
+
+          <div
+            v-if="isAdminExpanded || isSidebarCollapsed"
+            class="space-y-0.5"
+          >
+            <NuxtLink
+              v-for="link in adminLinks"
+              :key="link.to"
+              :to="link.to"
+              :class="[
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                isActive(link.to)
+                  ? 'bg-white/10 text-white'
+                  : 'text-neutral-400 hover:text-white hover:bg-neutral-800',
+                isSidebarCollapsed ? 'justify-center' : 'pl-5'
+              ]"
+              :title="isSidebarCollapsed ? link.label : ''"
+            >
+              <UIcon :name="link.icon" class="text-lg flex-shrink-0" />
+              <span v-if="!isSidebarCollapsed">{{ link.label }}</span>
+            </NuxtLink>
+          </div>
+        </div>
       </nav>
 
       <!-- User Menu -->
-      <div 
+      <div
         :class="[
           'p-2 border-t border-neutral-800',
           isSidebarCollapsed ? 'flex justify-center' : ''
@@ -239,6 +298,40 @@ const toggleSettings = () => {
                     'flex items-center gap-3 px-3 py-2.5 pl-5 rounded-lg text-sm font-medium transition-all',
                     isActive(link.to) 
                       ? 'bg-white/10 text-white' 
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  ]"
+                  @click="isSidebarOpen = false"
+                >
+                  <UIcon :name="link.icon" class="text-lg" />
+                  <span>{{ link.label }}</span>
+                </NuxtLink>
+              </div>
+            </div>
+
+            <!-- Admin Section (mobile) -->
+            <div v-if="isAdmin" class="pt-4 border-t border-neutral-800">
+              <button
+                @click="toggleAdmin"
+                :class="[
+                  'flex items-center justify-between w-full px-2 mb-2',
+                  isAdminActive ? 'text-white' : 'text-neutral-500'
+                ]"
+              >
+                <span class="text-[10px] font-medium uppercase tracking-wider">Admin</span>
+                <UIcon
+                  :name="isAdminExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                  class="text-xs"
+                />
+              </button>
+              <div v-if="isAdminExpanded" class="space-y-0.5">
+                <NuxtLink
+                  v-for="link in adminLinks"
+                  :key="link.to"
+                  :to="link.to"
+                  :class="[
+                    'flex items-center gap-3 px-3 py-2.5 pl-5 rounded-lg text-sm font-medium transition-all',
+                    isActive(link.to)
+                      ? 'bg-white/10 text-white'
                       : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
                   ]"
                   @click="isSidebarOpen = false"
