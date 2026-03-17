@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
@@ -8,6 +9,9 @@ public static class WebhookHandlers
 {
     public static async Task<IResult> ListWebhooks(IWebhookService webhookService, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var webhooks = await webhookService.ListWebhooksAsync(userId);
@@ -16,6 +20,9 @@ public static class WebhookHandlers
 
     public static async Task<IResult> CreateWebhook(IWebhookService webhookService, HttpContext context, HttpRequest request)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var body = await request.ReadFromJsonAsync<CreateWebhookRequest>();
@@ -33,6 +40,9 @@ public static class WebhookHandlers
 
     public static async Task<IResult> UpdateWebhook(Guid id, IWebhookService webhookService, HttpContext context, HttpRequest request)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var body = await request.ReadFromJsonAsync<UpdateWebhookRequest>();
@@ -43,6 +53,9 @@ public static class WebhookHandlers
 
     public static async Task<IResult> DeleteWebhook(Guid id, IWebhookService webhookService, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var result = await webhookService.DeleteWebhookAsync(id, userId);
@@ -51,6 +64,9 @@ public static class WebhookHandlers
 
     public static async Task<IResult> TestWebhook(Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 

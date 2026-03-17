@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
@@ -9,6 +10,9 @@ public static class VcsHandlers
 {
     public static async Task<IResult> ListVcsSources(IVcsSourceService vcsService, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var sources = await vcsService.ListVcsSourcesAsync(userId);
@@ -17,6 +21,9 @@ public static class VcsHandlers
 
     public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IConfiguration configuration, HttpContext context, HttpRequest request)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
@@ -70,6 +77,9 @@ public static class VcsHandlers
 
     public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IConfiguration configuration, HttpContext context, HttpRequest request)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
@@ -94,6 +104,9 @@ public static class VcsHandlers
 
     public static async Task<IResult> DeleteVcsSource(Guid id, IVcsSourceService vcsService, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var result = await vcsService.DeleteVcsSourceAsync(id, userId);

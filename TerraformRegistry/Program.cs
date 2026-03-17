@@ -361,24 +361,24 @@ app.MapGet("/ready", (IDatabaseService dbService, IModuleService moduleService, 
     .Produces(503);
 
 // Analytics endpoints (auth handled by middleware via /api/analytics prefix)
-app.MapGet("/api/analytics/downloads/summary", (IAnalyticsService analytics) =>
-        AnalyticsHandlers.GetSummary(analytics))
+app.MapGet("/api/analytics/downloads/summary", (IAnalyticsService analytics, HttpContext context) =>
+        AnalyticsHandlers.GetSummary(analytics, context))
     .WithTags("Analytics")
     .WithDescription("Download summary statistics");
 
-app.MapGet("/api/analytics/downloads/top", (IAnalyticsService analytics, int limit = 10, string period = "30d") =>
-        AnalyticsHandlers.GetTopModules(analytics, limit, period))
+app.MapGet("/api/analytics/downloads/top", (IAnalyticsService analytics, HttpContext context, int limit = 10, string period = "30d") =>
+        AnalyticsHandlers.GetTopModules(analytics, context, limit, period))
     .WithTags("Analytics")
     .WithDescription("Top downloaded modules");
 
-app.MapGet("/api/analytics/downloads/trends", (IAnalyticsService analytics, string period = "30d", string interval = "day") =>
-        AnalyticsHandlers.GetTrends(analytics, period, interval))
+app.MapGet("/api/analytics/downloads/trends", (IAnalyticsService analytics, HttpContext context, string period = "30d", string interval = "day") =>
+        AnalyticsHandlers.GetTrends(analytics, context, period, interval))
     .WithTags("Analytics")
     .WithDescription("Download trends over time");
 
 app.MapGet("/api/analytics/downloads/module/{namespace}/{name}/{provider}",
-        (string @namespace, string name, string provider, IAnalyticsService analytics, string period = "30d") =>
-            AnalyticsHandlers.GetModuleAnalytics(@namespace, name, provider, analytics, period))
+        (string @namespace, string name, string provider, IAnalyticsService analytics, HttpContext context, string period = "30d") =>
+            AnalyticsHandlers.GetModuleAnalytics(@namespace, name, provider, analytics, context, period))
     .WithTags("Analytics")
     .WithDescription("Per-module download analytics");
 
@@ -426,24 +426,24 @@ app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpCont
     .WithTags("VCS");
 
 app.MapGet("/v1/modules",
-        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
+        (IModuleService moduleService, HttpContext context, string? q, string? @namespace, string? provider, int offset = 0,
                 int limit = 10) =>
-            ModuleHandlers.ListModules(moduleService, q, @namespace, provider, offset, limit))
+            ModuleHandlers.ListModules(moduleService, context, q, @namespace, provider, offset, limit))
     .WithTags("Modules")
     .WithDescription("Lists or searches modules")
     .Produces<ModuleList>();
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}", (string @namespace, string name, string provider,
-            string version, IModuleService moduleService) =>
-        ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService))
+            string version, IModuleService moduleService, HttpContext context) =>
+        ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService, context))
     .WithTags("Modules")
     .WithDescription("Gets a specific module")
     .Produces<Module>()
     .ProducesProblem(404);
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",
-        (string @namespace, string name, string provider, IModuleService moduleService) =>
-            ModuleHandlers.GetModuleVersions(@namespace, name, provider, moduleService))
+        (string @namespace, string name, string provider, IModuleService moduleService, HttpContext context) =>
+            ModuleHandlers.GetModuleVersions(@namespace, name, provider, moduleService, context))
     .WithTags("Modules")
     .WithDescription("Gets all versions of a specific module")
     .Produces<ModuleVersions>();
@@ -465,8 +465,8 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
-            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
-        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher))
+            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
+        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher, context))
     .WithTags("Modules")
     .WithDescription("Uploads a new module version")
     .Accepts<IFormFile>("multipart/form-data")
@@ -476,40 +476,40 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
 
 // Module version management - soft delete, restore, purge
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
-            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
+            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
     .WithTags("Modules")
     .WithDescription("Soft deletes a module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}/restore",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
-            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
+            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
     .WithTags("Modules")
     .WithDescription("Restores a soft-deleted module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}/purge",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
-            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
+            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
     .WithTags("Modules")
     .WithDescription("Permanently deletes a module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapGet("/v1/modules/trash",
-        (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
+        (IModuleService moduleService, HttpContext context, string? q, string? @namespace, string? provider, int offset = 0,
                 int limit = 10) =>
-            ModuleHandlers.ListDeletedModules(moduleService, q, @namespace, provider, offset, limit))
+            ModuleHandlers.ListDeletedModules(moduleService, context, q, @namespace, provider, offset, limit))
     .WithTags("Modules")
     .WithDescription("Lists all soft-deleted modules")
     .Produces<ModuleList>();
 
 app.MapPatch("/v1/modules/{namespace}/{name}/{provider}/description",
-        (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService) =>
-            ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService))
+        (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService, HttpContext context) =>
+            ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService, context))
     .WithTags("Modules")
     .WithDescription("Updates the description for a module")
     .Produces(200)
@@ -569,31 +569,6 @@ app.MapFallback(async context =>
     // If no index.html exists, return 404
     context.Response.StatusCode = 404;
 });
-
-// Seed default roles and bootstrap admin users
-var roleService = app.Services.GetRequiredService<IRoleService>();
-var permissionService = app.Services.GetRequiredService<IPermissionService>();
-roleService.SeedDefaultRolesAsync().GetAwaiter().GetResult();
-
-var adminEmails = config["AdminEmails"];
-if (!string.IsNullOrEmpty(adminEmails))
-{
-    var dbService = app.Services.GetRequiredService<IDatabaseService>();
-    var roles = roleService.ListRolesAsync().GetAwaiter().GetResult();
-    var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
-    if (adminRole != null)
-    {
-        foreach (var email in adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var user = dbService.GetUserByEmailAsync(email).GetAwaiter().GetResult();
-            if (user != null)
-            {
-                permissionService.AssignRoleAsync(user.Id, adminRole.Id, "system-bootstrap").GetAwaiter().GetResult();
-                logger.LogInformation("Bootstrapped admin role for user {Email}", email);
-            }
-        }
-    }
-}
 
 app.Run($"http://0.0.0.0:{portNumber}");
 

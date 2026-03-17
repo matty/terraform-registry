@@ -1,3 +1,4 @@
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Middleware;
@@ -30,17 +31,28 @@ public static class ModuleHandlers
         return ErrorResponseExtensions.TerraformError(statusCode, message);
     }
 
+    private static IResult? CheckPermission(HttpContext context, string permission)
+    {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(permission))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+        return null;
+    }
+
     /// <summary>
     ///     Lists or searches modules
     /// </summary>
     public static async Task<IResult> ListModules(
         IModuleService moduleService,
+        HttpContext context,
         string? q = null,
         string? @namespace = null,
         string? provider = null,
         int offset = 0,
         int limit = 10)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Listing modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
             q, @namespace, provider);
 
@@ -65,8 +77,12 @@ public static class ModuleHandlers
         string name,
         string provider,
         string version,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Getting module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -83,8 +99,12 @@ public static class ModuleHandlers
         string @namespace,
         string name,
         string provider,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Getting versions for module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
@@ -107,6 +127,9 @@ public static class ModuleHandlers
         IDatabaseService dbService,
         HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -157,6 +180,9 @@ public static class ModuleHandlers
         IDatabaseService dbService,
         HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Downloading latest module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
@@ -180,8 +206,12 @@ public static class ModuleHandlers
         string version,
         HttpRequest request,
         IModuleService moduleService,
-        WebhookDispatcher webhookDispatcher)
+        WebhookDispatcher webhookDispatcher,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesUpload);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -257,8 +287,12 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
-        WebhookDispatcher webhookDispatcher)
+        WebhookDispatcher webhookDispatcher,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesDelete);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -286,8 +320,12 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
-        WebhookDispatcher webhookDispatcher)
+        WebhookDispatcher webhookDispatcher,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesRestore);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -315,8 +353,12 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
-        WebhookDispatcher webhookDispatcher)
+        WebhookDispatcher webhookDispatcher,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesPurge);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
@@ -340,12 +382,16 @@ public static class ModuleHandlers
     /// </summary>
     public static async Task<IResult> ListDeletedModules(
         IModuleService moduleService,
+        HttpContext context,
         string? q = null,
         string? @namespace = null,
         string? provider = null,
         int offset = 0,
         int limit = 10)
     {
+        var denied = CheckPermission(context, Permissions.ModulesDelete);
+        if (denied != null) return denied;
+
         _logger.LogInformation(
             "Listing deleted modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
             q, @namespace, provider);
@@ -368,8 +414,12 @@ public static class ModuleHandlers
     /// </summary>
     public static async Task<IResult> UpdateDescription(
         string @namespace, string name, string provider,
-        HttpRequest request, IModuleService moduleService)
+        HttpRequest request, IModuleService moduleService,
+        HttpContext context)
     {
+        var denied = CheckPermission(context, Permissions.ModulesDescription);
+        if (denied != null) return denied;
+
         _logger.LogInformation("Updating description for module {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
