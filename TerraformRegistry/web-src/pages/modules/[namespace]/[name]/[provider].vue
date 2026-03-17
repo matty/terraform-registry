@@ -71,9 +71,10 @@ const showDeleteModal = ref(false);
 const versionToDelete = ref<string | null>(null);
 const isDeleting = ref(false);
 
-// Generate module source path
+// Generate module source path (SSR-safe)
+const requestURL = useRequestURL();
 const moduleSource = computed(() => {
-  const host = window?.location?.host || 'registry.example.com';
+  const host = requestURL.host || 'registry.example.com';
   return `${host}/${namespace.value}/${name.value}/${provider.value}`;
 });
 
@@ -277,7 +278,7 @@ onMounted(() => {
             class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800 border border-neutral-800 p-6"
           >
             <!-- Decorative element -->
-            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl -tranneutral-y-32 tranneutral-x-32"></div>
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl -translate-y-32 translate-x-32"></div>
             
             <div class="relative flex items-start gap-5">
               <div
@@ -417,7 +418,7 @@ onMounted(() => {
                     ></div>
                     <div 
                       v-if="index !== versions.length - 1"
-                      class="absolute top-3 left-1/2 -tranneutral-x-1/2 w-px h-8 bg-neutral-700"
+                      class="absolute top-3 left-1/2 -translate-x-1/2 w-px h-8 bg-neutral-700"
                     ></div>
                   </div>
                   

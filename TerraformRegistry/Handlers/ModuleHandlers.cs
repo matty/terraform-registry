@@ -377,7 +377,7 @@ public static class ModuleHandlers
         {
             using var reader = new StreamReader(request.Body);
             var body = await reader.ReadToEndAsync();
-            var json = System.Text.Json.JsonDocument.Parse(body);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
             var description = json.RootElement.GetProperty("description").GetString() ?? string.Empty;
 
             var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);

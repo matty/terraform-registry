@@ -106,7 +106,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
 
         await using var fileStream = File.OpenRead(moduleFilePath);
         using var content = new MultipartFormDataContent();
-        using var streamContent = new StreamContent(fileStream);
+        var streamContent = new StreamContent(fileStream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
         content.Add(streamContent, "moduleFile", fileName);
 

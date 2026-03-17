@@ -124,7 +124,9 @@ builder.Services.AddSingleton<IAnalyticsService>(provider =>
     var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
     return databaseProvider switch
     {
-        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlAnalyticsService(config["PostgreSQL:ConnectionString"]!),
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlAnalyticsService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for analytics service.")),
         "sqlite" => new SqliteAnalyticsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
         _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
     };
@@ -137,7 +139,9 @@ builder.Services.AddSingleton<IWebhookService>(provider =>
     var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
     return databaseProvider switch
     {
-        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlWebhookService(config["PostgreSQL:ConnectionString"]!),
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlWebhookService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for webhook service.")),
         "sqlite" => new SqliteWebhookService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
         _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
     };
