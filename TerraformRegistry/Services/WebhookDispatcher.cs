@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
 
@@ -59,14 +60,50 @@ public class WebhookDispatcher(
         });
     }
 
-    private static IWebhookFormatter GetFormatter(string format) => format switch
+    public async Task<(bool Success, string? Error)> SendTestAsync(Webhook webhook)
     {
-        "discord" => new DiscordFormatter(),
-        "slack" => new SlackFormatter(),
-        "teams" => new TeamsFormatter(),
-        "custom" => new CustomFormatter(),
-        _ => new GenericFormatter()
+        var baseUrl = configuration["BaseUrl"]?.TrimEnd('/') ?? string.Empty;
+
+        var eventData = new WebhookEventData(
+            Id: "wh_test_" + Guid.NewGuid().ToString("N"),
+            Event: "module.published",
+            Action: "published",
+            Timestamp: DateTime.UtcNow.ToString("o"),
+            Module: new WebhookModuleData(
+                Namespace: "example",
+                Name: "test-module",
+                Provider: "aws",
+                Version: "1.0.0",
+                Description: "This is a test webhook delivery",
+                Source: $"{baseUrl}/example/test-module/aws",
+                DownloadUrl: "/v1/modules/example/test-module/aws/1.0.0/download"));
+
+        try
+        {
+            var formatter = GetFormatter(webhook.Format);
+            var payload = formatter.FormatPayload(eventData, webhook.Template);
+            var client = httpClientFactory.CreateClient("WebhookDelivery");
+            await DeliverAsync(client, webhook.Url, webhook.Secret, payload, eventData.Id, "module.published");
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Test webhook delivery failed for {WebhookId} to {Url}", webhook.Id, webhook.Url);
+            return (false, ex.Message);
+        }
+    }
+
+    private static readonly Dictionary<string, IWebhookFormatter> Formatters = new(StringComparer.Ordinal)
+    {
+        ["generic"] = new GenericFormatter(),
+        ["discord"] = new DiscordFormatter(),
+        ["slack"] = new SlackFormatter(),
+        ["teams"] = new TeamsFormatter(),
+        ["custom"] = new CustomFormatter(),
     };
+
+    private static IWebhookFormatter GetFormatter(string format) =>
+        Formatters.GetValueOrDefault(format, Formatters["generic"]);
 
     private static async Task DeliverAsync(HttpClient client, string url, string? secret, string payload, string webhookId, string eventType)
     {

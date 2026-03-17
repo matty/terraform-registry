@@ -41,11 +41,11 @@ export function useWebhooks() {
     return await $fetch('/api/webhooks', { headers: getAuthHeaders() })
   }
 
-  async function createWebhook(url: string, events: string[], secret?: string, format = 'generic', template?: string): Promise<Webhook> {
+  async function createWebhook(params: { url: string, events: string[], secret?: string, format?: string, template?: string }): Promise<Webhook> {
     return await $fetch('/api/webhooks', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: { url, events, secret, format, template },
+      body: { format: 'generic', ...params },
     })
   }
 
@@ -64,5 +64,12 @@ export function useWebhooks() {
     })
   }
 
-  return { listWebhooks, createWebhook, updateWebhook, deleteWebhook }
+  async function testWebhook(id: string): Promise<{ message?: string, error?: string }> {
+    return await $fetch(`/api/webhooks/${id}/test`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+  }
+
+  return { listWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook }
 }

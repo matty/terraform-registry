@@ -8,7 +8,7 @@ definePageMeta({
 });
 
 const { isSidebarOpen } = useDashboard();
-const { listWebhooks, createWebhook, updateWebhook, deleteWebhook } = useWebhooks();
+const { listWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook } = useWebhooks();
 
 // State
 const webhooks = ref<Webhook[]>([]);
@@ -39,6 +39,26 @@ const isEditModalOpen = ref(false);
 // Delete confirmation
 const isDeleteModalOpen = ref(false);
 const webhookToDelete = ref<string | null>(null);
+
+// Test state
+const testingWebhookId = ref<string | null>(null);
+const testResult = ref<{ success: boolean, message: string } | null>(null);
+
+const handleTest = async (id: string) => {
+  testingWebhookId.value = id;
+  testResult.value = null;
+  try {
+    const result = await testWebhook(id);
+    testResult.value = { success: true, message: result.message || "Test delivered" };
+  } catch (e: any) {
+    const msg = e?.data?.error || e?.message || "Test delivery failed";
+    testResult.value = { success: false, message: msg };
+  } finally {
+    testingWebhookId.value = null;
+    // Auto-clear result after 4 seconds
+    setTimeout(() => { testResult.value = null; }, 4000);
+  }
+};
 
 const fetchWebhooks = async () => {
   isLoading.value = true;
@@ -72,7 +92,7 @@ const handleCreate = async () => {
   errorMessage.value = null;
   try {
     const template = computeTemplate(newFormat.value, newCustomTitle.value, newCustomBody.value, newTemplate.value);
-    await createWebhook(newUrl.value, newEvents.value, newSecret.value || undefined, newFormat.value, template);
+    await createWebhook({ url: newUrl.value, events: newEvents.value, secret: newSecret.value || undefined, format: newFormat.value, template });
     newUrl.value = "";
     newSecret.value = "";
     newEvents.value = [];
@@ -184,6 +204,7 @@ const formatLabel = (format: string): string => {
 };
 
 const formatOptions = WEBHOOK_FORMATS.map(f => ({ label: f.label, value: f.value }));
+const templateVariablesText = TEMPLATE_VARIABLES.join(', ');
 
 const eventColor = (event: string): string => {
   const colors: Record<string, string> = {
@@ -244,6 +265,33 @@ onMounted(() => {
           />
         </div>
 
+        <!-- Test Result Notification -->
+        <div
+          v-if="testResult"
+          :class="[
+            'p-4 rounded-xl flex items-center gap-3 transition-all',
+            testResult.success
+              ? 'bg-green-900/20 border border-green-800/50'
+              : 'bg-red-900/20 border border-red-800/50'
+          ]"
+        >
+          <UIcon
+            :name="testResult.success ? 'i-lucide-check-circle' : 'i-lucide-alert-circle'"
+            :class="testResult.success ? 'text-green-500 text-xl' : 'text-red-500 text-xl'"
+          />
+          <p :class="testResult.success ? 'text-sm text-green-300' : 'text-sm text-red-300'">
+            {{ testResult.message }}
+          </p>
+          <UButton
+            icon="i-lucide-x"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            class="ml-auto"
+            @click="testResult = null"
+          />
+        </div>
+
         <!-- Create Webhook Form -->
         <div class="p-5 bg-neutral-900/60 rounded-xl border border-neutral-800 ring-1 ring-neutral-800/50">
           <h3 class="text-sm font-semibold mb-3 text-neutral-200 flex items-center gap-2">
@@ -266,6 +314,7 @@ onMounted(() => {
               <USelect
                 v-model="newFormat"
                 :items="formatOptions"
+                class="w-full min-w-[250px]"
               />
             </div>
             <div v-if="newFormat === 'discord' || newFormat === 'slack' || newFormat === 'teams'">
@@ -286,10 +335,11 @@ onMounted(() => {
               <UTextarea
                 v-model="newTemplate"
                 placeholder='{"text":"{{event}} - {{module.name}}"}'
-                :rows="4"
+                :rows="8"
+                class="w-full font-mono text-sm"
               />
               <p class="text-xs text-neutral-500 mt-1">
-                Available variables: {{ TEMPLATE_VARIABLES.join(', ') }}
+                Available variables: {{ templateVariablesText }}
               </p>
             </div>
             <div>
@@ -393,6 +443,16 @@ onMounted(() => {
               </div>
               <div class="flex items-center gap-2 ml-4">
                 <UButton
+                  icon="i-lucide-send"
+                  color="primary"
+                  variant="ghost"
+                  size="sm"
+                  title="Send test"
+                  :loading="testingWebhookId === webhook.id"
+                  :disabled="testingWebhookId !== null"
+                  @click="handleTest(webhook.id)"
+                />
+                <UButton
                   :icon="webhook.isActive ? 'i-lucide-pause' : 'i-lucide-play'"
                   :color="webhook.isActive ? 'neutral' : 'primary'"
                   variant="ghost"
@@ -451,6 +511,7 @@ onMounted(() => {
               <USelect
                 v-model="editFormat"
                 :items="formatOptions"
+                class="w-full min-w-[250px]"
               />
             </div>
             <div v-if="editFormat === 'discord' || editFormat === 'slack' || editFormat === 'teams'">
@@ -471,10 +532,11 @@ onMounted(() => {
               <UTextarea
                 v-model="editTemplate"
                 placeholder='{"text":"{{event}} - {{module.name}}"}'
-                :rows="4"
+                :rows="8"
+                class="w-full font-mono text-sm"
               />
               <p class="text-xs text-neutral-500 mt-1">
-                Available variables: {{ TEMPLATE_VARIABLES.join(', ') }}
+                Available variables: {{ templateVariablesText }}
               </p>
             </div>
             <div>

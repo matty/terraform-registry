@@ -130,6 +130,21 @@ public class PostgreSqlWebhookService : IWebhookService
         return MapWebhook(reader);
     }
 
+    public async Task<Webhook?> GetWebhookAsync(Guid webhookId, string userId)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE id = @id AND user_id = @userId";
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@id", webhookId);
+        cmd.Parameters.AddWithValue("@userId", userId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapWebhook(reader);
+    }
+
     public async Task<bool> DeleteWebhookAsync(Guid webhookId, string userId)
     {
         await using var connection = new NpgsqlConnection(_connectionString);

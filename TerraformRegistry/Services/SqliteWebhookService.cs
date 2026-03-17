@@ -144,6 +144,21 @@ public class SqliteWebhookService : IWebhookService
         return MapWebhook(reader);
     }
 
+    public async Task<Webhook?> GetWebhookAsync(Guid webhookId, string userId)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE id = $id AND user_id = $userId";
+        cmd.Parameters.AddWithValue("$id", webhookId.ToString());
+        cmd.Parameters.AddWithValue("$userId", userId);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapWebhook(reader);
+    }
+
     public async Task<bool> DeleteWebhookAsync(Guid webhookId, string userId)
     {
         await using var connection = new SqliteConnection(_connectionString);

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Handlers;
 
@@ -46,6 +47,20 @@ public static class WebhookHandlers
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var result = await webhookService.DeleteWebhookAsync(id, userId);
         return result ? Results.NoContent() : Results.NotFound(new { error = "Webhook not found or access denied" });
+    }
+
+    public static async Task<IResult> TestWebhook(Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context)
+    {
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        var webhook = await webhookService.GetWebhookAsync(id, userId);
+        if (webhook == null) return Results.NotFound(new { error = "Webhook not found or access denied" });
+
+        var (success, error) = await dispatcher.SendTestAsync(webhook);
+        return success
+            ? Results.Ok(new { message = "Test webhook delivered successfully" })
+            : Results.Json(new { error = $"Test delivery failed: {error}" }, statusCode: 502);
     }
 }
 
