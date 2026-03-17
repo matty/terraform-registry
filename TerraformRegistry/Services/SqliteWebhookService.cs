@@ -21,7 +21,7 @@ public class SqliteWebhookService : IWebhookService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at FROM webhooks WHERE user_id = $userId ORDER BY created_at DESC";
+        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE user_id = $userId ORDER BY created_at DESC";
         cmd.Parameters.AddWithValue("$userId", userId);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -33,7 +33,7 @@ public class SqliteWebhookService : IWebhookService
         return webhooks;
     }
 
-    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret)
+    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? template = null)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -47,12 +47,14 @@ public class SqliteWebhookService : IWebhookService
             Secret = secret,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            Format = format,
+            Template = template
         };
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = @"INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at)
-                            VALUES ($id, $userId, $url, $secret, $events, $isActive, $createdAt, $updatedAt)";
+        cmd.CommandText = @"INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at, format, template)
+                            VALUES ($id, $userId, $url, $secret, $events, $isActive, $createdAt, $updatedAt, $format, $template)";
         cmd.Parameters.AddWithValue("$id", webhook.Id.ToString());
         cmd.Parameters.AddWithValue("$userId", webhook.UserId);
         cmd.Parameters.AddWithValue("$url", webhook.Url);
@@ -61,12 +63,14 @@ public class SqliteWebhookService : IWebhookService
         cmd.Parameters.AddWithValue("$isActive", webhook.IsActive ? 1 : 0);
         cmd.Parameters.AddWithValue("$createdAt", webhook.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("$updatedAt", webhook.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$format", format);
+        cmd.Parameters.AddWithValue("$template", (object?)template ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
         return webhook;
     }
 
-    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive)
+    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? template)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -112,6 +116,18 @@ public class SqliteWebhookService : IWebhookService
             parameters.Add(new SqliteParameter("$isActive", isActive.Value ? 1 : 0));
         }
 
+        if (format != null)
+        {
+            setClauses.Add("format = $format");
+            parameters.Add(new SqliteParameter("$format", format));
+        }
+
+        if (template != null)
+        {
+            setClauses.Add("template = $template");
+            parameters.Add(new SqliteParameter("$template", template));
+        }
+
         var sql = $"UPDATE webhooks SET {string.Join(", ", setClauses)} WHERE id = $id AND user_id = $userId";
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
@@ -120,7 +136,7 @@ public class SqliteWebhookService : IWebhookService
 
         // Fetch the updated record
         await using var fetchCmd = connection.CreateCommand();
-        fetchCmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at FROM webhooks WHERE id = $id";
+        fetchCmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE id = $id";
         fetchCmd.Parameters.AddWithValue("$id", webhookId.ToString());
 
         await using var reader = await fetchCmd.ExecuteReaderAsync();
@@ -149,7 +165,7 @@ public class SqliteWebhookService : IWebhookService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at FROM webhooks WHERE is_active = 1";
+        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE is_active = 1";
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -178,7 +194,9 @@ public class SqliteWebhookService : IWebhookService
             Events = events,
             IsActive = reader.GetInt32(5) == 1,
             CreatedAt = DateTime.Parse(reader.GetString(6)),
-            UpdatedAt = DateTime.Parse(reader.GetString(7))
+            UpdatedAt = DateTime.Parse(reader.GetString(7)),
+            Format = reader.GetString(8),
+            Template = reader.IsDBNull(9) ? null : reader.GetString(9)
         };
     }
 }

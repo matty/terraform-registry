@@ -20,7 +20,13 @@ public static class WebhookHandlers
         var body = await request.ReadFromJsonAsync<CreateWebhookRequest>();
         if (body == null || string.IsNullOrEmpty(body.Url) || body.Events == null || body.Events.Length == 0)
             return Results.BadRequest(new { error = "url and events are required" });
-        var webhook = await webhookService.CreateWebhookAsync(userId, body.Url, body.Events, body.Secret);
+        var format = body.Format ?? "generic";
+        string[] validFormats = ["generic", "discord", "slack", "teams", "custom"];
+        if (!validFormats.Contains(format))
+            return Results.BadRequest(new { error = $"Invalid format. Must be one of: {string.Join(", ", validFormats)}" });
+        if (format == "custom" && string.IsNullOrWhiteSpace(body.Template))
+            return Results.BadRequest(new { error = "Template is required when format is 'custom'" });
+        var webhook = await webhookService.CreateWebhookAsync(userId, body.Url, body.Events, body.Secret, format, body.Template);
         return Results.Created($"/api/webhooks/{webhook.Id}", webhook);
     }
 
@@ -29,7 +35,7 @@ public static class WebhookHandlers
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var body = await request.ReadFromJsonAsync<UpdateWebhookRequest>();
-        var updated = await webhookService.UpdateWebhookAsync(id, userId, body?.Url, body?.Events, body?.Secret, body?.IsActive);
+        var updated = await webhookService.UpdateWebhookAsync(id, userId, body?.Url, body?.Events, body?.Secret, body?.IsActive, body?.Format, body?.Template);
         if (updated == null) return Results.NotFound(new { error = "Webhook not found or access denied" });
         return Results.Ok(updated);
     }
@@ -43,5 +49,5 @@ public static class WebhookHandlers
     }
 }
 
-public record CreateWebhookRequest(string Url, string[] Events, string? Secret);
-public record UpdateWebhookRequest(string? Url, string[]? Events, string? Secret, bool? IsActive);
+public record CreateWebhookRequest(string Url, string[] Events, string? Secret, string? Format, string? Template);
+public record UpdateWebhookRequest(string? Url, string[]? Events, string? Secret, bool? IsActive, string? Format, string? Template);

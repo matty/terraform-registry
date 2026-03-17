@@ -20,7 +20,7 @@ public class PostgreSqlWebhookService : IWebhookService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at FROM webhooks WHERE user_id = @userId ORDER BY created_at DESC";
+        var sql = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE user_id = @userId ORDER BY created_at DESC";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@userId", userId);
 
@@ -33,7 +33,7 @@ public class PostgreSqlWebhookService : IWebhookService
         return webhooks;
     }
 
-    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret)
+    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? template = null)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -47,11 +47,13 @@ public class PostgreSqlWebhookService : IWebhookService
             Secret = secret,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            Format = format,
+            Template = template
         };
 
-        var sql = @"INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at)
-                    VALUES (@id, @userId, @url, @secret, @events, @isActive, @createdAt, @updatedAt)";
+        var sql = @"INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at, format, template)
+                    VALUES (@id, @userId, @url, @secret, @events, @isActive, @createdAt, @updatedAt, @format, @template)";
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@id", webhook.Id);
@@ -62,12 +64,14 @@ public class PostgreSqlWebhookService : IWebhookService
         cmd.Parameters.AddWithValue("@isActive", webhook.IsActive);
         cmd.Parameters.AddWithValue("@createdAt", webhook.CreatedAt);
         cmd.Parameters.AddWithValue("@updatedAt", webhook.UpdatedAt);
+        cmd.Parameters.AddWithValue("@format", format);
+        cmd.Parameters.AddWithValue("@template", (object?)template ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
         return webhook;
     }
 
-    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive)
+    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? template)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -105,7 +109,19 @@ public class PostgreSqlWebhookService : IWebhookService
             parameters.Add(new NpgsqlParameter("@isActive", isActive.Value));
         }
 
-        var sql = $"UPDATE webhooks SET {string.Join(", ", setClauses)} WHERE id = @id AND user_id = @userId RETURNING id, user_id, url, secret, events, is_active, created_at, updated_at";
+        if (format != null)
+        {
+            setClauses.Add("format = @format");
+            parameters.Add(new NpgsqlParameter("@format", format));
+        }
+
+        if (template != null)
+        {
+            setClauses.Add("template = @template");
+            parameters.Add(new NpgsqlParameter("@template", template));
+        }
+
+        var sql = $"UPDATE webhooks SET {string.Join(", ", setClauses)} WHERE id = @id AND user_id = @userId RETURNING id, user_id, url, secret, events, is_active, created_at, updated_at, format, template";
         await using var cmd = new NpgsqlCommand(sql, connection);
         foreach (var p in parameters) cmd.Parameters.Add(p);
 
@@ -134,7 +150,7 @@ public class PostgreSqlWebhookService : IWebhookService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at FROM webhooks WHERE is_active = true AND @eventType = ANY(events)";
+        var sql = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks WHERE is_active = true AND @eventType = ANY(events)";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@eventType", eventType);
 
@@ -158,7 +174,9 @@ public class PostgreSqlWebhookService : IWebhookService
             Events = reader.GetFieldValue<string[]>(4),
             IsActive = reader.GetBoolean(5),
             CreatedAt = reader.GetDateTime(6),
-            UpdatedAt = reader.GetDateTime(7)
+            UpdatedAt = reader.GetDateTime(7),
+            Format = reader.GetString(8),
+            Template = reader.IsDBNull(9) ? null : reader.GetString(9)
         };
     }
 }
