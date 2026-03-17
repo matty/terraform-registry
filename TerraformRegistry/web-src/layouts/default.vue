@@ -16,6 +16,11 @@ const mainLinks = [
     to: "/",
   },
   {
+    label: "Analytics",
+    icon: "i-lucide-bar-chart-3",
+    to: "/analytics",
+  },
+  {
     label: "Trash",
     icon: "i-lucide-trash-2",
     to: "/settings/trash",
