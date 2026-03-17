@@ -51,14 +51,21 @@ public class AuthenticationMiddleware(
                 {
                     using var scope = context.RequestServices.CreateScope(); // Service is scoped usually
                     var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
-                    var apiKey = await apiKeyService.ValidateApiKeyAsync(token);
+                    var result = await apiKeyService.ValidateApiKeyAsync(token);
 
-                    if (apiKey != null)
+                    if (result.IsExpired)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new { error = "API key has expired" });
+                        return;
+                    }
+
+                    if (result.Key != null)
                     {
                         // Set user principal if tied to key; Terraform CLI uses ApiKey identity.
                         var claims = new List<Claim>
                         {
-                            new(ClaimTypes.NameIdentifier, apiKey.UserId.ToString()),
+                            new(ClaimTypes.NameIdentifier, result.Key.UserId.ToString()),
                             new(ClaimTypes.AuthenticationMethod, "ApiKey")
                         };
                         var identity = new ClaimsIdentity(claims, "ApiKey");
