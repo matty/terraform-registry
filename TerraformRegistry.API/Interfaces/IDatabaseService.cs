@@ -79,6 +79,11 @@ public interface IDatabaseService
     Task DeleteApiKeyAsync(ApiKey apiKey);
 
     /// <summary>
+    ///     Records a module download event for analytics
+    /// </summary>
+    Task RecordDownloadAsync(string @namespace, string name, string provider, string version, string? clientIp, string? userAgent);
+
+    /// <summary>
     ///     Checks that the database connection is healthy
     /// </summary>
     Task<bool> CheckConnectionAsync();

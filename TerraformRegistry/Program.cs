@@ -301,16 +301,16 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",
     .Produces<ModuleVersions>();
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download", (string @namespace, string name,
-            string provider, string version, IModuleService moduleService, HttpContext context) =>
-        ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, context))
+            string provider, string version, IModuleService moduleService, IDatabaseService dbService, HttpContext context) =>
+        ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, dbService, context))
     .WithTags("Modules")
     .WithDescription("Downloads a specific module version")
     .Produces(200, contentType: "application/zip")
     .ProducesProblem(404);
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
-        (string @namespace, string name, string provider, IModuleService moduleService, HttpContext context) =>
-            ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, context))
+        (string @namespace, string name, string provider, IModuleService moduleService, IDatabaseService dbService, HttpContext context) =>
+            ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, dbService, context))
     .WithTags("Modules")
     .WithDescription("Downloads the latest version of a module for a provider")
     .Produces(302)

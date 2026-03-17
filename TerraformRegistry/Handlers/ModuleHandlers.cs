@@ -103,6 +103,7 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
+        IDatabaseService dbService,
         HttpContext context)
     {
         _logger.LogInformation("Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
@@ -113,8 +114,23 @@ public static class ModuleHandlers
 
         context.Response.Headers["X-Terraform-Get"] = downloadPath;
 
-        // Terraform CLI expects 204 + X-Terraform-Get. Portal/browser should follow a redirect.
+        var clientIp = context.Connection.RemoteIpAddress?.ToString();
         var userAgent = context.Request.Headers["User-Agent"].ToString();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await dbService.RecordDownloadAsync(@namespace, name, provider, version, clientIp, userAgent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to record download for {Namespace}/{Name}/{Provider}/{Version}",
+                    @namespace, name, provider, version);
+            }
+        });
+
+        // Terraform CLI expects 204 + X-Terraform-Get. Portal/browser should follow a redirect.
         var accept = context.Request.Headers["Accept"].ToString();
         var isTerraformClient = userAgent.Contains("Terraform", StringComparison.OrdinalIgnoreCase) ||
                                 accept.Contains("terraform", StringComparison.OrdinalIgnoreCase);
@@ -137,6 +153,7 @@ public static class ModuleHandlers
         string name,
         string provider,
         IModuleService moduleService,
+        IDatabaseService dbService,
         HttpContext context)
     {
         _logger.LogInformation("Downloading latest module: {Namespace}/{Name}/{Provider}",
@@ -149,7 +166,7 @@ public static class ModuleHandlers
             SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault()?.Version;
         if (string.IsNullOrEmpty(latest)) return ErrorResponseExtensions.NotFound("Module not found");
 
-        return await DownloadModule(@namespace, name, provider, latest, moduleService, context);
+        return await DownloadModule(@namespace, name, provider, latest, moduleService, dbService, context);
     }
 
     /// <summary>
