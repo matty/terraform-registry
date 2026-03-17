@@ -761,12 +761,14 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            UPDATE api_keys 
-            SET description = $desc, is_shared = $shared, last_used_at = $lastUsed 
+            UPDATE api_keys
+            SET description = $desc, is_shared = $shared, expires_at = $expiresAt, last_used_at = $lastUsed
             WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", apiKey.Id.ToString());
         cmd.Parameters.AddWithValue("$desc", apiKey.Description);
         cmd.Parameters.AddWithValue("$shared", apiKey.IsShared ? 1 : 0);
+        cmd.Parameters.AddWithValue("$expiresAt",
+            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o") : DBNull.Value);
         cmd.Parameters.AddWithValue("$lastUsed",
             apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
 

@@ -797,7 +797,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     public async Task UpdateApiKeyAsync(ApiKey apiKey)
     {
         const string sql =
-            "UPDATE api_keys SET description=@description, is_shared=@isShared, last_used_at=@lastUsedAt WHERE id=@id";
+            "UPDATE api_keys SET description=@description, is_shared=@isShared, expires_at=@expiresAt, last_used_at=@lastUsedAt WHERE id=@id";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -806,6 +806,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         command.Parameters.AddWithValue("@id", apiKey.Id);
         command.Parameters.AddWithValue("@description", apiKey.Description);
         command.Parameters.AddWithValue("@isShared", apiKey.IsShared);
+        command.Parameters.AddWithValue("@expiresAt", apiKey.ExpiresAt ?? (object)DBNull.Value);
         command.Parameters.AddWithValue("@lastUsedAt", apiKey.LastUsedAt ?? (object)DBNull.Value);
 
         await command.ExecuteNonQueryAsync();

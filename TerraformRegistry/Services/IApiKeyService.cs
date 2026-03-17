@@ -14,7 +14,7 @@ public interface IApiKeyService
     /// Validates a raw token and returns the key details if valid.
     /// Also updates the LastUsedAt timestamp.
     /// </summary>
-    Task<ApiKey?> ValidateApiKeyAsync(string rawToken);
+    Task<ApiKeyValidationResult> ValidateApiKeyAsync(string rawToken);
 
     /// <summary>
     /// Gets a single API key by identifier.

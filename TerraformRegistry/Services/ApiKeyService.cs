@@ -40,11 +40,11 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return (rawToken, apiKey);
     }
 
-    public async Task<ApiKey?> ValidateApiKeyAsync(string rawToken)
+    public async Task<ApiKeyValidationResult> ValidateApiKeyAsync(string rawToken)
     {
         if (string.IsNullOrWhiteSpace(rawToken))
         {
-            return null;
+            return new ApiKeyValidationResult(null, false);
         }
 
         var prefix = rawToken.Length >= 8 ? rawToken.Substring(0, 8) : rawToken;
@@ -56,13 +56,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         {
             if (VerifyHash(rawToken, key.TokenHash))
             {
+                if (key.ExpiresAt.HasValue && key.ExpiresAt.Value < DateTime.UtcNow)
+                {
+                    return new ApiKeyValidationResult(null, true);
+                }
+
                 key.LastUsedAt = DateTime.UtcNow;
                 await dbService.UpdateApiKeyAsync(key);
-                return key;
+                return new ApiKeyValidationResult(key, false);
             }
         }
 
-        return null;
+        return new ApiKeyValidationResult(null, false);
     }
 
     public async Task<ApiKey?> GetApiKeyAsync(Guid id)
@@ -196,3 +201,5 @@ public enum ApiKeyUpdateStatus
 }
 
 public record ApiKeyUpdateResult(ApiKeyUpdateStatus Status, ApiKey? Key);
+
+public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired);
