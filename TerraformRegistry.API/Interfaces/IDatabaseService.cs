@@ -77,4 +77,9 @@ public interface IDatabaseService
     Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix);
     Task UpdateApiKeyAsync(ApiKey apiKey);
     Task DeleteApiKeyAsync(ApiKey apiKey);
+
+    /// <summary>
+    ///     Checks that the database connection is healthy
+    /// </summary>
+    Task<bool> CheckConnectionAsync();
 }

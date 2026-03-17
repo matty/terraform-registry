@@ -265,6 +265,18 @@ app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDis
     .WithDescription("Terraform service discovery endpoint")
     .Produces<ServiceDiscovery>();
 
+app.MapGet("/health", HealthHandlers.HandleHealth)
+    .WithTags("Health")
+    .WithDescription("Liveness probe")
+    .Produces(200);
+
+app.MapGet("/ready", (IDatabaseService dbService, IModuleService moduleService, HttpContext context, IConfiguration config) =>
+        HealthHandlers.HandleReady(dbService, moduleService, context, config))
+    .WithTags("Health")
+    .WithDescription("Readiness probe — use ?detail=true with auth for component details")
+    .Produces(200)
+    .Produces(503);
+
 app.MapGet("/v1/modules",
         (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
                 int limit = 10) =>
