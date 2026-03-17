@@ -135,6 +135,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             secret TEXT,
             events TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
+            format TEXT NOT NULL DEFAULT 'generic',
+            template TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );";

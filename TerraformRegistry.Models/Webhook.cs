@@ -30,6 +30,12 @@ public class Webhook
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
+    [Column("format")]
+    public string Format { get; set; } = "generic";
+
+    [Column("template")]
+    public string? Template { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
