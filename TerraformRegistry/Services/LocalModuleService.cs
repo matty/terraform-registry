@@ -360,20 +360,20 @@ public class LocalModuleService : ModuleService
         return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
     }
 
-    public override Task<(bool Healthy, string? Reason)> CheckStorageAsync()
+    public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
     {
         if (!Directory.Exists(_moduleStoragePath))
-            return Task.FromResult((false, (string?)"Storage directory does not exist"));
+            return (false, "Storage directory does not exist");
         try
         {
             var testFile = Path.Combine(_moduleStoragePath, ".health-check");
-            File.WriteAllText(testFile, "ok");
+            await File.WriteAllTextAsync(testFile, "ok");
             File.Delete(testFile);
-            return Task.FromResult((true, (string?)null));
+            return (true, null);
         }
         catch (Exception ex)
         {
-            return Task.FromResult((false, (string?)$"Storage path not writable: {ex.Message}"));
+            return (false, $"Storage path not writable: {ex.Message}");
         }
     }
 }

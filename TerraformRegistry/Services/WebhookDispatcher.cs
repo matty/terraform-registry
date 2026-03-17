@@ -21,20 +21,22 @@ public class WebhookDispatcher(IWebhookService webhookService, IHttpClientFactor
                     module = new { @namespace, name, provider, version }
                 });
 
-                foreach (var webhook in webhooks)
+                var client = httpClientFactory.CreateClient("WebhookDelivery");
+                client.Timeout = TimeSpan.FromSeconds(5);
+
+                var deliveryTasks = webhooks.Select(async webhook =>
                 {
-                    try { await DeliverAsync(webhook.Url, webhook.Secret, payload); }
+                    try { await DeliverAsync(client, webhook.Url, webhook.Secret, payload); }
                     catch (Exception ex) { logger.LogError(ex, "Failed to deliver webhook {WebhookId} to {Url}", webhook.Id, webhook.Url); }
-                }
+                });
+                await Task.WhenAll(deliveryTasks);
             }
             catch (Exception ex) { logger.LogError(ex, "Failed to fire webhook event {EventType}", eventType); }
         });
     }
 
-    private async Task DeliverAsync(string url, string? secret, string payload)
+    private static async Task DeliverAsync(HttpClient client, string url, string? secret, string payload)
     {
-        var client = httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(5);
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")

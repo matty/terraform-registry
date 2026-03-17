@@ -19,8 +19,12 @@ public static class HealthHandlers
         HttpContext context,
         IConfiguration configuration)
     {
-        var dbHealthy = await dbService.CheckConnectionAsync();
-        var (storageHealthy, storageReason) = await moduleService.CheckStorageAsync();
+        var dbTask = dbService.CheckConnectionAsync();
+        var storageTask = moduleService.CheckStorageAsync();
+        await Task.WhenAll(dbTask, storageTask);
+
+        var dbHealthy = await dbTask;
+        var (storageHealthy, storageReason) = await storageTask;
         var isReady = dbHealthy && storageHealthy;
 
         var wantDetail = string.Equals(
@@ -83,7 +87,8 @@ public static class HealthHandlers
         }
 
         // Check 3: Session cookie
-        var sessionToken = context.Request.Cookies["tf-session"];
+        const string sessionCookieName = "tf-session";
+        var sessionToken = context.Request.Cookies[sessionCookieName];
         if (!string.IsNullOrEmpty(sessionToken))
         {
             var jwtService = context.RequestServices.GetRequiredService<JwtService>();

@@ -72,15 +72,7 @@ public class PostgreSqlWebhookService : IWebhookService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        // Check ownership
-        var checkSql = "SELECT id FROM webhooks WHERE id = @id AND user_id = @userId";
-        await using var checkCmd = new NpgsqlCommand(checkSql, connection);
-        checkCmd.Parameters.AddWithValue("@id", webhookId);
-        checkCmd.Parameters.AddWithValue("@userId", userId);
-        var exists = await checkCmd.ExecuteScalarAsync();
-        if (exists == null) return null;
-
-        // Build dynamic UPDATE
+        // Build dynamic UPDATE (RETURNING handles not-found/access-denied in one round-trip)
         var setClauses = new List<string> { "updated_at = @updatedAt" };
         var parameters = new List<NpgsqlParameter>
         {
