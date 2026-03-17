@@ -9,6 +9,11 @@ export default defineNuxtConfig({
       routes: ["/"],
     },
   },
+  runtimeConfig: {
+    public: {
+      featureCreateModule: false,
+    },
+  },
   ssr: false,
   colorMode: {
     preference: "dark", // default to dark, ready for light theme toggle
