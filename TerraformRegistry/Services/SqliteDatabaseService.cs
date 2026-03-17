@@ -144,6 +144,30 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var cmdWebhooks = connection.CreateCommand();
         cmdWebhooks.CommandText = createWebhooksSql;
         await cmdWebhooks.ExecuteNonQueryAsync();
+
+        // Migrate existing webhooks table — add columns if missing
+        await using var cmdPragma = connection.CreateCommand();
+        cmdPragma.CommandText = "PRAGMA table_info(webhooks)";
+        await using var pragmaReader = await cmdPragma.ExecuteReaderAsync();
+        var existingColumns = new HashSet<string>();
+        while (await pragmaReader.ReadAsync())
+        {
+            existingColumns.Add(pragmaReader.GetString(1));
+        }
+        await pragmaReader.CloseAsync();
+
+        if (!existingColumns.Contains("format"))
+        {
+            await using var alter1 = connection.CreateCommand();
+            alter1.CommandText = "ALTER TABLE webhooks ADD COLUMN format TEXT NOT NULL DEFAULT 'generic'";
+            await alter1.ExecuteNonQueryAsync();
+        }
+        if (!existingColumns.Contains("template"))
+        {
+            await using var alter2 = connection.CreateCommand();
+            alter2.CommandText = "ALTER TABLE webhooks ADD COLUMN template TEXT";
+            await alter2.ExecuteNonQueryAsync();
+        }
     }
 
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
