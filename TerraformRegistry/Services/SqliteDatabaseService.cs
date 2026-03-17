@@ -168,6 +168,28 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             alter2.CommandText = "ALTER TABLE webhooks ADD COLUMN template TEXT";
             await alter2.ExecuteNonQueryAsync();
         }
+
+        var createVcsSourcesSql = @"
+        CREATE TABLE IF NOT EXISTS vcs_sources (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            namespace TEXT NOT NULL,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            repo_owner TEXT NOT NULL,
+            repo_name TEXT NOT NULL,
+            pat_encrypted TEXT,
+            webhook_secret TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vcs_sources_module ON vcs_sources(namespace, name, provider);
+        CREATE INDEX IF NOT EXISTS idx_vcs_sources_repo ON vcs_sources(repo_owner, repo_name);";
+
+        await using var cmdVcsSources = connection.CreateCommand();
+        cmdVcsSources.CommandText = createVcsSourcesSql;
+        await cmdVcsSources.ExecuteNonQueryAsync();
     }
 
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
