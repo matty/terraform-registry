@@ -1,1 +1,0 @@
-import{cB as r,A as t,r as a,O as l}from"./BmFR8ug0.js";const u=()=>{const e=t(),s=a(!1),o=a(!1);return l(()=>e.fullPath,()=>{s.value=!1}),{isSidebarOpen:s,isSidebarCollapsed:o}},n=r(u);export{n as u};
