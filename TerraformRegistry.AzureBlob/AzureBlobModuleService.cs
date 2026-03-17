@@ -468,4 +468,17 @@ public class AzureBlobModuleService : ModuleService
     {
         return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
     }
+
+    public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
+    {
+        try
+        {
+            await _containerClient.GetPropertiesAsync();
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Azure Blob Storage unreachable: {ex.Message}");
+        }
+    }
 }

@@ -840,6 +840,22 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         };
     }
 
+    public async Task<bool> CheckConnectionAsync()
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cmd = new NpgsqlCommand("SELECT 1", conn);
+            await cmd.ExecuteScalarAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task InitializeDatabase()
     {
         await InitializeDatabaseImpl();

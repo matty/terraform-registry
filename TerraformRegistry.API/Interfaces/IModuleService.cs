@@ -57,4 +57,9 @@ public interface IModuleService
     ///     Updates the description for all active versions of a module
     /// </summary>
     Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
+
+    /// <summary>
+    ///     Checks that the storage backend is healthy and writable
+    /// </summary>
+    Task<(bool Healthy, string? Reason)> CheckStorageAsync();
 }

@@ -786,6 +786,23 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<bool> CheckConnectionAsync()
+    {
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 1";
+            await command.ExecuteScalarAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static ApiKey MapApiKey(SqliteDataReader reader)
     {
         return new ApiKey

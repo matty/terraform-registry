@@ -79,4 +79,9 @@ public abstract class ModuleService : IModuleService
     /// </summary>
     public abstract Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
         string description);
+
+    /// <summary>
+    ///     Checks that the storage backend is healthy and writable
+    /// </summary>
+    public abstract Task<(bool Healthy, string? Reason)> CheckStorageAsync();
 }
