@@ -2,6 +2,7 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Middleware;
 using TerraformRegistry.Models;
+using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Handlers;
 
@@ -178,7 +179,8 @@ public static class ModuleHandlers
         string provider,
         string version,
         HttpRequest request,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        WebhookDispatcher webhookDispatcher)
     {
         _logger.LogInformation("Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -226,6 +228,8 @@ public static class ModuleHandlers
                 return ErrorResponseExtensions.Conflict("Module version already exists");
             }
 
+            webhookDispatcher.FireEvent("module.uploaded", @namespace, name, provider, version);
+
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
             return Created($"/v1/modules/{@namespace}/{name}/{provider}/{version}", response);
@@ -252,7 +256,8 @@ public static class ModuleHandlers
         string name,
         string provider,
         string version,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        WebhookDispatcher webhookDispatcher)
     {
         _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -267,6 +272,8 @@ public static class ModuleHandlers
         var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
+        webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version);
+
         return NoContent();
     }
 
@@ -278,7 +285,8 @@ public static class ModuleHandlers
         string name,
         string provider,
         string version,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        WebhookDispatcher webhookDispatcher)
     {
         _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -293,6 +301,8 @@ public static class ModuleHandlers
         var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
+        webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version);
+
         return NoContent();
     }
 
@@ -304,7 +314,8 @@ public static class ModuleHandlers
         string name,
         string provider,
         string version,
-        IModuleService moduleService)
+        IModuleService moduleService,
+        WebhookDispatcher webhookDispatcher)
     {
         _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -318,6 +329,8 @@ public static class ModuleHandlers
 
         var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
+
+        webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version);
 
         return NoContent();
     }
