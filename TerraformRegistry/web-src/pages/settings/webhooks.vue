@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
-import { useWebhooks, WEBHOOK_EVENTS } from "~/composables/useWebhooks";
+import { useWebhooks, WEBHOOK_EVENTS, WEBHOOK_FORMATS, TEMPLATE_VARIABLES } from "~/composables/useWebhooks";
 import type { Webhook } from "~/composables/useWebhooks";
 
 definePageMeta({
@@ -20,12 +20,20 @@ const errorMessage = ref<string | null>(null);
 const newUrl = ref("");
 const newSecret = ref("");
 const newEvents = ref<string[]>([]);
+const newFormat = ref("generic");
+const newTemplate = ref("");
+const newCustomTitle = ref("");
+const newCustomBody = ref("");
 
 // Edit state
 const editingWebhook = ref<Webhook | null>(null);
 const editUrl = ref("");
 const editSecret = ref("");
 const editEvents = ref<string[]>([]);
+const editFormat = ref("generic");
+const editTemplate = ref("");
+const editCustomTitle = ref("");
+const editCustomBody = ref("");
 const isEditModalOpen = ref(false);
 
 // Delete confirmation
@@ -45,15 +53,33 @@ const fetchWebhooks = async () => {
   }
 };
 
+const computeTemplate = (format: string, customTitle: string, customBody: string, rawTemplate: string): string | undefined => {
+  if (format === "discord" || format === "slack" || format === "teams") {
+    if (customTitle || customBody) {
+      return JSON.stringify({ title: customTitle, body: customBody });
+    }
+    return undefined;
+  }
+  if (format === "custom") {
+    return rawTemplate || undefined;
+  }
+  return undefined;
+};
+
 const handleCreate = async () => {
   if (!newUrl.value || newEvents.value.length === 0) return;
   isCreating.value = true;
   errorMessage.value = null;
   try {
-    await createWebhook(newUrl.value, newEvents.value, newSecret.value || undefined);
+    const template = computeTemplate(newFormat.value, newCustomTitle.value, newCustomBody.value, newTemplate.value);
+    await createWebhook(newUrl.value, newEvents.value, newSecret.value || undefined, newFormat.value, template);
     newUrl.value = "";
     newSecret.value = "";
     newEvents.value = [];
+    newFormat.value = "generic";
+    newTemplate.value = "";
+    newCustomTitle.value = "";
+    newCustomBody.value = "";
     await fetchWebhooks();
   } catch (e) {
     console.error("Failed to create webhook", e);
@@ -68,6 +94,24 @@ const openEdit = (webhook: Webhook) => {
   editUrl.value = webhook.url;
   editSecret.value = "";
   editEvents.value = [...webhook.events];
+  editFormat.value = webhook.format || "generic";
+  editTemplate.value = "";
+  editCustomTitle.value = "";
+  editCustomBody.value = "";
+  if (webhook.template) {
+    if (editFormat.value === "discord" || editFormat.value === "slack" || editFormat.value === "teams") {
+      try {
+        const parsed = JSON.parse(webhook.template);
+        editCustomTitle.value = parsed.title || "";
+        editCustomBody.value = parsed.body || "";
+      } catch {
+        editCustomTitle.value = "";
+        editCustomBody.value = "";
+      }
+    } else if (editFormat.value === "custom") {
+      editTemplate.value = webhook.template;
+    }
+  }
   isEditModalOpen.value = true;
 };
 
@@ -75,10 +119,13 @@ const handleUpdate = async () => {
   if (!editingWebhook.value) return;
   errorMessage.value = null;
   try {
+    const template = computeTemplate(editFormat.value, editCustomTitle.value, editCustomBody.value, editTemplate.value);
     await updateWebhook(editingWebhook.value.id, {
       url: editUrl.value,
       events: editEvents.value,
       secret: editSecret.value || undefined,
+      format: editFormat.value,
+      template,
     });
     isEditModalOpen.value = false;
     editingWebhook.value = null;
@@ -120,9 +167,27 @@ const handleDelete = async () => {
   }
 };
 
+const formatColor = (format: string): string => {
+  const colors: Record<string, string> = {
+    generic: "bg-neutral-800 text-neutral-400",
+    discord: "bg-indigo-900/40 text-indigo-300",
+    slack: "bg-green-900/40 text-green-300",
+    teams: "bg-blue-900/40 text-blue-300",
+    custom: "bg-amber-900/40 text-amber-300",
+  };
+  return colors[format] ?? "bg-neutral-800 text-neutral-400";
+};
+
+const formatLabel = (format: string): string => {
+  const entry = WEBHOOK_FORMATS.find(f => f.value === format);
+  return entry ? entry.label : format;
+};
+
+const formatOptions = WEBHOOK_FORMATS.map(f => ({ label: f.label, value: f.value }));
+
 const eventColor = (event: string): string => {
   const colors: Record<string, string> = {
-    "module.uploaded": "bg-green-900/40 text-green-300",
+    "module.published": "bg-green-900/40 text-green-300",
     "module.deleted": "bg-red-900/40 text-red-300",
     "module.restored": "bg-blue-900/40 text-blue-300",
     "module.purged": "bg-orange-900/40 text-orange-300",
@@ -197,6 +262,37 @@ onMounted(() => {
               placeholder="Signing secret (optional)"
             />
             <div>
+              <p class="text-xs text-neutral-400 mb-2">Format</p>
+              <USelect
+                v-model="newFormat"
+                :items="formatOptions"
+              />
+            </div>
+            <div v-if="newFormat === 'discord' || newFormat === 'slack' || newFormat === 'teams'">
+              <p class="text-xs text-neutral-400 mb-2">Custom Overrides (optional)</p>
+              <div class="flex flex-col gap-2">
+                <UInput
+                  v-model="newCustomTitle"
+                  placeholder="{{module.name}} v{{module.version}} published"
+                />
+                <UInput
+                  v-model="newCustomBody"
+                  placeholder="{{module.description}}"
+                />
+              </div>
+            </div>
+            <div v-if="newFormat === 'custom'">
+              <p class="text-xs text-neutral-400 mb-2">Template Body</p>
+              <UTextarea
+                v-model="newTemplate"
+                placeholder='{"text":"{{event}} - {{module.name}}"}'
+                :rows="4"
+              />
+              <p class="text-xs text-neutral-500 mt-1">
+                Available variables: {{ TEMPLATE_VARIABLES.join(', ') }}
+              </p>
+            </div>
+            <div>
               <p class="text-xs text-neutral-400 mb-2">Events</p>
               <div class="flex flex-wrap gap-2">
                 <label
@@ -258,6 +354,14 @@ onMounted(() => {
                   {{ webhook.url }}
                 </div>
                 <div class="flex flex-wrap items-center gap-2 mt-2">
+                  <span
+                    :class="[
+                      'px-2 py-0.5 rounded-full text-[11px] font-medium',
+                      formatColor(webhook.format),
+                    ]"
+                  >
+                    {{ formatLabel(webhook.format) }}
+                  </span>
                   <span
                     v-for="event in webhook.events"
                     :key="event"
@@ -342,6 +446,37 @@ onMounted(() => {
               type="password"
               placeholder="New signing secret (leave blank to keep)"
             />
+            <div>
+              <p class="text-xs text-neutral-400 mb-2">Format</p>
+              <USelect
+                v-model="editFormat"
+                :items="formatOptions"
+              />
+            </div>
+            <div v-if="editFormat === 'discord' || editFormat === 'slack' || editFormat === 'teams'">
+              <p class="text-xs text-neutral-400 mb-2">Custom Overrides (optional)</p>
+              <div class="flex flex-col gap-2">
+                <UInput
+                  v-model="editCustomTitle"
+                  placeholder="{{module.name}} v{{module.version}} published"
+                />
+                <UInput
+                  v-model="editCustomBody"
+                  placeholder="{{module.description}}"
+                />
+              </div>
+            </div>
+            <div v-if="editFormat === 'custom'">
+              <p class="text-xs text-neutral-400 mb-2">Template Body</p>
+              <UTextarea
+                v-model="editTemplate"
+                placeholder='{"text":"{{event}} - {{module.name}}"}'
+                :rows="4"
+              />
+              <p class="text-xs text-neutral-500 mt-1">
+                Available variables: {{ TEMPLATE_VARIABLES.join(', ') }}
+              </p>
+            </div>
             <div>
               <p class="text-xs text-neutral-400 mb-2">Events</p>
               <div class="flex flex-wrap gap-2">
