@@ -129,6 +129,20 @@ builder.Services.AddSingleton<IAnalyticsService>(provider =>
     };
 });
 
+// Register Webhook Service
+builder.Services.AddSingleton<IWebhookService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlWebhookService(config["PostgreSQL:ConnectionString"]!),
+        "sqlite" => new SqliteWebhookService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+builder.Services.AddSingleton<WebhookDispatcher>();
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -312,6 +326,23 @@ app.MapGet("/api/analytics/downloads/module/{namespace}/{name}/{provider}",
     .WithTags("Analytics")
     .WithDescription("Per-module download analytics");
 
+// Webhook endpoints (auth handled by middleware via /api/webhooks prefix)
+app.MapGet("/api/webhooks", (IWebhookService webhookService, HttpContext context) =>
+        WebhookHandlers.ListWebhooks(webhookService, context))
+    .WithTags("Webhooks");
+
+app.MapPost("/api/webhooks", (IWebhookService webhookService, HttpContext context, HttpRequest request) =>
+        WebhookHandlers.CreateWebhook(webhookService, context, request))
+    .WithTags("Webhooks");
+
+app.MapPut("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpContext context, HttpRequest request) =>
+        WebhookHandlers.UpdateWebhook(id, webhookService, context, request))
+    .WithTags("Webhooks");
+
+app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpContext context) =>
+        WebhookHandlers.DeleteWebhook(id, webhookService, context))
+    .WithTags("Webhooks");
+
 app.MapGet("/v1/modules",
         (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
                 int limit = 10) =>
@@ -352,8 +383,8 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
-            string provider, string version, HttpRequest request, IModuleService moduleService) =>
-        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService))
+            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
+        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher))
     .WithTags("Modules")
     .WithDescription("Uploads a new module version")
     .Accepts<IFormFile>("multipart/form-data")
@@ -363,24 +394,24 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
 
 // Module version management - soft delete, restore, purge
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
-            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
+            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
     .WithTags("Modules")
     .WithDescription("Soft deletes a module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}/restore",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
-            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
+            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
     .WithTags("Modules")
     .WithDescription("Restores a soft-deleted module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}/purge",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService) =>
-            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher) =>
+            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher))
     .WithTags("Modules")
     .WithDescription("Permanently deletes a module version")
     .Produces(204)
