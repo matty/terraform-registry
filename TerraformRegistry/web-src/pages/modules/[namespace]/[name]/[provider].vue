@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import { useModules, type Module, type ModulesResponse } from "~/composables/useModules";
+import { useVcsSources } from "~/composables/useVcsSources";
+import type { VcsSource } from "~/composables/useVcsSources";
 
 definePageMeta({
   middleware: "auth",
@@ -9,6 +11,7 @@ definePageMeta({
 const route = useRoute();
 const { isSidebarOpen } = useDashboard();
 const { getModuleVersions, deleteModuleVersion, updateModuleDescription } = useModules();
+const { listVcsSources, deleteVcsSource } = useVcsSources();
 const { getAuthHeaders } = useAuth();
 
 // Route params
@@ -22,6 +25,35 @@ const moduleInfo = ref<Module | null>(null);
 const isLoading = ref(true);
 const error = ref("");
 const copied = ref(false);
+
+// VCS state
+const vcsSource = ref<VcsSource | null>(null);
+const isDisconnectingVcs = ref(false);
+
+const fetchVcsSource = async () => {
+  try {
+    const sources = await listVcsSources();
+    vcsSource.value = sources.find(
+      s => s.namespace === namespace.value && s.name === name.value && s.provider === provider.value
+    ) || null;
+  } catch (e) {
+    // VCS info is non-critical, silently ignore
+    vcsSource.value = null;
+  }
+};
+
+const disconnectVcs = async () => {
+  if (!vcsSource.value) return;
+  isDisconnectingVcs.value = true;
+  try {
+    await deleteVcsSource(vcsSource.value.id);
+    vcsSource.value = null;
+  } catch (e) {
+    console.error("Failed to disconnect VCS source", e);
+  } finally {
+    isDisconnectingVcs.value = false;
+  }
+};
 
 // Description editing state
 const isEditingDescription = ref(false);
@@ -172,6 +204,7 @@ const getDownloadUrl = (version: string) => {
 
 onMounted(() => {
   fetchVersions();
+  fetchVcsSource();
 });
 </script>
 
@@ -295,6 +328,10 @@ onMounted(() => {
                     <UIcon name="i-lucide-check-circle" class="mr-1" />
                     Active
                   </UBadge>
+                  <UBadge v-if="vcsSource" variant="soft" color="info" size="xs">
+                    <UIcon name="i-lucide-git-branch" class="mr-1" />
+                    VCS
+                  </UBadge>
                 </div>
                 <!-- Description: display mode -->
                 <div v-if="!isEditingDescription" class="group/desc flex items-start gap-2">
@@ -387,6 +424,62 @@ onMounted(() => {
                 source = "<span class="text-neutral-300">{{ moduleSource }}</span>"
               </code>
             </div>
+          </div>
+
+          <!-- VCS Source Section -->
+          <div
+            v-if="vcsSource"
+            class="rounded-2xl bg-neutral-900/50 border border-neutral-800 overflow-hidden"
+          >
+            <div class="px-5 py-4 flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-neutral-800 rounded-xl flex items-center justify-center">
+                  <UIcon name="i-lucide-github" class="text-xl text-neutral-300" />
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-neutral-200">
+                      Linked to {{ vcsSource.repoOwner }}/{{ vcsSource.repoName }}
+                    </span>
+                    <UBadge
+                      :variant="'soft'"
+                      :color="vcsSource.isActive ? 'success' : 'neutral'"
+                      size="xs"
+                    >
+                      {{ vcsSource.isActive ? 'Active' : 'Inactive' }}
+                    </UBadge>
+                  </div>
+                  <p class="text-xs text-neutral-500 mt-0.5">
+                    Versions are published automatically when Git tags are pushed
+                  </p>
+                </div>
+              </div>
+              <UButton
+                label="Disconnect"
+                icon="i-lucide-unlink"
+                color="error"
+                variant="ghost"
+                size="xs"
+                :loading="isDisconnectingVcs"
+                @click="disconnectVcs"
+              />
+            </div>
+          </div>
+
+          <!-- Link to GitHub (when no VCS source) -->
+          <div
+            v-else-if="!isLoading"
+            class="flex justify-end"
+          >
+            <NuxtLink to="/modules/new">
+              <UButton
+                label="Link to GitHub"
+                icon="i-lucide-github"
+                color="neutral"
+                variant="soft"
+                size="xs"
+              />
+            </NuxtLink>
           </div>
 
           <!-- Versions List -->
