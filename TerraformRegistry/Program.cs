@@ -166,6 +166,36 @@ builder.Services.AddSingleton<IVcsSourceService>(provider =>
 builder.Services.AddSingleton<GitHubVcsService>();
 builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
 
+// Register Role Service
+builder.Services.AddSingleton<IRoleService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlRoleService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for role service.")),
+        "sqlite" => new SqliteRoleService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
+// Register Permission Service
+builder.Services.AddSingleton<IPermissionService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlPermissionService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for permission service.")),
+        "sqlite" => new SqlitePermissionService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -285,7 +315,7 @@ app.MapGet("/api/auth/callback/{provider}", async (string provider, string? code
     .WithTags("Authentication")
     .WithDescription("Handles OIDC callback after provider authentication");
 
-app.MapGet("/api/auth/me", (HttpContext context) => AuthHandlers.GetCurrentUser(jwtService, context))
+app.MapGet("/api/auth/me", async (HttpContext context) => await AuthHandlers.GetCurrentUser(jwtService, context))
     .WithTags("Authentication")
     .WithDescription("Returns current user info from session");
 
@@ -539,6 +569,31 @@ app.MapFallback(async context =>
     // If no index.html exists, return 404
     context.Response.StatusCode = 404;
 });
+
+// Seed default roles and bootstrap admin users
+var roleService = app.Services.GetRequiredService<IRoleService>();
+var permissionService = app.Services.GetRequiredService<IPermissionService>();
+roleService.SeedDefaultRolesAsync().GetAwaiter().GetResult();
+
+var adminEmails = config["AdminEmails"];
+if (!string.IsNullOrEmpty(adminEmails))
+{
+    var dbService = app.Services.GetRequiredService<IDatabaseService>();
+    var roles = roleService.ListRolesAsync().GetAwaiter().GetResult();
+    var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+    if (adminRole != null)
+    {
+        foreach (var email in adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var user = dbService.GetUserByEmailAsync(email).GetAwaiter().GetResult();
+            if (user != null)
+            {
+                permissionService.AssignRoleAsync(user.Id, adminRole.Id, "system-bootstrap").GetAwaiter().GetResult();
+                logger.LogInformation("Bootstrapped admin role for user {Email}", email);
+            }
+        }
+    }
+}
 
 app.Run($"http://0.0.0.0:{portNumber}");
 

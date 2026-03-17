@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Middleware;
@@ -14,7 +15,7 @@ public class AuthenticationMiddleware(
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
     private const string SessionCookieName = "tf-session";
-    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/webhooks", "/api/vcs/sources"];
+    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/webhooks", "/api/vcs/sources", "/api/admin"];
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -26,6 +27,7 @@ public class AuthenticationMiddleware(
             {
                 var devUser = GetDevUserPrincipal();
                 context.User = devUser;
+                await LoadPermissionsIntoClaims(context);
                 logger.LogWarning("DEV AUTH BYPASS: Auto-authenticated as dev user for {Path}", path);
                 await next(context);
                 return;
@@ -70,6 +72,7 @@ public class AuthenticationMiddleware(
                         };
                         var identity = new ClaimsIdentity(claims, "ApiKey");
                         context.User = new ClaimsPrincipal(identity);
+                        await LoadPermissionsIntoClaims(context);
 
                         await next(context);
                         return;
@@ -86,6 +89,7 @@ public class AuthenticationMiddleware(
                 if (principal != null)
                 {
                     context.User = principal;
+                    await LoadPermissionsIntoClaims(context);
                     logger.LogInformation(
                         "Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
                         path,
@@ -120,6 +124,7 @@ public class AuthenticationMiddleware(
                     if (principal != null)
                     {
                         context.User = principal;
+                        await LoadPermissionsIntoClaims(context);
                         await next(context);
                         return;
                     }
@@ -156,6 +161,24 @@ public class AuthenticationMiddleware(
         }
 
         await next(context);
+    }
+
+    /// <summary>
+    /// Loads the user's RBAC permissions from the database and adds them as claims.
+    /// </summary>
+    private static async Task LoadPermissionsIntoClaims(HttpContext context)
+    {
+        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return;
+
+        using var permScope = context.RequestServices.CreateScope();
+        var permService = permScope.ServiceProvider.GetRequiredService<IPermissionService>();
+        var perms = await permService.GetUserPermissionsAsync(userId);
+        if (context.User.Identity is ClaimsIdentity identity)
+        {
+            foreach (var perm in perms)
+                identity.AddClaim(new Claim("permission", perm));
+        }
     }
 
     /// <summary>

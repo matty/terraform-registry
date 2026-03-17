@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
@@ -98,6 +99,26 @@ public static class AuthHandlers
         // Ensure user exists; userInfo.Id is the provider's ID (e.g. GitHub numeric ID).
         var user = await apiKeyService.GetOrCreateUserAsync(userInfo.Email, provider, userInfo.Id);
 
+        // Assign default role (or admin if email matches AdminEmails config)
+        var permService = context.RequestServices.GetRequiredService<IPermissionService>();
+        await permService.EnsureDefaultRoleAsync(user.Id);
+
+        var adminEmails = context.RequestServices.GetRequiredService<IConfiguration>()["AdminEmails"];
+        if (!string.IsNullOrEmpty(adminEmails))
+        {
+            var emails = adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (emails.Contains(userInfo.Email, StringComparer.OrdinalIgnoreCase))
+            {
+                var roleService = context.RequestServices.GetRequiredService<IRoleService>();
+                var roles = await roleService.ListRolesAsync();
+                var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+                if (adminRole != null)
+                {
+                    await permService.AssignRoleAsync(user.Id, adminRole.Id, "auto-admin-bootstrap");
+                }
+            }
+        }
+
         // Generate session JWT using the database User ID, not the provider ID
         var token = jwtService.GenerateToken(
             user.Id, // Use DB ID
@@ -122,7 +143,7 @@ public static class AuthHandlers
     /// <summary>
     /// Returns current user info from session.
     /// </summary>
-    public static IResult GetCurrentUser(JwtService jwtService, HttpContext context)
+    public static async Task<IResult> GetCurrentUser(JwtService jwtService, HttpContext context)
     {
         var token = context.Request.Cookies[SessionCookieName];
         if (string.IsNullOrEmpty(token))
@@ -138,7 +159,21 @@ public static class AuthHandlers
             return Results.Unauthorized();
         }
 
-        return Results.Ok(userInfo);
+        // Load permissions and roles for the response
+        var permService = context.RequestServices.GetRequiredService<IPermissionService>();
+        var permissions = await permService.GetUserPermissionsAsync(userInfo.Id);
+        var roles = await permService.GetUserRolesAsync(userInfo.Id);
+
+        return Results.Ok(new
+        {
+            userInfo.Id,
+            userInfo.Email,
+            userInfo.Name,
+            userInfo.Provider,
+            userInfo.AvatarUrl,
+            permissions,
+            roles = roles.Select(r => new { r.Id, r.Name, r.Description })
+        });
     }
 
     /// <summary>
@@ -241,6 +276,26 @@ public static class AuthHandlers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
+        }
+
+        // Assign default role (or admin if email matches AdminEmails config)
+        var permService = context.RequestServices.GetRequiredService<IPermissionService>();
+        await permService.EnsureDefaultRoleAsync(devUserId);
+
+        var adminEmails = configuration["AdminEmails"];
+        if (!string.IsNullOrEmpty(adminEmails))
+        {
+            var emails = adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (emails.Contains(devEmail, StringComparer.OrdinalIgnoreCase))
+            {
+                var roleService = context.RequestServices.GetRequiredService<IRoleService>();
+                var roles = await roleService.ListRolesAsync();
+                var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+                if (adminRole != null)
+                {
+                    await permService.AssignRoleAsync(devUserId, adminRole.Id, "auto-admin-bootstrap");
+                }
+            }
         }
 
         // Generate session token
