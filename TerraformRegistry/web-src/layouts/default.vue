@@ -34,6 +34,11 @@ const settingsLinks = [
     to: "/settings/api-keys",
   },
   {
+    label: "Webhooks",
+    icon: "i-lucide-webhook",
+    to: "/settings/webhooks",
+  },
+  {
     label: "Account",
     icon: "i-lucide-user-cog",
     to: "/settings/account",
