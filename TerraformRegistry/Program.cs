@@ -148,6 +148,24 @@ builder.Services.AddSingleton<IWebhookService>(provider =>
 });
 builder.Services.AddSingleton<WebhookDispatcher>();
 
+// Register VCS Source Service
+builder.Services.AddSingleton<IVcsSourceService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlVcsSourceService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for VCS source service.")),
+        "sqlite" => new SqliteVcsSourceService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
+builder.Services.AddSingleton<GitHubVcsService>();
+builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -354,6 +372,28 @@ app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, Ht
 app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context) =>
         WebhookHandlers.TestWebhook(id, webhookService, dispatcher, context))
     .WithTags("Webhooks");
+
+// VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
+app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>
+        VcsHandlers.ListVcsSources(vcsService, context))
+    .WithTags("VCS");
+
+app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IConfiguration config, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateVcsSource(vcsService, config, context, request))
+    .WithTags("VCS");
+
+app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IConfiguration config, HttpContext context, HttpRequest request) =>
+        VcsHandlers.UpdateVcsSource(id, vcsService, config, context, request))
+    .WithTags("VCS");
+
+app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, HttpContext context) =>
+        VcsHandlers.DeleteVcsSource(id, vcsService, context))
+    .WithTags("VCS");
+
+// GitHub webhook endpoint (public, no auth required)
+app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpContext context) =>
+        VcsHandlers.HandleGitHubWebhook(githubService, context))
+    .WithTags("VCS");
 
 app.MapGet("/v1/modules",
         (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,
