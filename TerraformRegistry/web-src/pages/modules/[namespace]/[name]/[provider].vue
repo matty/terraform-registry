@@ -468,10 +468,10 @@ onMounted(() => {
 
           <!-- Link to GitHub (when no VCS source) -->
           <div
-            v-else-if="!isLoading"
+            v-else-if="!isLoading && useRuntimeConfig().public.featureCreateModule"
             class="flex justify-end"
           >
-            <NuxtLink to="/modules/new">
+            <NuxtLink :to="{ path: '/', query: { addModule: '1' } }">
               <UButton
                 label="Link to GitHub"
                 icon="i-lucide-github"

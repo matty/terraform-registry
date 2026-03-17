@@ -16,11 +16,6 @@ const mainLinks = [
     to: "/",
   },
   {
-    label: "Add Module",
-    icon: "i-lucide-plus-circle",
-    to: "/modules/new",
-  },
-  {
     label: "Analytics",
     icon: "i-lucide-bar-chart-3",
     to: "/analytics",

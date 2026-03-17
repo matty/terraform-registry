@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import type { Module, ModulesResponse } from "~/composables/useModules";
+import { useVcsSources, type VcsSourceCreateResponse } from "~/composables/useVcsSources";
 
 definePageMeta({
   middleware: "auth",
@@ -8,6 +9,8 @@ definePageMeta({
 
 const { getAuthHeaders } = useAuth();
 const { isSidebarOpen } = useDashboard();
+const { createVcsSource } = useVcsSources();
+const { featureCreateModule } = useRuntimeConfig().public;
 
 const modules = ref<Module[]>([]);
 const isLoading = ref(false);
@@ -16,6 +19,108 @@ const error = ref("");
 const searchQuery = ref("");
 const currentOffset = ref(0);
 const limit = 10;
+
+// Add Module modal state
+const isAddModuleOpen = ref(false);
+const newNamespace = ref("");
+const newName = ref("");
+const newProvider = ref("");
+const newDescription = ref("");
+const linkToGitHub = ref(false);
+const repoOwner = ref("");
+const repoName = ref("");
+const pat = ref("");
+const isSubmitting = ref(false);
+const addModuleError = ref<string | null>(null);
+const createdVcsSource = ref<VcsSourceCreateResponse | null>(null);
+const copiedSecret = ref(false);
+const copiedUrl = ref(false);
+
+const canSubmit = computed(() => {
+  if (!newNamespace.value || !newName.value || !newProvider.value) return false;
+  if (linkToGitHub.value && (!repoOwner.value || !repoName.value)) return false;
+  return true;
+});
+
+const resetAddModuleForm = () => {
+  newNamespace.value = "";
+  newName.value = "";
+  newProvider.value = "";
+  newDescription.value = "";
+  linkToGitHub.value = false;
+  repoOwner.value = "";
+  repoName.value = "";
+  pat.value = "";
+  addModuleError.value = null;
+  createdVcsSource.value = null;
+  copiedSecret.value = false;
+  copiedUrl.value = false;
+};
+
+const openAddModule = () => {
+  resetAddModuleForm();
+  isAddModuleOpen.value = true;
+};
+
+const handleAddModule = async () => {
+  if (!canSubmit.value) return;
+  isSubmitting.value = true;
+  addModuleError.value = null;
+
+  if (!linkToGitHub.value) {
+    isAddModuleOpen.value = false;
+    resetAddModuleForm();
+    refreshModules();
+    return;
+  }
+
+  try {
+
+    const result = await createVcsSource({
+      namespace: newNamespace.value,
+      name: newName.value,
+      provider: newProvider.value,
+      repoOwner: repoOwner.value,
+      repoName: repoName.value,
+      pat: pat.value || undefined,
+    });
+
+    createdVcsSource.value = result;
+  } catch (e: any) {
+    const msg = e?.data?.message || e?.data?.error || e?.message || "Failed to create module";
+    addModuleError.value = msg;
+  } finally {
+    isSubmitting.value = false;
+  }
+};
+
+const closeAddModuleSuccess = () => {
+  isAddModuleOpen.value = false;
+  resetAddModuleForm();
+  refreshModules();
+};
+
+const copySecret = async () => {
+  if (!createdVcsSource.value) return;
+  try {
+    await navigator.clipboard.writeText(createdVcsSource.value.webhookSecret);
+    copiedSecret.value = true;
+    setTimeout(() => { copiedSecret.value = false; }, 2000);
+  } catch (err) {
+    console.error("Failed to copy:", err);
+  }
+};
+
+const copyUrl = async () => {
+  if (!createdVcsSource.value) return;
+  try {
+    await navigator.clipboard.writeText(createdVcsSource.value.webhookUrl);
+    copiedUrl.value = true;
+    setTimeout(() => { copiedUrl.value = false; }, 2000);
+  } catch (err) {
+    console.error("Failed to copy:", err);
+  }
+};
 
 const filteredModules = computed(() => {
   if (!searchQuery.value) return modules.value;
@@ -80,8 +185,13 @@ const loadMoreModules = () => {
 };
 
 // Load modules on component mount
+const route = useRoute();
 onMounted(() => {
   fetchModules();
+  // Auto-open Add Module modal if ?addModule=1 query param is present
+  if (featureCreateModule && route.query.addModule === '1') {
+    openAddModule();
+  }
 });
 </script>
 
@@ -124,6 +234,14 @@ onMounted(() => {
           color="neutral"
           variant="ghost"
           size="sm"
+        />
+        <UButton
+          v-if="featureCreateModule"
+          label="Add Module"
+          icon="i-lucide-plus"
+          color="primary"
+          size="sm"
+          @click="openAddModule"
         />
       </div>
     </div>
@@ -256,6 +374,150 @@ onMounted(() => {
         </div>
       </div>
     </div>
+    <!-- Add Module Modal -->
+    <UModal v-if="featureCreateModule" v-model:open="isAddModuleOpen">
+      <template #content>
+        <div class="p-6 max-h-[80vh] overflow-y-auto">
+          <!-- Header -->
+          <div class="flex items-center gap-3 mb-5">
+            <div class="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
+              <UIcon name="i-lucide-package-plus" class="text-2xl text-primary-400" />
+            </div>
+            <div>
+              <h3 class="text-lg font-semibold text-neutral-100">Add Module</h3>
+              <p class="text-sm text-neutral-400">Register a new module, optionally linked to GitHub</p>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div
+            v-if="addModuleError"
+            class="mb-4 p-3 bg-red-900/20 border border-red-800/50 rounded-lg flex items-center gap-2"
+          >
+            <UIcon name="i-lucide-alert-circle" class="text-red-500" />
+            <p class="text-sm text-red-300 flex-1">{{ addModuleError }}</p>
+            <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="addModuleError = null" />
+          </div>
+
+          <!-- Success Panel -->
+          <div v-if="createdVcsSource" class="space-y-4">
+            <div class="p-4 bg-green-900/20 border border-green-800/50 rounded-xl">
+              <div class="flex items-start gap-3">
+                <UIcon name="i-lucide-check-circle" class="text-green-500 text-xl mt-0.5" />
+                <div class="flex-1 space-y-4">
+                  <div>
+                    <h4 class="font-medium text-green-200">VCS Source Created</h4>
+                    <p class="text-sm text-green-300/80 mt-1">Copy the webhook secret and URL — the secret won't be shown again.</p>
+                  </div>
+
+                  <div>
+                    <p class="text-xs text-neutral-400 mb-1.5">Webhook Secret</p>
+                    <div class="flex items-center gap-2">
+                      <code class="flex-1 p-2 bg-neutral-900 rounded-lg border border-green-800/40 font-mono text-xs break-all text-green-200">{{ createdVcsSource.webhookSecret }}</code>
+                      <UButton :icon="copiedSecret ? 'i-lucide-check' : 'i-lucide-copy'" :color="copiedSecret ? 'success' : 'neutral'" variant="soft" size="xs" @click="copySecret" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <p class="text-xs text-neutral-400 mb-1.5">Webhook URL</p>
+                    <div class="flex items-center gap-2">
+                      <code class="flex-1 p-2 bg-neutral-900 rounded-lg border border-green-800/40 font-mono text-xs break-all text-green-200">{{ createdVcsSource.webhookUrl }}</code>
+                      <UButton :icon="copiedUrl ? 'i-lucide-check' : 'i-lucide-copy'" :color="copiedUrl ? 'success' : 'neutral'" variant="soft" size="xs" @click="copyUrl" />
+                    </div>
+                  </div>
+
+                  <div class="p-3 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
+                    <p class="text-xs text-neutral-300 leading-relaxed">
+                      Add a webhook in your GitHub repo settings
+                      (<span class="text-neutral-200">Settings</span> →
+                      <span class="text-neutral-200">Webhooks</span> →
+                      <span class="text-neutral-200">Add webhook</span>).
+                      Set the Payload URL and Secret, choose
+                      <code class="text-primary-300">application/json</code>,
+                      and select "Just the push event".
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex justify-end">
+              <UButton label="Done" color="primary" icon="i-lucide-check" @click="closeAddModuleSuccess" />
+            </div>
+          </div>
+
+          <!-- Form -->
+          <div v-else class="space-y-5">
+            <!-- Module Details -->
+            <div class="space-y-3">
+              <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Module Details</h4>
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs text-neutral-400 mb-1">Namespace <span class="text-red-400">*</span></label>
+                  <UInput v-model="newNamespace" placeholder="myorg" size="sm" />
+                </div>
+                <div>
+                  <label class="block text-xs text-neutral-400 mb-1">Name <span class="text-red-400">*</span></label>
+                  <UInput v-model="newName" placeholder="vpc" size="sm" />
+                </div>
+                <div>
+                  <label class="block text-xs text-neutral-400 mb-1">Provider <span class="text-red-400">*</span></label>
+                  <UInput v-model="newProvider" placeholder="aws" size="sm" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-neutral-400 mb-1">Description</label>
+                <UTextarea v-model="newDescription" placeholder="Optional module description" :rows="2" size="sm" class="w-full" />
+              </div>
+            </div>
+
+            <!-- GitHub Integration -->
+            <div class="border-t border-neutral-800 pt-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <UIcon name="i-lucide-github" />
+                  GitHub Integration
+                </h4>
+                <label class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
+                  <span>Link to GitHub</span>
+                  <input v-model="linkToGitHub" type="checkbox" class="accent-primary-500 rounded" />
+                </label>
+              </div>
+
+              <div v-if="linkToGitHub" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs text-neutral-400 mb-1">Owner <span class="text-red-400">*</span></label>
+                    <UInput v-model="repoOwner" placeholder="acme" size="sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-neutral-400 mb-1">Repository <span class="text-red-400">*</span></label>
+                    <UInput v-model="repoName" placeholder="terraform-vpc" size="sm" />
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs text-neutral-400 mb-1">Personal Access Token</label>
+                  <UInput v-model="pat" type="password" placeholder="Optional — for private repos" size="sm" />
+                </div>
+              </div>
+              <p v-else class="text-xs text-neutral-500">Enable to auto-publish versions on Git tag push.</p>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex justify-end gap-2 border-t border-neutral-800 pt-4">
+              <UButton label="Cancel" color="neutral" variant="ghost" size="sm" @click="isAddModuleOpen = false" />
+              <UButton
+                :label="linkToGitHub ? 'Create & Link' : 'Create Module'"
+                color="primary"
+                size="sm"
+                :loading="isSubmitting"
+                :disabled="!canSubmit"
+                @click="handleAddModule"
+              />
+            </div>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
 
