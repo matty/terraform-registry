@@ -75,46 +75,32 @@ export const useAuth = () => {
     }
   };
 
-  // Try to auto-login via dev bypass (dev mode only)
+  // Probe whether dev bypass is available. If enabled, also logs in (POST creates a session).
   const checkDevBypass = async () => {
-    if (import.meta.dev) {
-      try {
-        // Hit the dev-login endpoint; 404 in prod, 400 if not enabled
-        const response = await $fetch<{ enabled: boolean }>("/api/auth/dev-login", {
-          method: "POST",
-        });
-        devBypassEnabled.value = true;
-        // Success — session was created
-        isAuthenticated.value = true;
-        await fetchUser();
-        return true;
-      } catch (error: any) {
-        if (error?.statusCode === 400) {
-          // Exists but not enabled
-          devBypassEnabled.value = false;
-        } else {
-          // Not available
-          devBypassEnabled.value = false;
-        }
-        return false;
-      }
+    try {
+      await $fetch("/api/auth/dev-login", { method: "POST" });
+      // 200 — bypass is enabled, session was created
+      devBypassEnabled.value = true;
+      isAuthenticated.value = true;
+      await fetchUser();
+      return true;
+    } catch (error: any) {
+      // 400 = endpoint exists but not enabled, 404 = not available (production)
+      devBypassEnabled.value = false;
+      return false;
     }
-    return false;
   };
 
-  // Login via dev bypass (Development mode only)
+  // Login via dev bypass
   const loginDevBypass = async (): Promise<boolean> => {
-    if (import.meta.dev) {
-      try {
-        await $fetch("/api/auth/dev-login", { method: "POST" });
-        isAuthenticated.value = true;
-        await fetchUser();
-        return true;
-      } catch {
-        return false;
-      }
+    try {
+      await $fetch("/api/auth/dev-login", { method: "POST" });
+      isAuthenticated.value = true;
+      await fetchUser();
+      return true;
+    } catch {
+      return false;
     }
-    return false;
   };
 
   // Initiate OIDC login flow

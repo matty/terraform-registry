@@ -203,7 +203,7 @@ public static class AuthHandlers
     /// <summary>
     /// Creates a dev session (Development only, requires DevAuthBypass).
     /// </summary>
-    public static IResult DevLogin(
+    public static async Task<IResult> DevLogin(
         JwtService jwtService,
         IConfiguration configuration,
         IHostEnvironment environment,
@@ -226,6 +226,22 @@ public static class AuthHandlers
         var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
         var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
         var devName = configuration["DevAuthBypass:Name"] ?? "Dev User";
+
+        // Ensure the dev user exists in the database (needed for FK constraints on webhooks, etc.)
+        var dbService = context.RequestServices.GetRequiredService<IDatabaseService>();
+        var existingUser = await dbService.GetUserByEmailAsync(devEmail);
+        if (existingUser == null)
+        {
+            await dbService.AddUserAsync(new User
+            {
+                Id = devUserId,
+                Email = devEmail,
+                Provider = "DevBypass",
+                ProviderId = devUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
 
         // Generate session token
         var token = jwtService.GenerateToken(

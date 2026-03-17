@@ -285,12 +285,15 @@ app.MapGet("/api/auth/session", (HttpContext context) => AuthHandlers.CheckSessi
     .WithTags("Authentication")
     .WithDescription("Checks if user has a valid session");
 
-// Dev-only login endpoint
-app.MapPost("/api/auth/dev-login",
-        (JwtService jwt, IConfiguration cfg, IHostEnvironment env, HttpContext ctx) =>
-            AuthHandlers.DevLogin(jwt, cfg, env, ctx))
-    .WithTags("Authentication")
-    .WithDescription("Creates a dev session (Development only, requires TF_REG_DevAuthBypass=true)");
+// Dev-only login endpoint — not registered in production (route doesn't exist)
+if (app.Environment.IsDevelopment())
+{
+    app.MapPost("/api/auth/dev-login",
+            (JwtService jwt, IConfiguration cfg, IHostEnvironment env, HttpContext ctx) =>
+                AuthHandlers.DevLogin(jwt, cfg, env, ctx))
+        .WithTags("Authentication")
+        .WithDescription("Creates a dev session (Development only, requires TF_REG_DevAuthBypass=true)");
+}
 
 app.MapGet("/.well-known/terraform.json", ServiceDiscoveryHandlers.GetServiceDiscovery)
     .WithTags("Service Discovery")
@@ -346,6 +349,10 @@ app.MapPut("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpC
 
 app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpContext context) =>
         WebhookHandlers.DeleteWebhook(id, webhookService, context))
+    .WithTags("Webhooks");
+
+app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context) =>
+        WebhookHandlers.TestWebhook(id, webhookService, dispatcher, context))
     .WithTags("Webhooks");
 
 app.MapGet("/v1/modules",
