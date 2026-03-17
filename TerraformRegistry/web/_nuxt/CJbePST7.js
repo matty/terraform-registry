@@ -1,1 +1,0 @@
-import{a$ as r,A as t,I as l,p as s}from"./BJpBRfin.js";const u=()=>{const e=t(),a=s(!1),o=s(!1);return l(()=>e.fullPath,()=>{a.value=!1}),{isSidebarOpen:a,isSidebarCollapsed:o}},n=r(u);export{n as u};
