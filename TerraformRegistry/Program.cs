@@ -196,6 +196,24 @@ builder.Services.AddSingleton<IPermissionService>(provider =>
     };
 });
 
+// Register Audit Service
+builder.Services.AddSingleton<IAuditService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlAuditService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for audit service."),
+            provider.GetRequiredService<ILogger<TerraformRegistry.PostgreSQL.PostgreSqlAuditService>>()),
+        "sqlite" => new SqliteAuditService(
+            config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db",
+            provider.GetRequiredService<ILogger<SqliteAuditService>>()),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
