@@ -85,15 +85,22 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         var periodStart = GetPeriodStart(period);
         var periodFilter = period == "all" ? "" : "WHERE download_time >= @periodStart";
 
+        var safeTrunc = interval switch
+        {
+            "day" => "day",
+            "week" => "week",
+            "month" => "month",
+            _ => "day"
+        };
+
         var sql = $@"
-            SELECT DATE_TRUNC(@interval, download_time)::date AS date, COUNT(*) AS downloads
+            SELECT DATE_TRUNC('{safeTrunc}', download_time)::date AS date, COUNT(*) AS downloads
             FROM module_downloads
             {periodFilter}
             GROUP BY date
             ORDER BY date";
 
         await using var cmd = new NpgsqlCommand(sql, connection);
-        cmd.Parameters.AddWithValue("@interval", interval);
         if (period != "all")
         {
             cmd.Parameters.AddWithValue("@periodStart", periodStart);

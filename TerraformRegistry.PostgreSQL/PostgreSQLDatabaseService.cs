@@ -270,7 +270,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         string version)
     {
         var sql = @"
-            SELECT 
+            SELECT
                 namespace,
                 name,
                 provider,
@@ -279,13 +279,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 storage_path,
                 published_at,
                 dependencies
-            FROM 
+            FROM
                 modules
-            WHERE 
+            WHERE
                 namespace = @namespace AND
                 name = @name AND
                 provider = @provider AND
-                version = @version";
+                version = @version AND
+                deleted_at IS NULL";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();

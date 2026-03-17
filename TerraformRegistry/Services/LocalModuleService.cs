@@ -366,7 +366,7 @@ public class LocalModuleService : ModuleService
             return (false, "Storage directory does not exist");
         try
         {
-            var testFile = Path.Combine(_moduleStoragePath, ".health-check");
+            var testFile = Path.Combine(_moduleStoragePath, $".health-{Guid.NewGuid():N}");
             await File.WriteAllTextAsync(testFile, "ok");
             File.Delete(testFile);
             return (true, null);

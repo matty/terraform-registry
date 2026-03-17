@@ -92,6 +92,7 @@ builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 // Register HttpClientFactory for OAuth flows
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("WebhookDelivery", c => c.Timeout = TimeSpan.FromSeconds(5));
 
 // Register Controllers (for ApiKeyController)
 builder.Services.AddControllers();

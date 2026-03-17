@@ -302,7 +302,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         var sql = @"
             SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
             FROM modules
-            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
@@ -822,11 +822,11 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task RecordDownloadAsync(string @namespace, string name, string provider, string version, string? clientIp, string? userAgent)
     {
-        using var connection = new SqliteConnection(_connectionString);
+        await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
         // Look up module_id
-        using var lookupCmd = connection.CreateCommand();
+        await using var lookupCmd = connection.CreateCommand();
         lookupCmd.CommandText = "SELECT id FROM modules WHERE namespace = $ns AND name = $name AND provider = $provider AND version = $version AND deleted_at IS NULL";
         lookupCmd.Parameters.AddWithValue("$ns", @namespace);
         lookupCmd.Parameters.AddWithValue("$name", name);
@@ -834,7 +834,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         lookupCmd.Parameters.AddWithValue("$version", version);
         var moduleId = await lookupCmd.ExecuteScalarAsync();
 
-        using var cmd = connection.CreateCommand();
+        await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"INSERT INTO module_downloads (module_id, namespace, name, provider, version, download_time, client_ip, user_agent)
                             VALUES ($moduleId, $ns, $name, $provider, $version, $time, $ip, $ua)";
         cmd.Parameters.AddWithValue("$moduleId", moduleId ?? DBNull.Value);

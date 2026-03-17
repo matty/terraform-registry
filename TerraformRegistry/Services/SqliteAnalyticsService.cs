@@ -20,9 +20,9 @@ public class SqliteAnalyticsService : IAnalyticsService
         var sql = @"
             SELECT
                 COUNT(*) AS total_downloads,
-                COUNT(CASE WHEN download_time >= date('now') THEN 1 END) AS downloads_today,
-                COUNT(CASE WHEN download_time >= datetime('now', '-7 days') THEN 1 END) AS downloads_this_week,
-                COUNT(CASE WHEN download_time >= datetime('now', '-30 days') THEN 1 END) AS downloads_this_month,
+                COUNT(CASE WHEN download_time >= strftime('%Y-%m-%dT00:00:00', 'now') THEN 1 END) AS downloads_today,
+                COUNT(CASE WHEN download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days') THEN 1 END) AS downloads_this_week,
+                COUNT(CASE WHEN download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 days') THEN 1 END) AS downloads_this_month,
                 COUNT(DISTINCT namespace || '/' || name || '/' || provider) AS unique_modules
             FROM module_downloads";
 
@@ -183,11 +183,11 @@ public class SqliteAnalyticsService : IAnalyticsService
 
     private static string GetPeriodFilter(string period) => period switch
     {
-        "7d" => "download_time >= datetime('now', '-7 days')",
-        "30d" => "download_time >= datetime('now', '-30 days')",
-        "90d" => "download_time >= datetime('now', '-90 days')",
+        "7d" => "download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-7 days')",
+        "30d" => "download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 days')",
+        "90d" => "download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')",
         "all" => "",
-        _ => "download_time >= datetime('now', '-30 days')"
+        _ => "download_time >= strftime('%Y-%m-%dT%H:%M:%S', 'now', '-30 days')"
     };
 
     private static string GetDateGrouping(string interval) => interval switch

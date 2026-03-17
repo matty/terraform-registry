@@ -22,7 +22,6 @@ public class WebhookDispatcher(IWebhookService webhookService, IHttpClientFactor
                 });
 
                 var client = httpClientFactory.CreateClient("WebhookDelivery");
-                client.Timeout = TimeSpan.FromSeconds(5);
 
                 var deliveryTasks = webhooks.Select(async webhook =>
                 {
