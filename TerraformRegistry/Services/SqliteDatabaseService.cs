@@ -919,6 +919,31 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<IEnumerable<User>> ListAllUsersAsync()
+    {
+        var users = new List<User>();
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users ORDER BY created_at DESC";
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            users.Add(new User
+            {
+                Id = reader.GetString(0),
+                Email = reader.GetString(1),
+                Provider = reader.GetString(2),
+                ProviderId = reader.GetString(3),
+                CreatedAt = DateTime.Parse(reader.GetString(4)),
+                UpdatedAt = DateTime.Parse(reader.GetString(5))
+            });
+        }
+
+        return users;
+    }
+
     public async Task<bool> CheckConnectionAsync()
     {
         try

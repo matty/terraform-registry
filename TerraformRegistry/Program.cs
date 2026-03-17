@@ -403,6 +403,18 @@ app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService,
         WebhookHandlers.TestWebhook(id, webhookService, dispatcher, context))
     .WithTags("Webhooks");
 
+// Admin - Roles
+app.MapGet("/api/admin/roles", (IRoleService roleService, HttpContext context) => AdminHandlers.ListRoles(roleService, context)).WithTags("Admin");
+app.MapPost("/api/admin/roles", (IRoleService roleService, HttpContext context, HttpRequest request) => AdminHandlers.CreateRole(roleService, context, request)).WithTags("Admin");
+app.MapPut("/api/admin/roles/{id}", (Guid id, IRoleService roleService, HttpContext context, HttpRequest request) => AdminHandlers.UpdateRole(id, roleService, context, request)).WithTags("Admin");
+app.MapDelete("/api/admin/roles/{id}", (Guid id, IRoleService roleService, HttpContext context) => AdminHandlers.DeleteRole(id, roleService, context)).WithTags("Admin");
+
+// Admin - Users
+app.MapGet("/api/admin/users", (IDatabaseService dbService, IPermissionService permService, HttpContext context) => AdminHandlers.ListUsers(dbService, permService, context)).WithTags("Admin");
+app.MapGet("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, HttpContext context) => AdminHandlers.GetUserRoles(userId, permService, context)).WithTags("Admin");
+app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, context, request)).WithTags("Admin");
+app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, context)).WithTags("Admin");
+
 // VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
 app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>
         VcsHandlers.ListVcsSources(vcsService, context))

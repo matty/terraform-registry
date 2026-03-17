@@ -84,6 +84,11 @@ public interface IDatabaseService
     Task RecordDownloadAsync(string @namespace, string name, string provider, string version, string? clientIp, string? userAgent);
 
     /// <summary>
+    ///     Lists all users in the system
+    /// </summary>
+    Task<IEnumerable<User>> ListAllUsersAsync();
+
+    /// <summary>
     ///     Checks that the database connection is healthy
     /// </summary>
     Task<bool> CheckConnectionAsync();
