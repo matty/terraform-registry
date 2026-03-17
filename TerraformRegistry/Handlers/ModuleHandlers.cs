@@ -228,7 +228,7 @@ public static class ModuleHandlers
                 return ErrorResponseExtensions.Conflict("Module version already exists");
             }
 
-            webhookDispatcher.FireEvent("module.uploaded", @namespace, name, provider, version);
+            webhookDispatcher.FireEvent("module.published", @namespace, name, provider, version, description);
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
@@ -272,7 +272,7 @@ public static class ModuleHandlers
         var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
-        webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version);
+        webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version, null);
 
         return NoContent();
     }
@@ -301,7 +301,7 @@ public static class ModuleHandlers
         var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version);
+        webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version, null);
 
         return NoContent();
     }
@@ -330,7 +330,7 @@ public static class ModuleHandlers
         var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version);
+        webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version, null);
 
         return NoContent();
     }
