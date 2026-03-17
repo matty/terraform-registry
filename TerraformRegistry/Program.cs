@@ -116,6 +116,19 @@ builder.Services.AddSingleton<OAuthService>();
 // Register API Key Service
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
 
+// Register Analytics Service
+builder.Services.AddSingleton<IAnalyticsService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlAnalyticsService(config["PostgreSQL:ConnectionString"]!),
+        "sqlite" => new SqliteAnalyticsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -276,6 +289,28 @@ app.MapGet("/ready", (IDatabaseService dbService, IModuleService moduleService, 
     .WithDescription("Readiness probe — use ?detail=true with auth for component details")
     .Produces(200)
     .Produces(503);
+
+// Analytics endpoints (auth handled by middleware via /api/analytics prefix)
+app.MapGet("/api/analytics/downloads/summary", (IAnalyticsService analytics) =>
+        AnalyticsHandlers.GetSummary(analytics))
+    .WithTags("Analytics")
+    .WithDescription("Download summary statistics");
+
+app.MapGet("/api/analytics/downloads/top", (IAnalyticsService analytics, int limit = 10, string period = "30d") =>
+        AnalyticsHandlers.GetTopModules(analytics, limit, period))
+    .WithTags("Analytics")
+    .WithDescription("Top downloaded modules");
+
+app.MapGet("/api/analytics/downloads/trends", (IAnalyticsService analytics, string period = "30d", string interval = "day") =>
+        AnalyticsHandlers.GetTrends(analytics, period, interval))
+    .WithTags("Analytics")
+    .WithDescription("Download trends over time");
+
+app.MapGet("/api/analytics/downloads/module/{namespace}/{name}/{provider}",
+        (string @namespace, string name, string provider, IAnalyticsService analytics, string period = "30d") =>
+            AnalyticsHandlers.GetModuleAnalytics(@namespace, name, provider, analytics, period))
+    .WithTags("Analytics")
+    .WithDescription("Per-module download analytics");
 
 app.MapGet("/v1/modules",
         (IModuleService moduleService, string? q, string? @namespace, string? provider, int offset = 0,

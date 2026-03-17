@@ -14,7 +14,7 @@ public class AuthenticationMiddleware(
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
     private const string SessionCookieName = "tf-session";
-    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys"];
+    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/webhooks"];
 
     public async Task InvokeAsync(HttpContext context)
     {
