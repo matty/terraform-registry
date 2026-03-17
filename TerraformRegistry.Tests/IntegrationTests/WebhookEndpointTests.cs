@@ -30,7 +30,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var response = await client.PostAsJsonAsync("/api/webhooks", new
         {
             url = "https://example.com/hook",
-            events = new[] { "module.uploaded" }
+            events = new[] { "module.published" }
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -49,7 +49,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         await client.PostAsJsonAsync("/api/webhooks", new
         {
             url = "https://example.com/list-hook",
-            events = new[] { "module.uploaded" }
+            events = new[] { "module.published" }
         });
 
         // List webhooks
@@ -69,7 +69,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
         {
             url = "https://example.com/update-hook",
-            events = new[] { "module.uploaded" }
+            events = new[] { "module.published" }
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -95,7 +95,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
         {
             url = "https://example.com/delete-hook",
-            events = new[] { "module.uploaded" }
+            events = new[] { "module.published" }
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -103,6 +103,100 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         // Delete the webhook
         var response = await client.DeleteAsync($"/api/webhooks/{id}");
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Webhooks_Create_WithDiscordFormat_ReturnsCreated()
+    {
+        var client = await CreateAuthenticatedClientAsync("discord-fmt@example.com", "discord-fmt-id");
+
+        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        {
+            url = "https://discord.com/api/webhooks/123",
+            events = new[] { "module.published" },
+            format = "discord"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("discord", json.GetProperty("format").GetString());
+    }
+
+    [Fact]
+    public async Task Webhooks_Create_WithCustomFormat_RequiresTemplate()
+    {
+        var client = await CreateAuthenticatedClientAsync("custom-notpl@example.com", "custom-notpl-id");
+
+        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        {
+            url = "https://example.com/custom-hook",
+            events = new[] { "module.published" },
+            format = "custom"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Webhooks_Create_WithCustomFormat_AndTemplate_ReturnsCreated()
+    {
+        var client = await CreateAuthenticatedClientAsync("custom-tpl@example.com", "custom-tpl-id");
+
+        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        {
+            url = "https://example.com/custom-hook2",
+            events = new[] { "module.published" },
+            format = "custom",
+            template = "{\"text\":\"{{event}}\"}"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("custom", json.GetProperty("format").GetString());
+    }
+
+    [Fact]
+    public async Task Webhooks_Create_WithInvalidFormat_ReturnsBadRequest()
+    {
+        var client = await CreateAuthenticatedClientAsync("invalid-fmt@example.com", "invalid-fmt-id");
+
+        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        {
+            url = "https://example.com/invalid-hook",
+            events = new[] { "module.published" },
+            format = "invalid"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Webhooks_Update_Format_ReturnsUpdated()
+    {
+        var client = await CreateAuthenticatedClientAsync("update-fmt@example.com", "update-fmt-id");
+
+        // Create with generic format
+        var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
+        {
+            url = "https://example.com/fmt-update-hook",
+            events = new[] { "module.published" },
+            format = "generic"
+        });
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        // Update to slack format
+        var response = await client.PutAsJsonAsync($"/api/webhooks/{id}", new
+        {
+            format = "slack"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var updated = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("slack", updated.GetProperty("format").GetString());
     }
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string providerId)
