@@ -163,6 +163,21 @@ builder.Services.AddSingleton<IVcsSourceService>(provider =>
     };
 });
 
+// Register VCS Connection Service
+builder.Services.AddSingleton<IVcsConnectionService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new TerraformRegistry.PostgreSQL.PostgreSqlVcsConnectionService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for VCS connection service.")),
+        "sqlite" => new SqliteVcsConnectionService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 builder.Services.AddSingleton<GitHubVcsService>();
 builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
 
@@ -447,12 +462,12 @@ app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext contex
         VcsHandlers.ListVcsSources(vcsService, context))
     .WithTags("VCS");
 
-app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.CreateVcsSource(vcsService, config, auditService, context, request))
+app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateVcsSource(vcsService, connectionService, auditService, context, request))
     .WithTags("VCS");
 
-app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.UpdateVcsSource(id, vcsService, config, auditService, context, request))
+app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.UpdateVcsSource(id, vcsService, auditService, context, request))
     .WithTags("VCS");
 
 app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context) =>

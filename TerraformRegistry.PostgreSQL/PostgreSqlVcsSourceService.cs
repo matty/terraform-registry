@@ -19,7 +19,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = @userId ORDER BY created_at DESC";
+        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = @userId ORDER BY created_at DESC";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@userId", userId);
 
@@ -32,7 +32,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         return sources;
     }
 
-    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, string? patEncrypted, string webhookSecret)
+    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -46,15 +46,14 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
             Provider = provider,
             RepoOwner = repoOwner,
             RepoName = repoName,
-            PatEncrypted = patEncrypted,
-            WebhookSecret = webhookSecret,
+            ConnectionId = connectionId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        var sql = @"INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at)
-                    VALUES (@id, @userId, @namespace, @name, @provider, @repoOwner, @repoName, @patEncrypted, @webhookSecret, @isActive, @createdAt, @updatedAt)";
+        var sql = @"INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
+                    VALUES (@id, @userId, @namespace, @name, @provider, @repoOwner, @repoName, @connectionId, @isActive, @createdAt, @updatedAt)";
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@id", vcsSource.Id);
@@ -64,8 +63,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         cmd.Parameters.AddWithValue("@provider", vcsSource.Provider);
         cmd.Parameters.AddWithValue("@repoOwner", vcsSource.RepoOwner);
         cmd.Parameters.AddWithValue("@repoName", vcsSource.RepoName);
-        cmd.Parameters.AddWithValue("@patEncrypted", (object?)vcsSource.PatEncrypted ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@webhookSecret", vcsSource.WebhookSecret);
+        cmd.Parameters.AddWithValue("@connectionId", vcsSource.ConnectionId);
         cmd.Parameters.AddWithValue("@isActive", vcsSource.IsActive);
         cmd.Parameters.AddWithValue("@createdAt", vcsSource.CreatedAt);
         cmd.Parameters.AddWithValue("@updatedAt", vcsSource.UpdatedAt);
@@ -74,7 +72,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         return vcsSource;
     }
 
-    public async Task<VcsSource?> UpdateVcsSourceAsync(Guid id, string userId, string? repoOwner, string? repoName, string? patEncrypted, bool? isActive)
+    public async Task<VcsSource?> UpdateVcsSourceAsync(Guid id, string userId, string? repoOwner, string? repoName, Guid? connectionId, bool? isActive)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -99,10 +97,10 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
             parameters.Add(new NpgsqlParameter("@repoName", repoName));
         }
 
-        if (patEncrypted != null)
+        if (connectionId.HasValue)
         {
-            setClauses.Add("pat_encrypted = @patEncrypted");
-            parameters.Add(new NpgsqlParameter("@patEncrypted", patEncrypted));
+            setClauses.Add("connection_id = @connectionId");
+            parameters.Add(new NpgsqlParameter("@connectionId", connectionId.Value));
         }
 
         if (isActive.HasValue)
@@ -117,7 +115,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await cmd.ExecuteNonQueryAsync();
 
         // SELECT the row back
-        var selectSql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE id = @selectId AND user_id = @selectUserId";
+        var selectSql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE id = @selectId AND user_id = @selectUserId";
         await using var selectCmd = new NpgsqlCommand(selectSql, connection);
         selectCmd.Parameters.AddWithValue("@selectId", id);
         selectCmd.Parameters.AddWithValue("@selectUserId", userId);
@@ -146,7 +144,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = @repoOwner AND repo_name = @repoName AND is_active = true LIMIT 1";
+        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = @repoOwner AND repo_name = @repoName AND is_active = true LIMIT 1";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@repoOwner", repoOwner);
         cmd.Parameters.AddWithValue("@repoName", repoName);
@@ -167,11 +165,10 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
             Provider = reader.GetString(4),
             RepoOwner = reader.GetString(5),
             RepoName = reader.GetString(6),
-            PatEncrypted = reader.IsDBNull(7) ? null : reader.GetString(7),
-            WebhookSecret = reader.GetString(8),
-            IsActive = reader.GetBoolean(9),
-            CreatedAt = reader.GetDateTime(10),
-            UpdatedAt = reader.GetDateTime(11)
+            ConnectionId = reader.GetGuid(7),
+            IsActive = reader.GetBoolean(8),
+            CreatedAt = reader.GetDateTime(9),
+            UpdatedAt = reader.GetDateTime(10)
         };
     }
 }

@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
@@ -19,7 +18,7 @@ public static class VcsHandlers
         return Results.Ok(sources);
     }
 
-    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IConfiguration configuration, IAuditService auditService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -33,33 +32,24 @@ public static class VcsHandlers
             || string.IsNullOrWhiteSpace(body.Name)
             || string.IsNullOrWhiteSpace(body.Provider)
             || string.IsNullOrWhiteSpace(body.RepoOwner)
-            || string.IsNullOrWhiteSpace(body.RepoName))
+            || string.IsNullOrWhiteSpace(body.RepoName)
+            || body.ConnectionId == Guid.Empty)
         {
-            return Results.BadRequest(new { error = "namespace, name, provider, repoOwner, and repoName are required" });
+            return Results.BadRequest(new { error = "namespace, name, provider, repoOwner, repoName, and connectionId are required" });
         }
 
-        string? patEncrypted = null;
-        if (!string.IsNullOrEmpty(body.Pat))
+        // Verify the connection exists
+        var conn = await connectionService.GetConnectionAsync(body.ConnectionId);
+        if (conn == null)
         {
-            var encryptionKey = configuration["EncryptionKey"];
-            if (string.IsNullOrEmpty(encryptionKey))
-            {
-                return Results.BadRequest(new { error = "EncryptionKey is not configured; cannot store PAT" });
-            }
-
-            patEncrypted = EncryptionHelper.Encrypt(body.Pat, encryptionKey);
+            return Results.BadRequest(new { error = "VCS connection not found" });
         }
-
-        var webhookSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
         var source = await vcsService.CreateVcsSourceAsync(
             userId, body.Namespace, body.Name, body.Provider,
-            body.RepoOwner, body.RepoName, patEncrypted, webhookSecret);
+            body.RepoOwner, body.RepoName, body.ConnectionId);
 
-        var baseUrl = configuration["BaseUrl"] ?? "http://localhost:5131";
-        var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/vcs/github/webhook";
-
-        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName });
+        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName, connectionId = body.ConnectionId });
 
         return Results.Created($"/api/vcs/sources/{source.Id}", new
         {
@@ -69,15 +59,14 @@ public static class VcsHandlers
             source.Provider,
             source.RepoOwner,
             source.RepoName,
+            source.ConnectionId,
             source.IsActive,
             source.CreatedAt,
-            source.UpdatedAt,
-            webhookSecret,
-            webhookUrl
+            source.UpdatedAt
         });
     }
 
-    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IConfiguration configuration, IAuditService auditService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -87,19 +76,7 @@ public static class VcsHandlers
 
         var body = await request.ReadFromJsonAsync<UpdateVcsSourceRequest>();
 
-        string? patEncrypted = null;
-        if (!string.IsNullOrEmpty(body?.Pat))
-        {
-            var encryptionKey = configuration["EncryptionKey"];
-            if (string.IsNullOrEmpty(encryptionKey))
-            {
-                return Results.BadRequest(new { error = "EncryptionKey is not configured; cannot store PAT" });
-            }
-
-            patEncrypted = EncryptionHelper.Encrypt(body.Pat, encryptionKey);
-        }
-
-        var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, patEncrypted, body?.IsActive);
+        var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, body?.ConnectionId, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS source not found or access denied" });
 
         context.FireAuditLog(auditService, "vcs.updated", "vcs_source", id.ToString());
@@ -136,5 +113,5 @@ public static class VcsHandlers
     }
 }
 
-public record CreateVcsSourceRequest(string Namespace, string Name, string Provider, string RepoOwner, string RepoName, string? Pat);
-public record UpdateVcsSourceRequest(string? RepoOwner, string? RepoName, string? Pat, bool? IsActive);
+public record CreateVcsSourceRequest(string Namespace, string Name, string Provider, string RepoOwner, string RepoName, Guid ConnectionId);
+public record UpdateVcsSourceRequest(string? RepoOwner, string? RepoName, Guid? ConnectionId, bool? IsActive);

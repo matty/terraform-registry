@@ -20,7 +20,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = $userId ORDER BY created_at DESC";
+        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = $userId ORDER BY created_at DESC";
         cmd.Parameters.AddWithValue("$userId", userId);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -32,7 +32,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         return sources;
     }
 
-    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, string? patEncrypted, string webhookSecret)
+    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -46,16 +46,15 @@ public class SqliteVcsSourceService : IVcsSourceService
             Provider = provider,
             RepoOwner = repoOwner,
             RepoName = repoName,
-            PatEncrypted = patEncrypted,
-            WebhookSecret = webhookSecret,
+            ConnectionId = connectionId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = @"INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at)
-                            VALUES ($id, $userId, $namespace, $name, $provider, $repoOwner, $repoName, $patEncrypted, $webhookSecret, $isActive, $createdAt, $updatedAt)";
+        cmd.CommandText = @"INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
+                            VALUES ($id, $userId, $namespace, $name, $provider, $repoOwner, $repoName, $connectionId, $isActive, $createdAt, $updatedAt)";
         cmd.Parameters.AddWithValue("$id", vcsSource.Id.ToString());
         cmd.Parameters.AddWithValue("$userId", vcsSource.UserId);
         cmd.Parameters.AddWithValue("$namespace", vcsSource.Namespace);
@@ -63,8 +62,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         cmd.Parameters.AddWithValue("$provider", vcsSource.Provider);
         cmd.Parameters.AddWithValue("$repoOwner", vcsSource.RepoOwner);
         cmd.Parameters.AddWithValue("$repoName", vcsSource.RepoName);
-        cmd.Parameters.AddWithValue("$patEncrypted", (object?)vcsSource.PatEncrypted ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$webhookSecret", vcsSource.WebhookSecret);
+        cmd.Parameters.AddWithValue("$connectionId", vcsSource.ConnectionId.ToString());
         cmd.Parameters.AddWithValue("$isActive", vcsSource.IsActive ? 1 : 0);
         cmd.Parameters.AddWithValue("$createdAt", vcsSource.CreatedAt.ToString("o"));
         cmd.Parameters.AddWithValue("$updatedAt", vcsSource.UpdatedAt.ToString("o"));
@@ -73,7 +71,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         return vcsSource;
     }
 
-    public async Task<VcsSource?> UpdateVcsSourceAsync(Guid id, string userId, string? repoOwner, string? repoName, string? patEncrypted, bool? isActive)
+    public async Task<VcsSource?> UpdateVcsSourceAsync(Guid id, string userId, string? repoOwner, string? repoName, Guid? connectionId, bool? isActive)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -107,10 +105,10 @@ public class SqliteVcsSourceService : IVcsSourceService
             parameters.Add(new SqliteParameter("$repoName", repoName));
         }
 
-        if (patEncrypted != null)
+        if (connectionId.HasValue)
         {
-            setClauses.Add("pat_encrypted = $patEncrypted");
-            parameters.Add(new SqliteParameter("$patEncrypted", patEncrypted));
+            setClauses.Add("connection_id = $connectionId");
+            parameters.Add(new SqliteParameter("$connectionId", connectionId.Value.ToString()));
         }
 
         if (isActive.HasValue)
@@ -127,7 +125,7 @@ public class SqliteVcsSourceService : IVcsSourceService
 
         // Fetch the updated record
         await using var fetchCmd = connection.CreateCommand();
-        fetchCmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE id = $id";
+        fetchCmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE id = $id";
         fetchCmd.Parameters.AddWithValue("$id", id.ToString());
 
         await using var reader = await fetchCmd.ExecuteReaderAsync();
@@ -155,7 +153,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = $repoOwner AND repo_name = $repoName AND is_active = 1 LIMIT 1";
+        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = $repoOwner AND repo_name = $repoName AND is_active = 1 LIMIT 1";
         cmd.Parameters.AddWithValue("$repoOwner", repoOwner);
         cmd.Parameters.AddWithValue("$repoName", repoName);
 
@@ -175,11 +173,10 @@ public class SqliteVcsSourceService : IVcsSourceService
             Provider = reader.GetString(4),
             RepoOwner = reader.GetString(5),
             RepoName = reader.GetString(6),
-            PatEncrypted = reader.IsDBNull(7) ? null : reader.GetString(7),
-            WebhookSecret = reader.GetString(8),
-            IsActive = reader.GetInt32(9) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(10)),
-            UpdatedAt = DateTime.Parse(reader.GetString(11))
+            ConnectionId = Guid.Parse(reader.GetString(7)),
+            IsActive = reader.GetInt32(8) == 1,
+            CreatedAt = DateTime.Parse(reader.GetString(9)),
+            UpdatedAt = DateTime.Parse(reader.GetString(10))
         };
     }
 }

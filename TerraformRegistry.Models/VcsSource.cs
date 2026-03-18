@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json.Serialization;
 
 namespace TerraformRegistry.Models;
 
@@ -29,13 +28,8 @@ public class VcsSource
     [Column("repo_name")]
     public string RepoName { get; set; } = string.Empty;
 
-    [Column("pat_encrypted")]
-    [JsonIgnore]
-    public string? PatEncrypted { get; set; }
-
-    [Column("webhook_secret")]
-    [JsonIgnore]
-    public string WebhookSecret { get; set; } = string.Empty;
+    [Column("connection_id")]
+    public Guid ConnectionId { get; set; }
 
     [Column("is_active")]
     public bool IsActive { get; set; } = true;

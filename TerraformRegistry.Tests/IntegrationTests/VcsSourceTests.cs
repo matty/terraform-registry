@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,9 +24,12 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Create_ReturnsCreatedWithWebhookInfo()
+    public async Task VcsSources_Create_ReturnsCreated()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-create@example.com", "vcs-create-id");
+
+        // Create a connection first
+        var connectionId = await CreateTestConnectionAsync();
 
         var response = await client.PostAsJsonAsync("/api/vcs/sources", new
         {
@@ -35,22 +37,23 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             name = "test-mod",
             provider = "aws",
             repoOwner = "test-owner",
-            repoName = "test-repo"
+            repoName = "test-repo",
+            connectionId
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.True(json.TryGetProperty("webhookSecret", out var secret));
-        Assert.False(string.IsNullOrEmpty(secret.GetString()));
-        Assert.True(json.TryGetProperty("webhookUrl", out var url));
-        Assert.Contains("/api/vcs/github/webhook", url.GetString());
+        Assert.True(json.TryGetProperty("connectionId", out var connId));
+        Assert.Equal(connectionId.ToString(), connId.GetString());
     }
 
     [Fact]
     public async Task VcsSources_List_ReturnsCreatedSource()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-list@example.com", "vcs-list-id");
+
+        var connectionId = await CreateTestConnectionAsync();
 
         // Create a VCS source
         await client.PostAsJsonAsync("/api/vcs/sources", new
@@ -59,7 +62,8 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             name = "list-mod",
             provider = "aws",
             repoOwner = "list-owner",
-            repoName = "list-repo"
+            repoName = "list-repo",
+            connectionId
         });
 
         // List VCS sources
@@ -76,6 +80,8 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     {
         var client = await CreateAuthenticatedClientAsync("vcs-update@example.com", "vcs-update-id");
 
+        var connectionId = await CreateTestConnectionAsync();
+
         // Create a VCS source
         var createResponse = await client.PostAsJsonAsync("/api/vcs/sources", new
         {
@@ -83,7 +89,8 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             name = "upd-mod",
             provider = "aws",
             repoOwner = "upd-owner",
-            repoName = "upd-repo"
+            repoName = "upd-repo",
+            connectionId
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -105,6 +112,8 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     {
         var client = await CreateAuthenticatedClientAsync("vcs-delete@example.com", "vcs-delete-id");
 
+        var connectionId = await CreateTestConnectionAsync();
+
         // Create a VCS source
         var createResponse = await client.PostAsJsonAsync("/api/vcs/sources", new
         {
@@ -112,7 +121,8 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             name = "del-mod",
             provider = "aws",
             repoOwner = "del-owner",
-            repoName = "del-repo"
+            repoName = "del-repo",
+            connectionId
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -130,24 +140,28 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
         var response = await client.PostAsJsonAsync("/api/vcs/sources", new
         {
             @namespace = "test-ns"
-            // Missing name, provider, repoOwner, repoName
+            // Missing name, provider, repoOwner, repoName, connectionId
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task GitHubWebhook_InvalidSignature_ReturnsSkipped()
+    public async Task GitHubWebhook_InvalidSignature_ReturnsError()
     {
-        // Create a VCS source directly via DI so webhook lookup works
+        // Create a VCS connection and source directly via DI so webhook lookup works
         using var scope = _factory.Services.CreateScope();
         var vcsService = scope.ServiceProvider.GetRequiredService<IVcsSourceService>();
+        var connectionService = scope.ServiceProvider.GetRequiredService<IVcsConnectionService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var user = await apiKeyService.GetOrCreateUserAsync("gh-sig@example.com", "test", "gh-sig-id");
 
+        var connection = await connectionService.CreateConnectionAsync(
+            user.Id, "test-connection", "github", null, null, "real-secret");
+
         await vcsService.CreateVcsSourceAsync(
             user.Id, "sig-ns", "sig-mod", "aws",
-            "test-owner", "test-repo", null, "real-secret");
+            "test-owner", "test-repo", connection.Id);
 
         var payload = JsonSerializer.Serialize(new
         {
@@ -201,6 +215,15 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not a tag", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<Guid> CreateTestConnectionAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var connectionService = scope.ServiceProvider.GetRequiredService<IVcsConnectionService>();
+        var connection = await connectionService.CreateConnectionAsync(
+            null, "test-connection", "github", null, null, "test-webhook-secret");
+        return connection.Id;
     }
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string providerId)

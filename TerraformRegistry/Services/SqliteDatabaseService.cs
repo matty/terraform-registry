@@ -169,6 +169,24 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             await alter2.ExecuteNonQueryAsync();
         }
 
+        var createVcsConnectionsSql = @"
+        CREATE TABLE IF NOT EXISTS vcs_connections (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT 'github',
+            pat_encrypted TEXT,
+            default_org TEXT,
+            webhook_secret TEXT NOT NULL,
+            created_by TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );";
+
+        await using var cmdVcsConnections = connection.CreateCommand();
+        cmdVcsConnections.CommandText = createVcsConnectionsSql;
+        await cmdVcsConnections.ExecuteNonQueryAsync();
+
         var createVcsSourcesSql = @"
         CREATE TABLE IF NOT EXISTS vcs_sources (
             id TEXT PRIMARY KEY,
@@ -178,8 +196,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             provider TEXT NOT NULL,
             repo_owner TEXT NOT NULL,
             repo_name TEXT NOT NULL,
-            pat_encrypted TEXT,
-            webhook_secret TEXT NOT NULL,
+            connection_id TEXT NOT NULL REFERENCES vcs_connections(id),
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))

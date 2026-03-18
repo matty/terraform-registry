@@ -9,6 +9,7 @@ namespace TerraformRegistry.Services;
 public class GitHubVcsService
 {
     private readonly IVcsSourceService _vcsSourceService;
+    private readonly IVcsConnectionService _vcsConnectionService;
     private readonly IModuleService _moduleService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
@@ -18,6 +19,7 @@ public class GitHubVcsService
 
     public GitHubVcsService(
         IVcsSourceService vcsSourceService,
+        IVcsConnectionService vcsConnectionService,
         IModuleService moduleService,
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
@@ -26,6 +28,7 @@ public class GitHubVcsService
         ILogger<GitHubVcsService> logger)
     {
         _vcsSourceService = vcsSourceService;
+        _vcsConnectionService = vcsConnectionService;
         _moduleService = moduleService;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -77,6 +80,13 @@ public class GitHubVcsService
             return ("skipped", $"No active VCS source for {repoOwner}/{repoName}", null);
         }
 
+        // Look up the VCS connection for webhook secret and PAT
+        var vcsConnection = await _vcsConnectionService.GetConnectionAsync(vcsSource.ConnectionId);
+        if (vcsConnection == null)
+        {
+            return ("error", $"VCS connection {vcsSource.ConnectionId} not found for source {vcsSource.Id}", null);
+        }
+
         // Verify HMAC-SHA256 signature
         if (string.IsNullOrEmpty(signatureHeader) || !signatureHeader.StartsWith("sha256=", StringComparison.Ordinal))
         {
@@ -84,7 +94,7 @@ public class GitHubVcsService
         }
 
         var expectedSignature = signatureHeader["sha256=".Length..];
-        var keyBytes = Encoding.UTF8.GetBytes(vcsSource.WebhookSecret);
+        var keyBytes = Encoding.UTF8.GetBytes(vcsConnection.WebhookSecret);
         var bodyBytes = Encoding.UTF8.GetBytes(body);
         var computedHash = HMACSHA256.HashData(keyBytes, bodyBytes);
         var computedSignature = Convert.ToHexStringLower(computedHash);
@@ -107,18 +117,18 @@ public class GitHubVcsService
 
         // Download tarball from GitHub
         string? pat = null;
-        if (!string.IsNullOrEmpty(vcsSource.PatEncrypted))
+        if (!string.IsNullOrEmpty(vcsConnection.PatEncrypted))
         {
             try
             {
                 var encryptionKey = _configuration["EncryptionKey"] ?? throw new InvalidOperationException("EncryptionKey not configured");
-                pat = EncryptionHelper.Decrypt(vcsSource.PatEncrypted, encryptionKey);
+                pat = EncryptionHelper.Decrypt(vcsConnection.PatEncrypted, encryptionKey);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to decrypt PAT for VCS source {VcsSourceId}, marking inactive", vcsSource.Id);
-                await _vcsSourceService.UpdateVcsSourceAsync(vcsSource.Id, vcsSource.UserId, null, null, null, false);
-                return ("error", "Failed to decrypt PAT; VCS source has been deactivated", null);
+                _logger.LogError(ex, "Failed to decrypt PAT for VCS connection {ConnectionId}, deactivating connection", vcsConnection.Id);
+                await _vcsConnectionService.UpdateConnectionAsync(vcsConnection.Id, null, null, null, false);
+                return ("error", "Failed to decrypt PAT; VCS connection has been deactivated", null);
             }
         }
 
