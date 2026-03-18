@@ -37,11 +37,6 @@ const settingsLinks = [
     to: "/settings/api-keys",
   },
   {
-    label: "Webhooks",
-    icon: "i-lucide-webhook",
-    to: "/settings/webhooks",
-  },
-  {
     label: "Account",
     icon: "i-lucide-user-cog",
     to: "/settings/account",
@@ -51,6 +46,7 @@ const settingsLinks = [
 const adminLinks = [
   { label: 'Roles', icon: 'i-lucide-shield', to: '/admin/roles' },
   { label: 'Users', icon: 'i-lucide-users', to: '/admin/users' },
+  { label: 'Webhooks', icon: 'i-lucide-webhook', to: '/admin/webhooks' },
   { label: 'VCS Connections', icon: 'i-lucide-git-branch', to: '/admin/vcs-connections' },
   { label: 'Audit Log', icon: 'i-lucide-scroll-text', to: '/admin/audit' },
 ];

@@ -34,7 +34,7 @@ public static class Permissions
     public static readonly string[] DefaultUserPermissions =
     [
         ModulesRead, ModulesUpload, ModulesDelete, ModulesRestore,
-        ModulesDescription, WebhooksManage, VcsManage,
+        ModulesDescription, VcsManage,
         ApiKeysManage, AnalyticsView
     ];
 }

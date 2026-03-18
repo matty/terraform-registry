@@ -38,11 +38,11 @@ export function useWebhooks() {
   const { getAuthHeaders } = useAuth()
 
   async function listWebhooks(): Promise<Webhook[]> {
-    return await $fetch('/api/webhooks', { headers: getAuthHeaders() })
+    return await $fetch('/api/admin/webhooks', { headers: getAuthHeaders() })
   }
 
   async function createWebhook(params: { url: string, events: string[], secret?: string, format?: string, template?: string }): Promise<Webhook> {
-    return await $fetch('/api/webhooks', {
+    return await $fetch('/api/admin/webhooks', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: { format: 'generic', ...params },
@@ -50,7 +50,7 @@ export function useWebhooks() {
   }
 
   async function updateWebhook(id: string, data: { url?: string, events?: string[], secret?: string, isActive?: boolean, format?: string, template?: string }): Promise<Webhook> {
-    return await $fetch(`/api/webhooks/${id}`, {
+    return await $fetch(`/api/admin/webhooks/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: data,
@@ -58,14 +58,14 @@ export function useWebhooks() {
   }
 
   async function deleteWebhook(id: string): Promise<void> {
-    await $fetch(`/api/webhooks/${id}`, {
+    await $fetch(`/api/admin/webhooks/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     })
   }
 
   async function testWebhook(id: string): Promise<{ message?: string, error?: string }> {
-    return await $fetch(`/api/webhooks/${id}/test`, {
+    return await $fetch(`/api/admin/webhooks/${id}/test`, {
       method: 'POST',
       headers: getAuthHeaders(),
     })

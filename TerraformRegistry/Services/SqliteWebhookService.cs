@@ -33,6 +33,24 @@ public class SqliteWebhookService : IWebhookService
         return webhooks;
     }
 
+    public async Task<IEnumerable<Webhook>> ListAllWebhooksAsync()
+    {
+        var webhooks = new List<Webhook>();
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, user_id, url, secret, events, is_active, created_at, updated_at, format, template FROM webhooks ORDER BY created_at DESC";
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            webhooks.Add(MapWebhook(reader));
+        }
+
+        return webhooks;
+    }
+
     public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? template = null)
     {
         await using var connection = new SqliteConnection(_connectionString);

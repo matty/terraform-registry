@@ -18,7 +18,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var client = _factory.CreateClient();
         // No auth header
 
-        var response = await client.GetAsync("/api/webhooks");
+        var response = await client.GetAsync("/api/admin/webhooks");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
@@ -27,7 +27,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         var client = await CreateAuthenticatedClientAsync("create-test@example.com", "create-test-id");
 
-        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/hook",
             events = new[] { "module.published" }
@@ -46,14 +46,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var client = await CreateAuthenticatedClientAsync("list-test@example.com", "list-test-id");
 
         // Create a webhook first
-        await client.PostAsJsonAsync("/api/webhooks", new
+        await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/list-hook",
             events = new[] { "module.published" }
         });
 
         // List webhooks
-        var response = await client.GetAsync("/api/webhooks");
+        var response = await client.GetAsync("/api/admin/webhooks");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadAsStringAsync();
@@ -66,7 +66,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var client = await CreateAuthenticatedClientAsync("update-test@example.com", "update-test-id");
 
         // Create a webhook
-        var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/update-hook",
             events = new[] { "module.published" }
@@ -75,7 +75,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var id = created.GetProperty("id").GetString();
 
         // Update the webhook
-        var response = await client.PutAsJsonAsync($"/api/webhooks/{id}", new
+        var response = await client.PutAsJsonAsync($"/api/admin/webhooks/{id}", new
         {
             isActive = false
         });
@@ -92,7 +92,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var client = await CreateAuthenticatedClientAsync("delete-test@example.com", "delete-test-id");
 
         // Create a webhook
-        var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/delete-hook",
             events = new[] { "module.published" }
@@ -101,7 +101,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var id = created.GetProperty("id").GetString();
 
         // Delete the webhook
-        var response = await client.DeleteAsync($"/api/webhooks/{id}");
+        var response = await client.DeleteAsync($"/api/admin/webhooks/{id}");
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -110,7 +110,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         var client = await CreateAuthenticatedClientAsync("discord-fmt@example.com", "discord-fmt-id");
 
-        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://discord.com/api/webhooks/123",
             events = new[] { "module.published" },
@@ -128,7 +128,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         var client = await CreateAuthenticatedClientAsync("custom-notpl@example.com", "custom-notpl-id");
 
-        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/custom-hook",
             events = new[] { "module.published" },
@@ -143,7 +143,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         var client = await CreateAuthenticatedClientAsync("custom-tpl@example.com", "custom-tpl-id");
 
-        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/custom-hook2",
             events = new[] { "module.published" },
@@ -162,7 +162,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         var client = await CreateAuthenticatedClientAsync("invalid-fmt@example.com", "invalid-fmt-id");
 
-        var response = await client.PostAsJsonAsync("/api/webhooks", new
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/invalid-hook",
             events = new[] { "module.published" },
@@ -178,7 +178,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var client = await CreateAuthenticatedClientAsync("update-fmt@example.com", "update-fmt-id");
 
         // Create with generic format
-        var createResponse = await client.PostAsJsonAsync("/api/webhooks", new
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://example.com/fmt-update-hook",
             events = new[] { "module.published" },
@@ -188,7 +188,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var id = created.GetProperty("id").GetString();
 
         // Update to slack format
-        var response = await client.PutAsJsonAsync($"/api/webhooks/{id}", new
+        var response = await client.PutAsJsonAsync($"/api/admin/webhooks/{id}", new
         {
             format = "slack"
         });
@@ -203,9 +203,16 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     {
         using var scope = _factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<TerraformRegistry.API.Interfaces.IPermissionService>();
+        var roleService = scope.ServiceProvider.GetRequiredService<TerraformRegistry.API.Interfaces.IRoleService>();
 
         var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
         var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "webhook-test-key");
+
+        // Webhooks are admin-only — assign admin role
+        var roles = await roleService.ListRolesAsync();
+        var adminRole = roles.First(r => r.Name == TerraformRegistry.API.RoleNames.Admin);
+        await permissionService.AssignRoleAsync(user.Id, adminRole.Id, null);
 
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);

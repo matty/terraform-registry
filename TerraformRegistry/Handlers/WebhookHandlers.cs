@@ -12,9 +12,7 @@ public static class WebhookHandlers
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
-        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
-        var webhooks = await webhookService.ListWebhooksAsync(userId);
+        var webhooks = await webhookService.ListAllWebhooksAsync();
         return Results.Ok(webhooks);
     }
 

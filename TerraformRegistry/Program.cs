@@ -418,24 +418,24 @@ app.MapGet("/api/analytics/downloads/module/{namespace}/{name}/{provider}",
     .WithTags("Analytics")
     .WithDescription("Per-module download analytics");
 
-// Webhook endpoints (auth handled by middleware via /api/webhooks prefix)
-app.MapGet("/api/webhooks", (IWebhookService webhookService, HttpContext context) =>
+// Webhook endpoints (admin-only, auth handled by middleware via /api/admin prefix)
+app.MapGet("/api/admin/webhooks", (IWebhookService webhookService, HttpContext context) =>
         WebhookHandlers.ListWebhooks(webhookService, context))
     .WithTags("Webhooks");
 
-app.MapPost("/api/webhooks", (IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+app.MapPost("/api/admin/webhooks", (IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
         WebhookHandlers.CreateWebhook(webhookService, auditService, context, request))
     .WithTags("Webhooks");
 
-app.MapPut("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+app.MapPut("/api/admin/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
         WebhookHandlers.UpdateWebhook(id, webhookService, auditService, context, request))
     .WithTags("Webhooks");
 
-app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context) =>
+app.MapDelete("/api/admin/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context) =>
         WebhookHandlers.DeleteWebhook(id, webhookService, auditService, context))
     .WithTags("Webhooks");
 
-app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context) =>
+app.MapPost("/api/admin/webhooks/{id}/test", (Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context) =>
         WebhookHandlers.TestWebhook(id, webhookService, dispatcher, context))
     .WithTags("Webhooks");
 
