@@ -474,6 +474,28 @@ app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, I
         VcsHandlers.DeleteVcsSource(id, vcsService, auditService, context))
     .WithTags("VCS");
 
+// VCS Connection admin endpoints
+app.MapGet("/api/admin/vcs-connections", (IVcsConnectionService connectionService, HttpContext context) =>
+        VcsHandlers.ListConnections(connectionService, context))
+    .WithTags("VCS");
+
+app.MapPost("/api/admin/vcs-connections", (IVcsConnectionService connectionService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateConnection(connectionService, config, auditService, context, request))
+    .WithTags("VCS");
+
+app.MapPut("/api/admin/vcs-connections/{id}", (Guid id, IVcsConnectionService connectionService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.UpdateConnection(id, connectionService, config, auditService, context, request))
+    .WithTags("VCS");
+
+app.MapDelete("/api/admin/vcs-connections/{id}", (Guid id, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context) =>
+        VcsHandlers.DeleteConnection(id, connectionService, auditService, context))
+    .WithTags("VCS");
+
+// Lightweight connection list for Add Module dropdown (auth required, not admin-only)
+app.MapGet("/api/vcs/connections", (IVcsConnectionService connectionService, HttpContext context) =>
+        VcsHandlers.ListConnectionSummaries(connectionService, context))
+    .WithTags("VCS");
+
 // GitHub webhook endpoint (public, no auth required)
 app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpContext context) =>
         VcsHandlers.HandleGitHubWebhook(githubService, context))
