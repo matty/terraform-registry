@@ -113,9 +113,15 @@ public class JwtService
 
         return new UserInfo
         {
-            Id = principal.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? string.Empty,
-            Email = principal.FindFirstValue(JwtRegisteredClaimNames.Email) ?? string.Empty,
-            Name = principal.FindFirstValue(JwtRegisteredClaimNames.Name) ?? string.Empty,
+            Id = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                 ?? principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                 ?? string.Empty,
+            Email = principal.FindFirstValue(JwtRegisteredClaimNames.Email)
+                    ?? principal.FindFirstValue(ClaimTypes.Email)
+                    ?? string.Empty,
+            Name = principal.FindFirstValue(JwtRegisteredClaimNames.Name)
+                   ?? principal.FindFirstValue(ClaimTypes.Name)
+                   ?? string.Empty,
             Provider = principal.FindFirstValue("provider") ?? string.Empty,
             AvatarUrl = principal.FindFirstValue("avatar_url") ?? string.Empty
         };

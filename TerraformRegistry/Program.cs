@@ -333,7 +333,10 @@ app.MapGet("/api/auth/callback/{provider}", async (string provider, string? code
     .WithTags("Authentication")
     .WithDescription("Handles OIDC callback after provider authentication");
 
-app.MapGet("/api/auth/me", async (HttpContext context) => await AuthHandlers.GetCurrentUser(jwtService, context))
+app.MapGet("/api/auth/me", async (HttpContext context, IPermissionService permService) =>
+    {
+        return await AuthHandlers.GetCurrentUser(jwtService, permService, context);
+    })
     .WithTags("Authentication")
     .WithDescription("Returns current user info from session");
 
@@ -437,7 +440,7 @@ app.MapGet("/api/admin/audit/{id}", (Guid id, IAuditService auditService, HttpCo
 app.MapGet("/api/admin/users", (IDatabaseService dbService, IPermissionService permService, HttpContext context) => AdminHandlers.ListUsers(dbService, permService, context)).WithTags("Admin");
 app.MapGet("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, HttpContext context) => AdminHandlers.GetUserRoles(userId, permService, context)).WithTags("Admin");
 app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, auditService, context, request)).WithTags("Admin");
-app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, IAuditService auditService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, auditService, context)).WithTags("Admin");
+app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, IRoleService roleService, IAuditService auditService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, roleService, auditService, context)).WithTags("Admin");
 
 // VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
 app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>

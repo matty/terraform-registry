@@ -146,7 +146,7 @@ public static class AuthHandlers
     /// <summary>
     /// Returns current user info from session.
     /// </summary>
-    public static async Task<IResult> GetCurrentUser(JwtService jwtService, HttpContext context)
+    public static async Task<IResult> GetCurrentUser(JwtService jwtService, IPermissionService permService, HttpContext context)
     {
         var token = context.Request.Cookies[SessionCookieName];
         if (string.IsNullOrEmpty(token))
@@ -162,15 +162,8 @@ public static class AuthHandlers
             return Results.Unauthorized();
         }
 
-        // Read permissions from claims (already loaded by middleware)
-        var permissions = context.User.Claims
-            .Where(c => c.Type == "permission")
-            .Select(c => c.Value)
-            .Distinct()
-            .ToArray();
-
-        // Roles still need a DB call (claims don't store role names)
-        var permService = context.RequestServices.GetRequiredService<IPermissionService>();
+        // Load permissions and roles from DB
+        var permissions = await permService.GetUserPermissionsAsync(userInfo.Id);
         var roles = await permService.GetUserRolesAsync(userInfo.Id);
 
         return Results.Ok(new
