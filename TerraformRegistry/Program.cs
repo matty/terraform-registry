@@ -327,8 +327,8 @@ app.MapGet("/api/auth/login/{provider}", (string provider, HttpContext context) 
     .WithDescription("Initiates OIDC login flow for the specified provider");
 
 app.MapGet("/api/auth/callback/{provider}", async (string provider, string? code, string? state, string? error,
-            HttpContext context, IApiKeyService apiKeyService, ILogger<Program> authLogger) =>
-        await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService, context,
+            HttpContext context, IApiKeyService apiKeyService, IAuditService auditService, ILogger<Program> authLogger) =>
+        await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService, auditService, context,
             authLogger))
     .WithTags("Authentication")
     .WithDescription("Handles OIDC callback after provider authentication");
@@ -337,12 +337,12 @@ app.MapGet("/api/auth/me", async (HttpContext context) => await AuthHandlers.Get
     .WithTags("Authentication")
     .WithDescription("Returns current user info from session");
 
-app.MapPost("/api/auth/logout", (HttpContext context) => AuthHandlers.Logout(context))
+app.MapPost("/api/auth/logout", (HttpContext context, IAuditService auditService) => AuthHandlers.Logout(context, auditService))
     .WithTags("Authentication")
     .WithDescription("Logs out the current user");
 
-app.MapDelete("/api/auth/me", (HttpContext context, IApiKeyService apiKeyService, IDatabaseService dbService) =>
-        AuthHandlers.DeleteAccount(context, apiKeyService, dbService))
+app.MapDelete("/api/auth/me", (HttpContext context, IApiKeyService apiKeyService, IDatabaseService dbService, IAuditService auditService) =>
+        AuthHandlers.DeleteAccount(context, apiKeyService, dbService, auditService))
     .WithTags("Authentication")
     .WithDescription("Deletes the current user account")
     .RequireAuthorization();
@@ -355,8 +355,8 @@ app.MapGet("/api/auth/session", (HttpContext context) => AuthHandlers.CheckSessi
 if (app.Environment.IsDevelopment())
 {
     app.MapPost("/api/auth/dev-login",
-            (JwtService jwt, IConfiguration cfg, IHostEnvironment env, HttpContext ctx) =>
-                AuthHandlers.DevLogin(jwt, cfg, env, ctx))
+            (JwtService jwt, IConfiguration cfg, IHostEnvironment env, IAuditService auditService, HttpContext ctx) =>
+                AuthHandlers.DevLogin(jwt, cfg, env, auditService, ctx))
         .WithTags("Authentication")
         .WithDescription("Creates a dev session (Development only, requires TF_REG_DevAuthBypass=true)");
 }
@@ -405,16 +405,16 @@ app.MapGet("/api/webhooks", (IWebhookService webhookService, HttpContext context
         WebhookHandlers.ListWebhooks(webhookService, context))
     .WithTags("Webhooks");
 
-app.MapPost("/api/webhooks", (IWebhookService webhookService, HttpContext context, HttpRequest request) =>
-        WebhookHandlers.CreateWebhook(webhookService, context, request))
+app.MapPost("/api/webhooks", (IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        WebhookHandlers.CreateWebhook(webhookService, auditService, context, request))
     .WithTags("Webhooks");
 
-app.MapPut("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpContext context, HttpRequest request) =>
-        WebhookHandlers.UpdateWebhook(id, webhookService, context, request))
+app.MapPut("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        WebhookHandlers.UpdateWebhook(id, webhookService, auditService, context, request))
     .WithTags("Webhooks");
 
-app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, HttpContext context) =>
-        WebhookHandlers.DeleteWebhook(id, webhookService, context))
+app.MapDelete("/api/webhooks/{id}", (Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context) =>
+        WebhookHandlers.DeleteWebhook(id, webhookService, auditService, context))
     .WithTags("Webhooks");
 
 app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context) =>
@@ -423,31 +423,37 @@ app.MapPost("/api/webhooks/{id}/test", (Guid id, IWebhookService webhookService,
 
 // Admin - Roles
 app.MapGet("/api/admin/roles", (IRoleService roleService, HttpContext context) => AdminHandlers.ListRoles(roleService, context)).WithTags("Admin");
-app.MapPost("/api/admin/roles", (IRoleService roleService, HttpContext context, HttpRequest request) => AdminHandlers.CreateRole(roleService, context, request)).WithTags("Admin");
-app.MapPut("/api/admin/roles/{id}", (Guid id, IRoleService roleService, HttpContext context, HttpRequest request) => AdminHandlers.UpdateRole(id, roleService, context, request)).WithTags("Admin");
-app.MapDelete("/api/admin/roles/{id}", (Guid id, IRoleService roleService, HttpContext context) => AdminHandlers.DeleteRole(id, roleService, context)).WithTags("Admin");
+app.MapPost("/api/admin/roles", (IRoleService roleService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.CreateRole(roleService, auditService, context, request)).WithTags("Admin");
+app.MapPut("/api/admin/roles/{id}", (Guid id, IRoleService roleService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.UpdateRole(id, roleService, auditService, context, request)).WithTags("Admin");
+app.MapDelete("/api/admin/roles/{id}", (Guid id, IRoleService roleService, IAuditService auditService, HttpContext context) => AdminHandlers.DeleteRole(id, roleService, auditService, context)).WithTags("Admin");
+
+// Admin - Audit
+app.MapGet("/api/admin/audit", (IAuditService auditService, HttpContext context, string? action, string? userId, string? resourceType, DateTime? from, DateTime? to, int limit = 50, int offset = 0) =>
+    AuditHandlers.ListAuditLogs(auditService, context, action, userId, resourceType, from, to, limit, offset)).WithTags("Admin");
+app.MapGet("/api/admin/audit/{id}", (Guid id, IAuditService auditService, HttpContext context) =>
+    AuditHandlers.GetAuditLog(id, auditService, context)).WithTags("Admin");
 
 // Admin - Users
 app.MapGet("/api/admin/users", (IDatabaseService dbService, IPermissionService permService, HttpContext context) => AdminHandlers.ListUsers(dbService, permService, context)).WithTags("Admin");
 app.MapGet("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, HttpContext context) => AdminHandlers.GetUserRoles(userId, permService, context)).WithTags("Admin");
-app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, context, request)).WithTags("Admin");
-app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, context)).WithTags("Admin");
+app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, auditService, context, request)).WithTags("Admin");
+app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, IAuditService auditService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, auditService, context)).WithTags("Admin");
 
 // VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
 app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>
         VcsHandlers.ListVcsSources(vcsService, context))
     .WithTags("VCS");
 
-app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IConfiguration config, HttpContext context, HttpRequest request) =>
-        VcsHandlers.CreateVcsSource(vcsService, config, context, request))
+app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateVcsSource(vcsService, config, auditService, context, request))
     .WithTags("VCS");
 
-app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IConfiguration config, HttpContext context, HttpRequest request) =>
-        VcsHandlers.UpdateVcsSource(id, vcsService, config, context, request))
+app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IConfiguration config, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.UpdateVcsSource(id, vcsService, config, auditService, context, request))
     .WithTags("VCS");
 
-app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, HttpContext context) =>
-        VcsHandlers.DeleteVcsSource(id, vcsService, context))
+app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context) =>
+        VcsHandlers.DeleteVcsSource(id, vcsService, auditService, context))
     .WithTags("VCS");
 
 // GitHub webhook endpoint (public, no auth required)
@@ -495,8 +501,8 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
-            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
-        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher, context))
+            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher, auditService, context))
     .WithTags("Modules")
     .WithDescription("Uploads a new module version")
     .Accepts<IFormFile>("multipart/form-data")
@@ -506,24 +512,24 @@ app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string
 
 // Module version management - soft delete, restore, purge
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
-            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+            ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, auditService, context))
     .WithTags("Modules")
     .WithDescription("Soft deletes a module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}/restore",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
-            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+            ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, auditService, context))
     .WithTags("Modules")
     .WithDescription("Restores a soft-deleted module version")
     .Produces(204)
     .ProducesProblem(404);
 
 app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}/purge",
-        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, HttpContext context) =>
-            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, context))
+        (string @namespace, string name, string provider, string version, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+            ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService, webhookDispatcher, auditService, context))
     .WithTags("Modules")
     .WithDescription("Permanently deletes a module version")
     .Produces(204)
@@ -538,8 +544,8 @@ app.MapGet("/v1/modules/trash",
     .Produces<ModuleList>();
 
 app.MapPatch("/v1/modules/{namespace}/{name}/{provider}/description",
-        (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService, HttpContext context) =>
-            ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService, context))
+        (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService, IAuditService auditService, HttpContext context) =>
+            ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService, auditService, context))
     .WithTags("Modules")
     .WithDescription("Updates the description for a module")
     .Produces(200)

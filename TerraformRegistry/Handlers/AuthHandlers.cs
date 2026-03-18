@@ -4,6 +4,8 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
+// ReSharper disable AccessToModifiedClosure
+
 namespace TerraformRegistry.Handlers;
 
 /// <summary>
@@ -60,6 +62,7 @@ public static class AuthHandlers
         OAuthService oauthService,
         JwtService jwtService,
         IApiKeyService apiKeyService,
+        IAuditService auditService,
         HttpContext context,
         ILogger<Program> logger)
     {
@@ -137,6 +140,13 @@ public static class AuthHandlers
             MaxAge = TimeSpan.FromHours(24)
         });
 
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(user.Id, "user.login", "user", user.Id, new { email = userInfo.Email, provider }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Redirect("/");
     }
 
@@ -179,9 +189,19 @@ public static class AuthHandlers
     /// <summary>
     /// Logs out the current user by clearing the session cookie.
     /// </summary>
-    public static IResult Logout(HttpContext context)
+    public static IResult Logout(HttpContext context, IAuditService auditService)
     {
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+
         context.Response.Cookies.Delete(SessionCookieName);
+
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "user.logout", "user", auditUserId, null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok(new { message = "Logged out successfully" });
     }
 
@@ -211,7 +231,8 @@ public static class AuthHandlers
     public static async Task<IResult> DeleteAccount(
         HttpContext context,
         IApiKeyService apiKeyService,
-        IDatabaseService dbService)
+        IDatabaseService dbService,
+        IAuditService auditService)
     {
         var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userId))
@@ -232,6 +253,13 @@ public static class AuthHandlers
         // Clear session
         context.Response.Cookies.Delete(SessionCookieName);
 
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "user.deleted", "user", userId, null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok();
     }
 
@@ -242,6 +270,7 @@ public static class AuthHandlers
         JwtService jwtService,
         IConfiguration configuration,
         IHostEnvironment environment,
+        IAuditService auditService,
         HttpContext context)
     {
         // Never allow this in prod
@@ -314,6 +343,13 @@ public static class AuthHandlers
             Secure = context.Request.IsHttps,
             SameSite = SameSiteMode.Lax,
             MaxAge = TimeSpan.FromHours(24)
+        });
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(devUserId, "user.login", "user", devUserId, new { email = devEmail, provider = "DevBypass" }, auditIp); }
+            catch { /* audit is non-critical */ }
         });
 
         return Results.Ok(new

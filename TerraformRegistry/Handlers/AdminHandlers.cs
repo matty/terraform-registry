@@ -3,6 +3,8 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
+// ReSharper disable AccessToModifiedClosure
+
 namespace TerraformRegistry.Handlers;
 
 public static class AdminHandlers
@@ -18,7 +20,7 @@ public static class AdminHandlers
         return Results.Ok(roles);
     }
 
-    public static async Task<IResult> CreateRole(IRoleService roleService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> CreateRole(IRoleService roleService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (!context.User.HasPermission(Permissions.AdminRoles))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -33,10 +35,19 @@ public static class AdminHandlers
             return Results.BadRequest(new { error = $"Invalid permissions: {string.Join(", ", invalidPermissions)}" });
 
         var role = await roleService.CreateRoleAsync(body.Name, body.Description, body.Permissions);
+
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "role.created", "role", role.Id.ToString(), new { name = body.Name, permissions = body.Permissions }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Created($"/api/admin/roles/{role.Id}", role);
     }
 
-    public static async Task<IResult> UpdateRole(Guid id, IRoleService roleService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> UpdateRole(Guid id, IRoleService roleService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (!context.User.HasPermission(Permissions.AdminRoles))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -57,10 +68,18 @@ public static class AdminHandlers
         if (role == null)
             return Results.NotFound(new { error = "Role not found" });
 
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "role.updated", "role", id.ToString(), new { name = body.Name, permissions = body.Permissions }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok(role);
     }
 
-    public static async Task<IResult> DeleteRole(Guid id, IRoleService roleService, HttpContext context)
+    public static async Task<IResult> DeleteRole(Guid id, IRoleService roleService, IAuditService auditService, HttpContext context)
     {
         if (!context.User.HasPermission(Permissions.AdminRoles))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -68,6 +87,14 @@ public static class AdminHandlers
         var deleted = await roleService.DeleteRoleAsync(id);
         if (!deleted)
             return Results.BadRequest(new { error = "Role not found or is a system role that cannot be deleted" });
+
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "role.deleted", "role", id.ToString(), null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
 
         return Results.NoContent();
     }
@@ -92,7 +119,7 @@ public static class AdminHandlers
         return Results.Ok(roles);
     }
 
-    public static async Task<IResult> AssignUserRole(string userId, IPermissionService permService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> AssignUserRole(string userId, IPermissionService permService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (!context.User.HasPermission(Permissions.AdminUsers))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -103,10 +130,18 @@ public static class AdminHandlers
 
         var assignedBy = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var result = await permService.AssignRoleAsync(userId, body.RoleId, assignedBy);
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(assignedBy, "role.assigned", "user_role", userId, new { roleId = body.RoleId }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok(new { success = result });
     }
 
-    public static async Task<IResult> RemoveUserRole(string userId, Guid roleId, IPermissionService permService, HttpContext context)
+    public static async Task<IResult> RemoveUserRole(string userId, Guid roleId, IPermissionService permService, IAuditService auditService, HttpContext context)
     {
         if (!context.User.HasPermission(Permissions.AdminUsers))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -114,6 +149,14 @@ public static class AdminHandlers
         var result = await permService.RemoveRoleAsync(userId, roleId);
         if (!result)
             return Results.NotFound(new { error = "Role assignment not found" });
+
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "role.removed", "user_role", userId, new { roleId }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
 
         return Results.NoContent();
     }

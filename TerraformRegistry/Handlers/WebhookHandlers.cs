@@ -3,6 +3,8 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
+// ReSharper disable AccessToModifiedClosure
+
 namespace TerraformRegistry.Handlers;
 
 public static class WebhookHandlers
@@ -18,7 +20,7 @@ public static class WebhookHandlers
         return Results.Ok(webhooks);
     }
 
-    public static async Task<IResult> CreateWebhook(IWebhookService webhookService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> CreateWebhook(IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -35,10 +37,18 @@ public static class WebhookHandlers
         if (format == "custom" && string.IsNullOrWhiteSpace(body.Template))
             return Results.BadRequest(new { error = "Template is required when format is 'custom'" });
         var webhook = await webhookService.CreateWebhookAsync(userId, body.Url, body.Events, body.Secret, format, body.Template);
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "webhook.created", "webhook", webhook.Id.ToString(), new { url = body.Url, events = body.Events }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Created($"/api/webhooks/{webhook.Id}", webhook);
     }
 
-    public static async Task<IResult> UpdateWebhook(Guid id, IWebhookService webhookService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> UpdateWebhook(Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -48,10 +58,18 @@ public static class WebhookHandlers
         var body = await request.ReadFromJsonAsync<UpdateWebhookRequest>();
         var updated = await webhookService.UpdateWebhookAsync(id, userId, body?.Url, body?.Events, body?.Secret, body?.IsActive, body?.Format, body?.Template);
         if (updated == null) return Results.NotFound(new { error = "Webhook not found or access denied" });
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "webhook.updated", "webhook", id.ToString(), null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok(updated);
     }
 
-    public static async Task<IResult> DeleteWebhook(Guid id, IWebhookService webhookService, HttpContext context)
+    public static async Task<IResult> DeleteWebhook(Guid id, IWebhookService webhookService, IAuditService auditService, HttpContext context)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.WebhooksManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -59,7 +77,16 @@ public static class WebhookHandlers
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var result = await webhookService.DeleteWebhookAsync(id, userId);
-        return result ? Results.NoContent() : Results.NotFound(new { error = "Webhook not found or access denied" });
+        if (!result) return Results.NotFound(new { error = "Webhook not found or access denied" });
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "webhook.deleted", "webhook", id.ToString(), null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
+        return Results.NoContent();
     }
 
     public static async Task<IResult> TestWebhook(Guid id, IWebhookService webhookService, WebhookDispatcher dispatcher, HttpContext context)

@@ -4,6 +4,8 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
+// ReSharper disable AccessToModifiedClosure
+
 namespace TerraformRegistry.Handlers;
 
 public static class VcsHandlers
@@ -19,7 +21,7 @@ public static class VcsHandlers
         return Results.Ok(sources);
     }
 
-    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IConfiguration configuration, HttpContext context, HttpRequest request)
+    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IConfiguration configuration, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -59,6 +61,13 @@ public static class VcsHandlers
         var baseUrl = configuration["BaseUrl"] ?? "http://localhost:5131";
         var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/vcs/github/webhook";
 
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Created($"/api/vcs/sources/{source.Id}", new
         {
             source.Id,
@@ -75,7 +84,7 @@ public static class VcsHandlers
         });
     }
 
-    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IConfiguration configuration, HttpContext context, HttpRequest request)
+    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IConfiguration configuration, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -99,10 +108,18 @@ public static class VcsHandlers
 
         var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, patEncrypted, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS source not found or access denied" });
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "vcs.updated", "vcs_source", id.ToString(), null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return Results.Ok(updated);
     }
 
-    public static async Task<IResult> DeleteVcsSource(Guid id, IVcsSourceService vcsService, HttpContext context)
+    public static async Task<IResult> DeleteVcsSource(Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -110,7 +127,16 @@ public static class VcsHandlers
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
         var result = await vcsService.DeleteVcsSourceAsync(id, userId);
-        return result ? Results.NoContent() : Results.NotFound(new { error = "VCS source not found or access denied" });
+        if (!result) return Results.NotFound(new { error = "VCS source not found or access denied" });
+
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(userId, "vcs.deleted", "vcs_source", id.ToString(), null, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
+        return Results.NoContent();
     }
 
     public static async Task<IResult> HandleGitHubWebhook(GitHubVcsService githubService, HttpContext context)

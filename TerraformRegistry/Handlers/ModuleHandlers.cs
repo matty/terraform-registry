@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
@@ -207,6 +208,7 @@ public static class ModuleHandlers
         HttpRequest request,
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
+        IAuditService auditService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesUpload);
@@ -260,6 +262,14 @@ public static class ModuleHandlers
 
             webhookDispatcher.FireEvent("module.published", @namespace, name, provider, version, description);
 
+            var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var auditIp = context.Connection.RemoteIpAddress?.ToString();
+            _ = Task.Run(async () =>
+            {
+                try { await auditService.LogAsync(auditUserId, "module.published", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
+                catch { /* audit is non-critical */ }
+            });
+
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
             return Created($"/v1/modules/{@namespace}/{name}/{provider}/{version}", response);
@@ -288,6 +298,7 @@ public static class ModuleHandlers
         string version,
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
+        IAuditService auditService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesDelete);
@@ -308,6 +319,14 @@ public static class ModuleHandlers
 
         webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version, null);
 
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return NoContent();
     }
 
@@ -321,6 +340,7 @@ public static class ModuleHandlers
         string version,
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
+        IAuditService auditService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRestore);
@@ -341,6 +361,14 @@ public static class ModuleHandlers
 
         webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version, null);
 
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
+
         return NoContent();
     }
 
@@ -354,6 +382,7 @@ public static class ModuleHandlers
         string version,
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
+        IAuditService auditService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesPurge);
@@ -373,6 +402,14 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version, null);
+
+        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auditIp = context.Connection.RemoteIpAddress?.ToString();
+        _ = Task.Run(async () =>
+        {
+            try { await auditService.LogAsync(auditUserId, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
+            catch { /* audit is non-critical */ }
+        });
 
         return NoContent();
     }
@@ -415,6 +452,7 @@ public static class ModuleHandlers
     public static async Task<IResult> UpdateDescription(
         string @namespace, string name, string provider,
         HttpRequest request, IModuleService moduleService,
+        IAuditService auditService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesDescription);
@@ -432,6 +470,14 @@ public static class ModuleHandlers
 
             var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
             if (!result) return ErrorResponseExtensions.NotFound("Module not found");
+
+            var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var auditIp = context.Connection.RemoteIpAddress?.ToString();
+            _ = Task.Run(async () =>
+            {
+                try { await auditService.LogAsync(auditUserId, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description }, auditIp); }
+                catch { /* audit is non-critical */ }
+            });
 
             return Ok(new { description });
         }
