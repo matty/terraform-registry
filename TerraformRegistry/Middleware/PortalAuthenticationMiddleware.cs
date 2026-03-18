@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Middleware;
@@ -32,6 +34,26 @@ public class PortalAuthenticationMiddleware(
         {
             var devUser = GetDevUserPrincipal();
             context.User = devUser;
+
+            // Ensure the dev user exists in DB (needed for FK constraints on roles, webhooks, etc.)
+            var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
+            var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
+            using var scope = context.RequestServices.CreateScope();
+            var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+            var existingUser = await dbService.GetUserByEmailAsync(devEmail);
+            if (existingUser == null)
+            {
+                await dbService.AddUserAsync(new User
+                {
+                    Id = devUserId,
+                    Email = devEmail,
+                    Provider = "DevBypass",
+                    ProviderId = devUserId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+
             logger.LogWarning("DEV AUTH BYPASS (Portal): Auto-authenticated as dev user for {Path}", path);
             await next(context);
             return;
