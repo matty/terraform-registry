@@ -17,6 +17,7 @@ public class PortalAuthenticationMiddleware(
     IConfiguration configuration)
 {
     private const string SessionCookieName = "tf-session";
+    private static int _devUserEnsured;
 
     // Routes that require portal authentication
     private static readonly string[] ProtectedPortalPaths = ["/modules"];
@@ -35,23 +36,26 @@ public class PortalAuthenticationMiddleware(
             var devUser = GetDevUserPrincipal();
             context.User = devUser;
 
-            // Ensure the dev user exists in DB (needed for FK constraints on roles, webhooks, etc.)
-            var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
-            var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
-            using var scope = context.RequestServices.CreateScope();
-            var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
-            var existingUser = await dbService.GetUserByEmailAsync(devEmail);
-            if (existingUser == null)
+            // Ensure the dev user exists in DB once per process lifetime
+            if (Interlocked.CompareExchange(ref _devUserEnsured, 1, 0) == 0)
             {
-                await dbService.AddUserAsync(new User
+                var devUserId = configuration["DevAuthBypass:UserId"] ?? "dev-user-001";
+                var devEmail = configuration["DevAuthBypass:Email"] ?? "dev@localhost";
+                using var scope = context.RequestServices.CreateScope();
+                var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+                var existingUser = await dbService.GetUserByEmailAsync(devEmail);
+                if (existingUser == null)
                 {
-                    Id = devUserId,
-                    Email = devEmail,
-                    Provider = "DevBypass",
-                    ProviderId = devUserId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                });
+                    await dbService.AddUserAsync(new User
+                    {
+                        Id = devUserId,
+                        Email = devEmail,
+                        Provider = "DevBypass",
+                        ProviderId = devUserId,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
             }
 
             logger.LogWarning("DEV AUTH BYPASS (Portal): Auto-authenticated as dev user for {Path}", path);

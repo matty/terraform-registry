@@ -99,6 +99,16 @@ public static class VcsHandlers
         return Results.NoContent();
     }
 
+    private static IResult? TryEncryptPat(string pat, IConfiguration config, out string? encrypted)
+    {
+        encrypted = null;
+        var key = config["EncryptionKey"];
+        if (string.IsNullOrEmpty(key))
+            return Results.BadRequest(new { error = "Server encryption key not configured. Cannot store PAT." });
+        encrypted = EncryptionHelper.Encrypt(pat, key);
+        return null;
+    }
+
     // --- VCS Connection Admin Handlers ---
 
     public static async Task<IResult> ListConnections(IVcsConnectionService connectionService, HttpContext context)
@@ -122,10 +132,8 @@ public static class VcsHandlers
         string? patEncrypted = null;
         if (!string.IsNullOrEmpty(body.Pat))
         {
-            var encryptionKey = config["EncryptionKey"];
-            if (string.IsNullOrEmpty(encryptionKey))
-                return Results.BadRequest(new { error = "Server encryption key not configured. Cannot store PAT." });
-            patEncrypted = EncryptionHelper.Encrypt(body.Pat, encryptionKey);
+            var error = TryEncryptPat(body.Pat, config, out patEncrypted);
+            if (error != null) return error;
         }
 
         var webhookSecret = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
@@ -157,10 +165,8 @@ public static class VcsHandlers
         string? patEncrypted = null;
         if (!string.IsNullOrEmpty(body?.Pat))
         {
-            var encryptionKey = config["EncryptionKey"];
-            if (string.IsNullOrEmpty(encryptionKey))
-                return Results.BadRequest(new { error = "Server encryption key not configured." });
-            patEncrypted = EncryptionHelper.Encrypt(body.Pat, encryptionKey);
+            var error = TryEncryptPat(body.Pat, config, out patEncrypted);
+            if (error != null) return error;
         }
 
         var updated = await connectionService.UpdateConnectionAsync(id, body?.Label, patEncrypted, body?.DefaultOrg, body?.IsActive);
@@ -184,6 +190,8 @@ public static class VcsHandlers
 
     public static async Task<IResult> ListConnectionSummaries(IVcsConnectionService connectionService, HttpContext context)
     {
+        if (context.User.Identity?.IsAuthenticated != true)
+            return Results.Unauthorized();
         var connections = await connectionService.ListConnectionSummariesAsync();
         return Results.Ok(connections.Select(c => new { c.Id, c.Label, c.Provider, c.DefaultOrg }));
     }
