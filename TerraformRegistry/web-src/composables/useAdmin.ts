@@ -16,6 +16,22 @@ export interface AdminUser {
   createdAt: string
 }
 
+export interface AuditLogEntry {
+  id: string
+  userId: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  details: string | null
+  ipAddress: string | null
+  timestamp: string
+}
+
+export interface AuditLogPage {
+  entries: AuditLogEntry[]
+  total: number
+}
+
 export function useAdmin() {
   const { getAuthHeaders } = useAuth()
 
@@ -69,5 +85,18 @@ export function useAdmin() {
     })
   }
 
-  return { listRoles, createRole, updateRole, deleteRole, listUsers, getUserRoles, assignRole, removeRole }
+  async function listAuditLogs(params?: { action?: string, userId?: string, resourceType?: string, from?: string, to?: string, limit?: number, offset?: number }): Promise<AuditLogPage> {
+    const query = new URLSearchParams()
+    if (params?.action) query.set('action', params.action)
+    if (params?.userId) query.set('userId', params.userId)
+    if (params?.resourceType) query.set('resourceType', params.resourceType)
+    if (params?.from) query.set('from', params.from)
+    if (params?.to) query.set('to', params.to)
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.offset) query.set('offset', String(params.offset))
+    const qs = query.toString()
+    return await $fetch(`/api/admin/audit${qs ? `?${qs}` : ''}`, { headers: getAuthHeaders() })
+  }
+
+  return { listRoles, createRole, updateRole, deleteRole, listUsers, getUserRoles, assignRole, removeRole, listAuditLogs }
 }
