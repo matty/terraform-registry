@@ -8,5 +8,6 @@ public interface IPermissionService
     Task<IEnumerable<Role>> GetUserRolesAsync(string userId);
     Task<bool> AssignRoleAsync(string userId, Guid roleId, string? assignedBy);
     Task<bool> RemoveRoleAsync(string userId, Guid roleId);
+    Task<IEnumerable<string>> GetUsersWithRoleAsync(Guid roleId);
     Task EnsureDefaultRoleAsync(string userId);
 }

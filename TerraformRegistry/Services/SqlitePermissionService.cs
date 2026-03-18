@@ -98,6 +98,24 @@ public class SqlitePermissionService : IPermissionService
         return rows > 0;
     }
 
+    public async Task<IEnumerable<string>> GetUsersWithRoleAsync(Guid roleId)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT user_id FROM user_roles WHERE role_id = $roleId";
+        cmd.Parameters.AddWithValue("$roleId", roleId.ToString());
+
+        var userIds = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            userIds.Add(reader.GetString(0));
+        }
+        return userIds;
+    }
+
     public async Task EnsureDefaultRoleAsync(string userId)
     {
         await using var connection = new SqliteConnection(_connectionString);

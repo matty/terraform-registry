@@ -113,10 +113,36 @@ public static class AdminHandlers
         return Results.Ok(new { success = result });
     }
 
-    public static async Task<IResult> RemoveUserRole(string userId, Guid roleId, IPermissionService permService, IAuditService auditService, HttpContext context)
+    public static async Task<IResult> RemoveUserRole(string userId, Guid roleId, IPermissionService permService, IRoleService roleService, IAuditService auditService, HttpContext context)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.AdminUsers))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
+        // Check if this is the admin role
+        var role = await roleService.GetRoleAsync(roleId);
+        if (role != null && role.Name == RoleNames.Admin)
+        {
+            // Prevent removing admin role from yourself
+            var currentUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == currentUserId)
+                return Results.BadRequest(new { error = "Cannot remove the admin role from yourself" });
+
+            // Prevent removing admin role from bootstrap admin users (configured via TF_REG_AdminEmails)
+            var config = context.RequestServices.GetRequiredService<IConfiguration>();
+            var adminEmails = config["AdminEmails"]?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+            if (adminEmails.Length > 0)
+            {
+                var dbService = context.RequestServices.GetRequiredService<IDatabaseService>();
+                var targetUser = await dbService.GetUserByIdAsync(userId);
+                if (targetUser != null && adminEmails.Contains(targetUser.Email, StringComparer.OrdinalIgnoreCase))
+                    return Results.BadRequest(new { error = "Cannot remove the admin role from a bootstrap admin (configured via TF_REG_AdminEmails)" });
+            }
+
+            // Prevent removing the last admin assignment
+            var adminUsers = await permService.GetUsersWithRoleAsync(roleId);
+            if (adminUsers.Count() <= 1)
+                return Results.BadRequest(new { error = "Cannot remove the last admin. At least one admin must exist." });
+        }
 
         var result = await permService.RemoveRoleAsync(userId, roleId);
         if (!result)

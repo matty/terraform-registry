@@ -94,6 +94,24 @@ public class PostgreSqlPermissionService : IPermissionService
         return rows > 0;
     }
 
+    public async Task<IEnumerable<string>> GetUsersWithRoleAsync(Guid roleId)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = "SELECT user_id FROM user_roles WHERE role_id = @roleId";
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@roleId", roleId);
+
+        var userIds = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            userIds.Add(reader.GetString(0));
+        }
+        return userIds;
+    }
+
     public async Task EnsureDefaultRoleAsync(string userId)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
