@@ -51,6 +51,7 @@ const settingsLinks = [
 const adminLinks = [
   { label: 'Roles', icon: 'i-lucide-shield', to: '/admin/roles' },
   { label: 'Users', icon: 'i-lucide-users', to: '/admin/users' },
+  { label: 'VCS Connections', icon: 'i-lucide-git-branch', to: '/admin/vcs-connections' },
   { label: 'Audit Log', icon: 'i-lucide-scroll-text', to: '/admin/audit' },
 ];
 

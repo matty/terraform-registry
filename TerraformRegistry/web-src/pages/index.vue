@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import type { Module, ModulesResponse } from "~/composables/useModules";
-import { useVcsSources, type VcsSourceCreateResponse } from "~/composables/useVcsSources";
+import { useVcsSources } from "~/composables/useVcsSources";
+import { useVcsConnections } from "~/composables/useVcsConnections";
+import type { VcsConnectionSummary } from "~/composables/useVcsConnections";
 
 definePageMeta({
   middleware: "auth",
@@ -10,6 +12,7 @@ definePageMeta({
 const { getAuthHeaders } = useAuth();
 const { isSidebarOpen } = useDashboard();
 const { createVcsSource } = useVcsSources();
+const { listConnectionSummaries } = useVcsConnections();
 const { featureCreateModule } = useRuntimeConfig().public;
 
 const modules = ref<Module[]>([]);
@@ -20,6 +23,9 @@ const searchQuery = ref("");
 const currentOffset = ref(0);
 const limit = 10;
 
+// VCS connection summaries for the Add Module dropdown
+const connectionSummaries = ref<VcsConnectionSummary[]>([]);
+
 // Add Module modal state
 const isAddModuleOpen = ref(false);
 const newNamespace = ref("");
@@ -29,16 +35,17 @@ const newDescription = ref("");
 const linkToGitHub = ref(false);
 const repoOwner = ref("");
 const repoName = ref("");
-const pat = ref("");
+const selectedConnectionId = ref("");
 const isSubmitting = ref(false);
 const addModuleError = ref<string | null>(null);
-const createdVcsSource = ref<VcsSourceCreateResponse | null>(null);
-const copiedSecret = ref(false);
-const copiedUrl = ref(false);
+
+const connectionOptions = computed(() =>
+  connectionSummaries.value.map(c => ({ label: c.label, value: c.id }))
+);
 
 const canSubmit = computed(() => {
   if (!newNamespace.value || !newName.value || !newProvider.value) return false;
-  if (linkToGitHub.value && (!repoOwner.value || !repoName.value)) return false;
+  if (linkToGitHub.value && (!repoOwner.value || !repoName.value || !selectedConnectionId.value)) return false;
   return true;
 });
 
@@ -50,17 +57,23 @@ const resetAddModuleForm = () => {
   linkToGitHub.value = false;
   repoOwner.value = "";
   repoName.value = "";
-  pat.value = "";
+  selectedConnectionId.value = "";
   addModuleError.value = null;
-  createdVcsSource.value = null;
-  copiedSecret.value = false;
-  copiedUrl.value = false;
 };
 
 const openAddModule = () => {
   resetAddModuleForm();
   isAddModuleOpen.value = true;
 };
+
+// Pre-fill repo owner when a connection with defaultOrg is selected
+watch(selectedConnectionId, (connId) => {
+  if (!connId) return;
+  const conn = connectionSummaries.value.find(c => c.id === connId);
+  if (conn?.defaultOrg && !repoOwner.value) {
+    repoOwner.value = conn.defaultOrg;
+  }
+});
 
 const handleAddModule = async () => {
   if (!canSubmit.value) return;
@@ -75,50 +88,23 @@ const handleAddModule = async () => {
   }
 
   try {
-
-    const result = await createVcsSource({
+    await createVcsSource({
       namespace: newNamespace.value,
       name: newName.value,
       provider: newProvider.value,
       repoOwner: repoOwner.value,
       repoName: repoName.value,
-      pat: pat.value || undefined,
+      connectionId: selectedConnectionId.value,
     });
 
-    createdVcsSource.value = result;
+    isAddModuleOpen.value = false;
+    resetAddModuleForm();
+    refreshModules();
   } catch (e: any) {
     const msg = e?.data?.message || e?.data?.error || e?.message || "Failed to create module";
     addModuleError.value = msg;
   } finally {
     isSubmitting.value = false;
-  }
-};
-
-const closeAddModuleSuccess = () => {
-  isAddModuleOpen.value = false;
-  resetAddModuleForm();
-  refreshModules();
-};
-
-const copySecret = async () => {
-  if (!createdVcsSource.value) return;
-  try {
-    await navigator.clipboard.writeText(createdVcsSource.value.webhookSecret);
-    copiedSecret.value = true;
-    setTimeout(() => { copiedSecret.value = false; }, 2000);
-  } catch (err) {
-    console.error("Failed to copy:", err);
-  }
-};
-
-const copyUrl = async () => {
-  if (!createdVcsSource.value) return;
-  try {
-    await navigator.clipboard.writeText(createdVcsSource.value.webhookUrl);
-    copiedUrl.value = true;
-    setTimeout(() => { copiedUrl.value = false; }, 2000);
-  } catch (err) {
-    console.error("Failed to copy:", err);
   }
 };
 
@@ -186,8 +172,15 @@ const loadMoreModules = () => {
 
 // Load modules on component mount
 const route = useRoute();
-onMounted(() => {
+onMounted(async () => {
   fetchModules();
+  if (featureCreateModule) {
+    try {
+      connectionSummaries.value = await listConnectionSummaries();
+    } catch (e) {
+      console.error('Failed to load VCS connection summaries', e);
+    }
+  }
   // Auto-open Add Module modal if ?addModule=1 query param is present
   if (featureCreateModule && route.query.addModule === '1') {
     openAddModule();
@@ -399,54 +392,8 @@ onMounted(() => {
             <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="addModuleError = null" />
           </div>
 
-          <!-- Success Panel -->
-          <div v-if="createdVcsSource" class="space-y-4">
-            <div class="p-4 bg-green-900/20 border border-green-800/50 rounded-xl">
-              <div class="flex items-start gap-3">
-                <UIcon name="i-lucide-check-circle" class="text-green-500 text-xl mt-0.5" />
-                <div class="flex-1 space-y-4">
-                  <div>
-                    <h4 class="font-medium text-green-200">VCS Source Created</h4>
-                    <p class="text-sm text-green-300/80 mt-1">Copy the webhook secret and URL — the secret won't be shown again.</p>
-                  </div>
-
-                  <div>
-                    <p class="text-xs text-neutral-400 mb-1.5">Webhook Secret</p>
-                    <div class="flex items-center gap-2">
-                      <code class="flex-1 p-2 bg-neutral-900 rounded-lg border border-green-800/40 font-mono text-xs break-all text-green-200">{{ createdVcsSource.webhookSecret }}</code>
-                      <UButton :icon="copiedSecret ? 'i-lucide-check' : 'i-lucide-copy'" :color="copiedSecret ? 'success' : 'neutral'" variant="soft" size="xs" @click="copySecret" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <p class="text-xs text-neutral-400 mb-1.5">Webhook URL</p>
-                    <div class="flex items-center gap-2">
-                      <code class="flex-1 p-2 bg-neutral-900 rounded-lg border border-green-800/40 font-mono text-xs break-all text-green-200">{{ createdVcsSource.webhookUrl }}</code>
-                      <UButton :icon="copiedUrl ? 'i-lucide-check' : 'i-lucide-copy'" :color="copiedUrl ? 'success' : 'neutral'" variant="soft" size="xs" @click="copyUrl" />
-                    </div>
-                  </div>
-
-                  <div class="p-3 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
-                    <p class="text-xs text-neutral-300 leading-relaxed">
-                      Add a webhook in your GitHub repo settings
-                      (<span class="text-neutral-200">Settings</span> →
-                      <span class="text-neutral-200">Webhooks</span> →
-                      <span class="text-neutral-200">Add webhook</span>).
-                      Set the Payload URL and Secret, choose
-                      <code class="text-primary-300">application/json</code>,
-                      and select "Just the push event".
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="flex justify-end">
-              <UButton label="Done" color="primary" icon="i-lucide-check" @click="closeAddModuleSuccess" />
-            </div>
-          </div>
-
           <!-- Form -->
-          <div v-else class="space-y-5">
+          <div class="space-y-5">
             <!-- Module Details -->
             <div class="space-y-3">
               <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Module Details</h4>
@@ -484,20 +431,32 @@ onMounted(() => {
               </div>
 
               <div v-if="linkToGitHub" class="space-y-3">
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs text-neutral-400 mb-1">Owner <span class="text-red-400">*</span></label>
-                    <UInput v-model="repoOwner" placeholder="acme" size="sm" />
-                  </div>
-                  <div>
-                    <label class="block text-xs text-neutral-400 mb-1">Repository <span class="text-red-400">*</span></label>
-                    <UInput v-model="repoName" placeholder="terraform-vpc" size="sm" />
-                  </div>
+                <div v-if="connectionOptions.length === 0" class="p-3 bg-amber-900/20 border border-amber-800/50 rounded-lg">
+                  <p class="text-xs text-amber-300">No VCS connections configured. Ask an admin to set one up in Admin → VCS Connections.</p>
                 </div>
-                <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Personal Access Token</label>
-                  <UInput v-model="pat" type="password" placeholder="Optional — for private repos" size="sm" />
-                </div>
+                <template v-else>
+                  <div>
+                    <label class="block text-xs text-neutral-400 mb-1">VCS Connection <span class="text-red-400">*</span></label>
+                    <USelect
+                      v-model="selectedConnectionId"
+                      :items="connectionOptions"
+                      value-key="value"
+                      label-key="label"
+                      placeholder="Select a connection..."
+                      size="sm"
+                    />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs text-neutral-400 mb-1">Owner <span class="text-red-400">*</span></label>
+                      <UInput v-model="repoOwner" placeholder="acme" size="sm" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-neutral-400 mb-1">Repository <span class="text-red-400">*</span></label>
+                      <UInput v-model="repoName" placeholder="terraform-vpc" size="sm" />
+                    </div>
+                  </div>
+                </template>
               </div>
               <p v-else class="text-xs text-neutral-500">Enable to auto-publish versions on Git tag push.</p>
             </div>

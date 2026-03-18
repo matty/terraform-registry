@@ -12,11 +12,6 @@ export interface VcsSource {
   updatedAt: string
 }
 
-export interface VcsSourceCreateResponse extends VcsSource {
-  webhookSecret: string
-  webhookUrl: string
-}
-
 export function useVcsSources() {
   const { getAuthHeaders } = useAuth()
 
@@ -30,8 +25,8 @@ export function useVcsSources() {
     provider: string
     repoOwner: string
     repoName: string
-    pat?: string
-  }): Promise<VcsSourceCreateResponse> {
+    connectionId: string
+  }): Promise<VcsSource> {
     return await $fetch('/api/vcs/sources', {
       method: 'POST',
       headers: getAuthHeaders(),
