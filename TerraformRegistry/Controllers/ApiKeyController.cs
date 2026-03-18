@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TerraformRegistry.API;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
@@ -9,7 +11,7 @@ namespace TerraformRegistry.Controllers;
 [ApiController]
 [Route("api/keys")]
 [Authorize]
-public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
+public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> ListKeys()
@@ -44,6 +46,8 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
 
         var (rawToken, key) = await apiKeyService.CreateApiKeyAsync(userId, request.Description, request.IsShared);
 
+        HttpContext.FireAuditLog(auditService, "api_key.created", "api_key", key.Id.ToString(), new { description = request.Description, isShared = request.IsShared });
+
         var owner = await apiKeyService.GetUserByIdAsync(userId);
 
         return Ok(new
@@ -76,6 +80,8 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
 
         var success = await apiKeyService.RevokeApiKeyAsync(id, userId);
         if (!success) return NotFound();
+
+        HttpContext.FireAuditLog(auditService, "api_key.revoked", "api_key", id.ToString());
 
         return NoContent();
     }

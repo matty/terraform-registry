@@ -13,6 +13,7 @@ public class GitHubVcsService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly WebhookDispatcher _webhookDispatcher;
+    private readonly IAuditService _auditService;
     private readonly ILogger<GitHubVcsService> _logger;
 
     public GitHubVcsService(
@@ -21,6 +22,7 @@ public class GitHubVcsService
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
         WebhookDispatcher webhookDispatcher,
+        IAuditService auditService,
         ILogger<GitHubVcsService> logger)
     {
         _vcsSourceService = vcsSourceService;
@@ -28,6 +30,7 @@ public class GitHubVcsService
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _webhookDispatcher = webhookDispatcher;
+        _auditService = auditService;
         _logger = logger;
     }
 
@@ -168,6 +171,11 @@ public class GitHubVcsService
             vcsSource.Provider,
             version,
             $"Auto-published from {repoOwner}/{repoName} tag {tag}");
+
+        _ = _auditService.LogAsync(null, "vcs.auto_published", "module",
+            $"{vcsSource.Namespace}/{vcsSource.Name}/{vcsSource.Provider}/{version}",
+            new { @namespace = vcsSource.Namespace, name = vcsSource.Name, provider = vcsSource.Provider, version, repoOwner, repoName, tag },
+            null);
 
         return ("published", null, version);
     }
