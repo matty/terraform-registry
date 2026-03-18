@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -112,7 +113,8 @@ public class SqlitePermissionService : IPermissionService
 
         // Lookup the 'user' role by name
         await using var roleCmd = connection.CreateCommand();
-        roleCmd.CommandText = "SELECT id FROM roles WHERE name = 'user'";
+        roleCmd.CommandText = "SELECT id FROM roles WHERE name = $name";
+        roleCmd.Parameters.AddWithValue("$name", RoleNames.User);
         var roleIdObj = await roleCmd.ExecuteScalarAsync();
 
         if (roleIdObj == null) return;

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -66,7 +67,7 @@ public class DatabaseInitializerHostedService : IHostedService
             if (!string.IsNullOrEmpty(adminEmails))
             {
                 var roles = await roleService.ListRolesAsync();
-                var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+                var adminRole = roles.FirstOrDefault(r => r.Name == RoleNames.Admin);
                 if (adminRole != null)
                 {
                     foreach (var email in adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

@@ -152,14 +152,15 @@ public class SqliteRoleService : IRoleService
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = @"INSERT OR REPLACE INTO roles (id, name, description, permissions, is_system)
-                    VALUES ($id, $name, $description, $permissions, 1)";
+        var sql = @"INSERT INTO roles (id, name, description, permissions, is_system, created_at, updated_at)
+                    VALUES ($id, $name, $description, $permissions, 1, datetime('now'), datetime('now'))
+                    ON CONFLICT(name) DO UPDATE SET permissions = excluded.permissions, updated_at = datetime('now')";
 
         // Seed admin role
         await using var adminCmd = connection.CreateCommand();
         adminCmd.CommandText = sql;
         adminCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
-        adminCmd.Parameters.AddWithValue("$name", "admin");
+        adminCmd.Parameters.AddWithValue("$name", RoleNames.Admin);
         adminCmd.Parameters.AddWithValue("$description", "Full system administrator");
         adminCmd.Parameters.AddWithValue("$permissions", JsonSerializer.Serialize(Permissions.All));
         await adminCmd.ExecuteNonQueryAsync();
@@ -168,7 +169,7 @@ public class SqliteRoleService : IRoleService
         await using var userCmd = connection.CreateCommand();
         userCmd.CommandText = sql;
         userCmd.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
-        userCmd.Parameters.AddWithValue("$name", "user");
+        userCmd.Parameters.AddWithValue("$name", RoleNames.User);
         userCmd.Parameters.AddWithValue("$description", "Default user role");
         userCmd.Parameters.AddWithValue("$permissions", JsonSerializer.Serialize(Permissions.DefaultUserPermissions));
         await userCmd.ExecuteNonQueryAsync();

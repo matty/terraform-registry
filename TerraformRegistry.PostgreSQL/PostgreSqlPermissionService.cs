@@ -1,4 +1,5 @@
 using Npgsql;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -107,8 +108,9 @@ public class PostgreSqlPermissionService : IPermissionService
         if (count > 0) return;
 
         // Lookup the 'user' role by name
-        var roleSql = "SELECT id FROM roles WHERE name = 'user'";
+        var roleSql = "SELECT id FROM roles WHERE name = @name";
         await using var roleCmd = new NpgsqlCommand(roleSql, connection);
+        roleCmd.Parameters.AddWithValue("@name", RoleNames.User);
         var roleIdObj = await roleCmd.ExecuteScalarAsync();
 
         if (roleIdObj == null) return;

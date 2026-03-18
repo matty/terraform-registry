@@ -153,7 +153,7 @@ public class PostgreSqlRoleService : IRoleService
         // Seed admin role
         await using var adminCmd = new NpgsqlCommand(sql, connection);
         adminCmd.Parameters.AddWithValue("@id", Guid.NewGuid());
-        adminCmd.Parameters.AddWithValue("@name", "admin");
+        adminCmd.Parameters.AddWithValue("@name", RoleNames.Admin);
         adminCmd.Parameters.AddWithValue("@description", "Full system administrator");
         adminCmd.Parameters.Add(new NpgsqlParameter("@permissions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = Permissions.All });
         await adminCmd.ExecuteNonQueryAsync();
@@ -161,7 +161,7 @@ public class PostgreSqlRoleService : IRoleService
         // Seed user role
         await using var userCmd = new NpgsqlCommand(sql, connection);
         userCmd.Parameters.AddWithValue("@id", Guid.NewGuid());
-        userCmd.Parameters.AddWithValue("@name", "user");
+        userCmd.Parameters.AddWithValue("@name", RoleNames.User);
         userCmd.Parameters.AddWithValue("@description", "Default user role");
         userCmd.Parameters.Add(new NpgsqlParameter("@permissions", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = Permissions.DefaultUserPermissions });
         await userCmd.ExecuteNonQueryAsync();

@@ -4,8 +4,6 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
-// ReSharper disable AccessToModifiedClosure
-
 namespace TerraformRegistry.Handlers;
 
 public static class VcsHandlers
@@ -61,12 +59,7 @@ public static class VcsHandlers
         var baseUrl = configuration["BaseUrl"] ?? "http://localhost:5131";
         var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/vcs/github/webhook";
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName });
 
         return Results.Created($"/api/vcs/sources/{source.Id}", new
         {
@@ -109,12 +102,7 @@ public static class VcsHandlers
         var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, patEncrypted, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS source not found or access denied" });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "vcs.updated", "vcs_source", id.ToString(), null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "vcs.updated", "vcs_source", id.ToString());
 
         return Results.Ok(updated);
     }
@@ -129,12 +117,7 @@ public static class VcsHandlers
         var result = await vcsService.DeleteVcsSourceAsync(id, userId);
         if (!result) return Results.NotFound(new { error = "VCS source not found or access denied" });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "vcs.deleted", "vcs_source", id.ToString(), null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "vcs.deleted", "vcs_source", id.ToString());
 
         return Results.NoContent();
     }

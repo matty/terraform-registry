@@ -3,8 +3,6 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
-// ReSharper disable AccessToModifiedClosure
-
 namespace TerraformRegistry.Handlers;
 
 public static class WebhookHandlers
@@ -37,13 +35,7 @@ public static class WebhookHandlers
         if (format == "custom" && string.IsNullOrWhiteSpace(body.Template))
             return Results.BadRequest(new { error = "Template is required when format is 'custom'" });
         var webhook = await webhookService.CreateWebhookAsync(userId, body.Url, body.Events, body.Secret, format, body.Template);
-
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "webhook.created", "webhook", webhook.Id.ToString(), new { url = body.Url, events = body.Events }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "webhook.created", "webhook", webhook.Id.ToString(), new { url = body.Url, events = body.Events });
 
         return Results.Created($"/api/webhooks/{webhook.Id}", webhook);
     }
@@ -59,12 +51,7 @@ public static class WebhookHandlers
         var updated = await webhookService.UpdateWebhookAsync(id, userId, body?.Url, body?.Events, body?.Secret, body?.IsActive, body?.Format, body?.Template);
         if (updated == null) return Results.NotFound(new { error = "Webhook not found or access denied" });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "webhook.updated", "webhook", id.ToString(), null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "webhook.updated", "webhook", id.ToString());
 
         return Results.Ok(updated);
     }
@@ -79,12 +66,7 @@ public static class WebhookHandlers
         var result = await webhookService.DeleteWebhookAsync(id, userId);
         if (!result) return Results.NotFound(new { error = "Webhook not found or access denied" });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "webhook.deleted", "webhook", id.ToString(), null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "webhook.deleted", "webhook", id.ToString());
 
         return Results.NoContent();
     }

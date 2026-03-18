@@ -4,8 +4,6 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
-// ReSharper disable AccessToModifiedClosure
-
 namespace TerraformRegistry.Handlers;
 
 /// <summary>
@@ -114,7 +112,7 @@ public static class AuthHandlers
             {
                 var roleService = context.RequestServices.GetRequiredService<IRoleService>();
                 var roles = await roleService.ListRolesAsync();
-                var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+                var adminRole = roles.FirstOrDefault(r => r.Name == RoleNames.Admin);
                 if (adminRole != null)
                 {
                     await permService.AssignRoleAsync(user.Id, adminRole.Id, "auto-admin-bootstrap");
@@ -140,12 +138,7 @@ public static class AuthHandlers
             MaxAge = TimeSpan.FromHours(24)
         });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(user.Id, "user.login", "user", user.Id, new { email = userInfo.Email, provider }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "user.login", "user", user.Id, new { email = userInfo.Email, provider });
 
         return Results.Redirect("/");
     }
@@ -169,9 +162,15 @@ public static class AuthHandlers
             return Results.Unauthorized();
         }
 
-        // Load permissions and roles for the response
+        // Read permissions from claims (already loaded by middleware)
+        var permissions = context.User.Claims
+            .Where(c => c.Type == "permission")
+            .Select(c => c.Value)
+            .Distinct()
+            .ToArray();
+
+        // Roles still need a DB call (claims don't store role names)
         var permService = context.RequestServices.GetRequiredService<IPermissionService>();
-        var permissions = await permService.GetUserPermissionsAsync(userInfo.Id);
         var roles = await permService.GetUserRolesAsync(userInfo.Id);
 
         return Results.Ok(new
@@ -191,16 +190,8 @@ public static class AuthHandlers
     /// </summary>
     public static IResult Logout(HttpContext context, IAuditService auditService)
     {
-        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-
         context.Response.Cookies.Delete(SessionCookieName);
-
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(auditUserId, "user.logout", "user", auditUserId, null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "user.logout", "user", context.User.FindFirstValue(ClaimTypes.NameIdentifier));
 
         return Results.Ok(new { message = "Logged out successfully" });
     }
@@ -252,13 +243,7 @@ public static class AuthHandlers
 
         // Clear session
         context.Response.Cookies.Delete(SessionCookieName);
-
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(userId, "user.deleted", "user", userId, null, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "user.deleted", "user", userId);
 
         return Results.Ok();
     }
@@ -319,7 +304,7 @@ public static class AuthHandlers
             {
                 var roleService = context.RequestServices.GetRequiredService<IRoleService>();
                 var roles = await roleService.ListRolesAsync();
-                var adminRole = roles.FirstOrDefault(r => r.Name == "admin");
+                var adminRole = roles.FirstOrDefault(r => r.Name == RoleNames.Admin);
                 if (adminRole != null)
                 {
                     await permService.AssignRoleAsync(devUserId, adminRole.Id, "auto-admin-bootstrap");
@@ -345,12 +330,7 @@ public static class AuthHandlers
             MaxAge = TimeSpan.FromHours(24)
         });
 
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(devUserId, "user.login", "user", devUserId, new { email = devEmail, provider = "DevBypass" }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "user.login", "user", devUserId, new { email = devEmail, provider = "DevBypass" });
 
         return Results.Ok(new
         {

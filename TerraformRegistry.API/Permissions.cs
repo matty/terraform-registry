@@ -1,5 +1,11 @@
 namespace TerraformRegistry.API;
 
+public static class RoleNames
+{
+    public const string Admin = "admin";
+    public const string User = "user";
+}
+
 public static class Permissions
 {
     public const string ModulesRead = "modules.read";

@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
@@ -261,14 +260,7 @@ public static class ModuleHandlers
             }
 
             webhookDispatcher.FireEvent("module.published", @namespace, name, provider, version, description);
-
-            var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var auditIp = context.Connection.RemoteIpAddress?.ToString();
-            _ = Task.Run(async () =>
-            {
-                try { await auditService.LogAsync(auditUserId, "module.published", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
-                catch { /* audit is non-critical */ }
-            });
+            context.FireAuditLog(auditService, "module.published", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
@@ -318,14 +310,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
         webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version, null);
-
-        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(auditUserId, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -360,14 +345,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version, null);
-
-        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(auditUserId, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -402,14 +380,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version, null);
-
-        var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var auditIp = context.Connection.RemoteIpAddress?.ToString();
-        _ = Task.Run(async () =>
-        {
-            try { await auditService.LogAsync(auditUserId, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version }, auditIp); }
-            catch { /* audit is non-critical */ }
-        });
+        context.FireAuditLog(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -471,13 +442,7 @@ public static class ModuleHandlers
             var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
             if (!result) return ErrorResponseExtensions.NotFound("Module not found");
 
-            var auditUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var auditIp = context.Connection.RemoteIpAddress?.ToString();
-            _ = Task.Run(async () =>
-            {
-                try { await auditService.LogAsync(auditUserId, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description }, auditIp); }
-                catch { /* audit is non-critical */ }
-            });
+            context.FireAuditLog(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
 
             return Ok(new { description });
         }
