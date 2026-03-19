@@ -1,18 +1,15 @@
 name: Build and Publish Docker Image
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Run Tests"]
+    types:
+      - completed
     branches:
       - main
       - develop
       - "release/**"
       - "hotfix/**"
-    tags:
-      - "v*.*.*"
-  pull_request:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
     inputs:
       version:
@@ -28,6 +25,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Only run if tests passed (or if manually triggered)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       packages: write
@@ -36,6 +37,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
           fetch-depth: 0 # Required for GitVersion
 
       - name: Set up Docker Buildx
@@ -68,20 +70,33 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.push_image) ||
+          (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch != '' && !startsWith(github.event.workflow_run.event, 'pull_request'))
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine push flag
+        id: push-flag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "push=${{ inputs.push_image }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.workflow_run.event }}" = "pull_request" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build the Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image) }}
+          push: ${{ steps.push-flag.outputs.push }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/terraform-registry:${{ env.VERSION }}
-            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/terraform-registry:latest', github.repository_owner) || '' }}
-            ${{ startsWith(github.ref, 'refs/heads/develop') && format('ghcr.io/{0}/terraform-registry:develop', github.repository_owner) || '' }}
-            ${{ startsWith(github.ref, 'refs/heads/release/') && format('ghcr.io/{0}/terraform-registry:release', github.repository_owner) || '' }}
+            ${{ github.event.workflow_run.head_branch == 'main' && format('ghcr.io/{0}/terraform-registry:latest', github.repository_owner) || '' }}
+            ${{ github.event.workflow_run.head_branch == 'develop' && format('ghcr.io/{0}/terraform-registry:develop', github.repository_owner) || '' }}
+            ${{ startsWith(github.event.workflow_run.head_branch || '', 'release/') && format('ghcr.io/{0}/terraform-registry:release', github.repository_owner) || '' }}
