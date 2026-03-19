@@ -182,7 +182,7 @@ const toggleAdmin = () => {
               isAdminActive ? 'text-white' : 'text-neutral-500 hover:text-neutral-300'
             ]"
           >
-            <span class="text-[10px] font-medium uppercase tracking-wider">Admin</span>
+            <span class="text-[10px] font-medium uppercase tracking-wider">Administration</span>
             <UIcon
               :name="isAdminExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
               class="text-xs transition-transform"
@@ -315,7 +315,7 @@ const toggleAdmin = () => {
                   isAdminActive ? 'text-white' : 'text-neutral-500'
                 ]"
               >
-                <span class="text-[10px] font-medium uppercase tracking-wider">Admin</span>
+                <span class="text-[10px] font-medium uppercase tracking-wider">Administration</span>
                 <UIcon
                   :name="isAdminExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
                   class="text-xs"
