@@ -16,6 +16,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,7 +24,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Restore dependencies
         run: dotnet restore
@@ -35,6 +36,14 @@ jobs:
         run: dotnet test TerraformRegistry.Tests/TerraformRegistry.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test_results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=./TestResults/coverage.cobertura.xml
         env:
           ASPNETCORE_ENVIRONMENT: Test
+          TESTCONTAINERS_RYUK_DISABLED: "false"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TerraformRegistry.Tests/TestResults/test_results.trx
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
