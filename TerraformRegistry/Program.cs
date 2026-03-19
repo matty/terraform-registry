@@ -23,7 +23,7 @@ builder.Configuration
 // Register database retry options
 builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
 
-// Register MigrationManager and IInitializableDb for database initialization
+// Register DbUpMigrator and IInitializableDb for database initialization
 builder.Services.AddSingleton<DbUpMigrator>();
 builder.Services.AddSingleton<IInitializableDb>(provider =>
 {
