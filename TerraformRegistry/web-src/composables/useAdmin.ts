@@ -92,8 +92,8 @@ export function useAdmin() {
     if (params?.resourceType) query.set('resourceType', params.resourceType)
     if (params?.from) query.set('from', params.from)
     if (params?.to) query.set('to', params.to)
-    if (params?.limit) query.set('limit', String(params.limit))
-    if (params?.offset) query.set('offset', String(params.offset))
+    if (params?.limit !== undefined) query.set('limit', String(params.limit))
+    if (params?.offset !== undefined) query.set('offset', String(params.offset))
     const qs = query.toString()
     return await $fetch(`/api/admin/audit${qs ? `?${qs}` : ''}`, { headers: getAuthHeaders() })
   }

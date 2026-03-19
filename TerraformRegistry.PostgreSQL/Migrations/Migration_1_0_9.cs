@@ -30,13 +30,13 @@ public class Migration_1_0_9 : IDatabaseMigration
             DROP TABLE IF EXISTS vcs_sources;
             CREATE TABLE vcs_sources (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 namespace VARCHAR(255) NOT NULL,
                 name VARCHAR(255) NOT NULL,
                 provider VARCHAR(255) NOT NULL,
                 repo_owner VARCHAR(255) NOT NULL,
                 repo_name VARCHAR(255) NOT NULL,
-                connection_id UUID NOT NULL REFERENCES vcs_connections(id),
+                connection_id UUID NOT NULL REFERENCES vcs_connections(id) ON DELETE CASCADE,
                 is_active BOOLEAN NOT NULL DEFAULT true,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
