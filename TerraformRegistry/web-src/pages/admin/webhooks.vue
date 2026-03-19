@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import { useWebhooks, WEBHOOK_EVENTS, WEBHOOK_FORMATS, TEMPLATE_VARIABLES } from "~/composables/useWebhooks";
+import { extractErrorMessage } from "~/composables/useErrorMessage";
 import type { Webhook } from "~/composables/useWebhooks";
 
 definePageMeta({
@@ -67,7 +68,7 @@ const fetchWebhooks = async () => {
     webhooks.value = await listWebhooks();
   } catch (e) {
     console.error("Failed to fetch webhooks", e);
-    errorMessage.value = "Failed to load webhooks.";
+    errorMessage.value = extractErrorMessage(e, "Failed to load webhooks");
   } finally {
     isLoading.value = false;
   }
@@ -103,7 +104,7 @@ const handleCreate = async () => {
     await fetchWebhooks();
   } catch (e) {
     console.error("Failed to create webhook", e);
-    errorMessage.value = "Failed to create webhook.";
+    errorMessage.value = extractErrorMessage(e, "Failed to create webhook");
   } finally {
     isCreating.value = false;
   }
@@ -152,7 +153,7 @@ const handleUpdate = async () => {
     await fetchWebhooks();
   } catch (e) {
     console.error("Failed to update webhook", e);
-    errorMessage.value = "Failed to update webhook.";
+    errorMessage.value = extractErrorMessage(e, "Failed to update webhook");
   }
 };
 
@@ -163,7 +164,7 @@ const toggleActive = async (webhook: Webhook) => {
     await fetchWebhooks();
   } catch (e) {
     console.error("Failed to toggle webhook", e);
-    errorMessage.value = "Failed to update webhook status.";
+    errorMessage.value = extractErrorMessage(e, "Failed to update webhook status");
   }
 };
 
@@ -180,7 +181,7 @@ const handleDelete = async () => {
     await fetchWebhooks();
   } catch (e) {
     console.error("Failed to delete webhook", e);
-    errorMessage.value = "Failed to delete webhook.";
+    errorMessage.value = extractErrorMessage(e, "Failed to delete webhook");
   } finally {
     isDeleteModalOpen.value = false;
     webhookToDelete.value = null;
@@ -346,7 +347,7 @@ onMounted(() => {
     <div class="page-divider" />
 
     <!-- Body -->
-    <div class="flex-1 overflow-y-auto px-6 py-6">
+    <div class="flex-1 overflow-y-auto px-6 py-8">
       <div class="max-w-4xl space-y-8">
 
         <!-- Error Message -->
@@ -417,10 +418,12 @@ onMounted(() => {
               <UInput
                 v-model="newUrl"
                 placeholder="https://example.com/webhook"
-                size="lg"
+                size="xl"
+                icon="i-lucide-link"
                 class="webhook-input"
                 @keyup.enter="handleCreate"
               />
+              <p class="text-[11px] text-neutral-600 pl-8">The URL that will receive HTTP POST requests when events occur</p>
             </div>
 
             <!-- Step 2: Secret -->
@@ -428,14 +431,17 @@ onMounted(() => {
               <div class="flex items-center gap-2 mb-1">
                 <span class="flex items-center justify-center w-6 h-6 rounded-full bg-primary-500/15 text-primary-400 text-xs font-bold">2</span>
                 <label class="text-sm font-medium text-neutral-300">Signing Secret</label>
-                <span class="text-xs text-neutral-500 ml-1">optional</span>
+                <span class="text-[10px] text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded-full">Optional</span>
               </div>
               <UInput
                 v-model="newSecret"
                 type="password"
-                placeholder="HMAC-SHA256 signing secret"
+                placeholder="HMAC-SHA256 signing secret for payload verification"
+                size="xl"
+                icon="i-lucide-lock"
                 class="webhook-input"
               />
+              <p class="text-[11px] text-neutral-600 pl-8">Used to verify webhook authenticity via <code class="text-primary-300/60 text-[10px]">X-Signature-256</code> header</p>
             </div>
 
             <!-- Step 3: Format -->
@@ -485,18 +491,46 @@ onMounted(() => {
             <!-- Live Preview for Discord/Slack/Teams -->
             <Transition name="slide-fade">
               <div v-if="newFormat === 'discord' || newFormat === 'slack' || newFormat === 'teams'" class="space-y-4">
-                <div class="space-y-3">
-                  <p class="text-xs font-medium text-neutral-400 uppercase tracking-wider">Custom Overrides</p>
-                  <UInput
-                    v-model="newCustomTitle"
-                    placeholder="{{module.name}} v{{module.version}} published"
-                    class="webhook-input"
-                  />
-                  <UInput
-                    v-model="newCustomBody"
-                    placeholder="{{module.description}}"
-                    class="webhook-input"
-                  />
+                <!-- Custom Overrides -->
+                <div class="rounded-xl border border-neutral-700/40 bg-neutral-900/40 overflow-hidden">
+                  <div class="px-4 py-3 border-b border-neutral-800/60 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <UIcon name="i-lucide-pen-line" class="text-primary-400 text-sm" />
+                      <span class="text-xs font-medium text-neutral-300">Message Overrides</span>
+                    </div>
+                    <span class="text-[10px] text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded-full">Optional</span>
+                  </div>
+                  <div class="p-4 space-y-4">
+                    <p class="text-[11px] text-neutral-500 leading-relaxed">Customize the message title and body. Leave blank to use the platform defaults. Use <code class="px-1 py-0.5 rounded bg-neutral-800 text-primary-300 text-[10px]">{{variables}}</code> for dynamic content.</p>
+                    <div class="space-y-3">
+                      <div class="space-y-1.5">
+                        <label class="block text-xs font-medium text-neutral-400">Title</label>
+                        <UInput
+                          v-model="newCustomTitle"
+                          placeholder="e.g. {{module.name}} v{{module.version}} published"
+                          icon="i-lucide-heading"
+                        />
+                      </div>
+                      <div class="space-y-1.5">
+                        <label class="block text-xs font-medium text-neutral-400">Body</label>
+                        <UInput
+                          v-model="newCustomBody"
+                          placeholder="e.g. {{module.namespace}}/{{module.name}} — {{module.description}}"
+                          icon="i-lucide-text"
+                        />
+                      </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 pt-2 border-t border-neutral-800/40">
+                      <span class="text-[10px] text-neutral-600 mr-1">Available:</span>
+                      <code
+                        v-for="variable in TEMPLATE_VARIABLES"
+                        :key="'override-' + variable"
+                        class="px-1.5 py-0.5 rounded bg-primary-500/8 text-primary-300/70 text-[10px] font-mono border border-primary-500/15 cursor-default"
+                      >
+                        {{ variable }}
+                      </code>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Preview Panel -->
@@ -761,91 +795,112 @@ onMounted(() => {
     </div>
 
     <!-- Edit Webhook Modal -->
-    <UModal v-model:open="isEditModalOpen">
+    <UModal v-model:open="isEditModalOpen" class="sm:max-w-2xl">
       <template #content>
-        <div class="p-6 space-y-5">
-          <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-pencil" class="text-2xl text-primary-400" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-11 h-11 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-webhook" class="text-xl text-primary-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">Edit Webhook</h3>
-              <p class="text-sm text-neutral-400">Update webhook configuration</p>
+              <p class="text-sm text-neutral-500">Update endpoint, format, and event subscriptions</p>
             </div>
           </div>
 
-          <div class="flex flex-col gap-4">
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Endpoint URL</label>
+          <!-- Body -->
+          <div class="px-6 py-5 space-y-5 max-h-[80vh] overflow-y-auto">
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">Endpoint URL</label>
               <UInput
                 v-model="editUrl"
                 placeholder="https://example.com/webhook"
+                size="lg"
+                icon="i-lucide-link"
               />
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Signing Secret</label>
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">Signing Secret</label>
               <UInput
                 v-model="editSecret"
                 type="password"
                 placeholder="Leave blank to keep current"
+                size="lg"
+                icon="i-lucide-lock"
               />
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Format</label>
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">Format</label>
               <USelect
                 v-model="editFormat"
                 :items="formatOptions"
-                class="w-full min-w-[250px]"
+                class="w-full"
               />
             </div>
             <div v-if="editFormat === 'discord' || editFormat === 'slack' || editFormat === 'teams'">
-              <p class="text-xs font-medium text-neutral-400 mb-2">Custom Overrides</p>
-              <div class="flex flex-col gap-2">
-                <UInput
-                  v-model="editCustomTitle"
-                  placeholder="{{module.name}} v{{module.version}} published"
-                />
-                <UInput
-                  v-model="editCustomBody"
-                  placeholder="{{module.description}}"
-                />
+              <div class="rounded-xl border border-neutral-700/40 bg-neutral-900/40 overflow-hidden">
+                <div class="px-4 py-3 border-b border-neutral-800/60 flex items-center gap-2">
+                  <UIcon name="i-lucide-pen-line" class="text-primary-400 text-sm" />
+                  <span class="text-xs font-medium text-neutral-300">Message Overrides</span>
+                  <span class="text-[10px] text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded-full ml-auto">Optional</span>
+                </div>
+                <div class="p-4 space-y-4">
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-neutral-400">Title</label>
+                    <UInput
+                      v-model="editCustomTitle"
+                      placeholder="{{module.name}} v{{module.version}} published"
+                      icon="i-lucide-heading"
+                    />
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="block text-xs font-medium text-neutral-400">Body</label>
+                    <UInput
+                      v-model="editCustomBody"
+                      placeholder="{{module.description}}"
+                      icon="i-lucide-text"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-            <div v-if="editFormat === 'custom'">
-              <p class="text-xs font-medium text-neutral-400 mb-2">Template Body</p>
+            <div v-if="editFormat === 'custom'" class="space-y-2">
+              <label class="block text-xs font-medium text-neutral-400">Template Body</label>
               <UTextarea
                 v-model="editTemplate"
                 placeholder='{"text":"{{event}} - {{module.name}}"}'
                 :rows="8"
                 class="w-full font-mono text-sm"
               />
-              <p class="text-xs text-neutral-500 mt-1">
+              <p class="text-xs text-neutral-500">
                 Available variables: {{ templateVariablesText }}
               </p>
             </div>
-            <div>
-              <p class="text-xs font-medium text-neutral-400 mb-2">Events</p>
+            <div class="space-y-2">
+              <label class="block text-xs font-medium text-neutral-400">Events</label>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="event in WEBHOOK_EVENTS"
                   :key="event"
                   type="button"
                   :class="[
-                    'inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer',
+                    'inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium transition-all duration-200 cursor-pointer',
                     editEvents.includes(event)
-                      ? `${eventSelectedBg(event)}`
-                      : `bg-neutral-900/40 ${eventBorderColor(event)} text-neutral-400`
+                      ? `${eventSelectedBg(event)} shadow-md`
+                      : `bg-neutral-900/40 ${eventBorderColor(event)} text-neutral-400 hover:text-neutral-300`
                   ]"
                   @click="toggleEditEvent(event)"
                 >
-                  <span :class="['w-2 h-2 rounded-full', eventDotColor(event)]" />
+                  <span :class="['w-2 h-2 rounded-full shrink-0', eventDotColor(event)]" />
                   <span :class="editEvents.includes(event) ? 'text-neutral-100' : ''">{{ event }}</span>
                 </button>
               </div>
             </div>
           </div>
 
-          <div class="flex justify-end gap-2 pt-2 border-t border-neutral-800/50">
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -855,6 +910,7 @@ onMounted(() => {
             <UButton
               color="primary"
               label="Save Changes"
+              icon="i-lucide-check"
               :disabled="!editUrl || editEvents.length === 0"
               @click="handleUpdate"
             />
@@ -866,20 +922,27 @@ onMounted(() => {
     <!-- Delete Confirmation Modal -->
     <UModal v-model:open="isDeleteModalOpen">
       <template #content>
-        <div class="p-6">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-trash-2" class="text-2xl text-red-500" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-12 h-12 rounded-xl bg-red-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-triangle-alert" class="text-2xl text-red-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">Delete Webhook</h3>
-              <p class="text-sm text-neutral-400">This action cannot be undone</p>
+              <p class="text-sm text-neutral-500">This action is permanent and cannot be undone</p>
             </div>
           </div>
-          <p class="text-neutral-300 mb-6">
-            Are you sure you want to delete this webhook? It will no longer receive event notifications.
-          </p>
-          <div class="flex justify-end gap-2">
+
+          <!-- Body -->
+          <div class="px-6 py-5">
+            <p class="text-sm text-neutral-300 leading-relaxed">
+              Are you sure you want to delete this webhook? It will immediately stop receiving all event notifications.
+            </p>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -889,6 +952,7 @@ onMounted(() => {
             <UButton
               color="error"
               label="Delete Webhook"
+              icon="i-lucide-trash-2"
               @click="handleDelete"
             />
           </div>

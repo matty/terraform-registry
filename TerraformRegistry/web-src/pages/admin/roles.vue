@@ -2,6 +2,7 @@
 import { useDashboard } from '~/composables/useDashboard'
 import { useAdmin } from '~/composables/useAdmin'
 import type { AdminRole } from '~/composables/useAdmin'
+import { extractErrorMessage } from "~/composables/useErrorMessage"
 
 definePageMeta({
   middleware: 'auth',
@@ -129,16 +130,18 @@ const isDeleteModalOpen = ref(false)
 const roleToDelete = ref<AdminRole | null>(null)
 
 // Expanded roles in list
-const expandedRoles = ref<Set<string>>(new Set())
+const expandedRoleIds = ref<string[]>([])
 
 const toggleRoleExpand = (id: string) => {
-  if (expandedRoles.value.has(id)) {
-    expandedRoles.value.delete(id)
+  if (expandedRoleIds.value.includes(id)) {
+    expandedRoleIds.value = expandedRoleIds.value.filter(r => r !== id)
   }
   else {
-    expandedRoles.value.add(id)
+    expandedRoleIds.value = [...expandedRoleIds.value, id]
   }
 }
+
+const isRoleExpanded = (id: string) => expandedRoleIds.value.includes(id)
 
 const fetchRoles = async () => {
   isLoading.value = true
@@ -148,7 +151,7 @@ const fetchRoles = async () => {
   }
   catch (e) {
     console.error('Failed to fetch roles', e)
-    errorMessage.value = 'Failed to load roles.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to load roles')
   }
   finally {
     isLoading.value = false
@@ -172,7 +175,7 @@ const handleCreate = async () => {
   }
   catch (e: any) {
     console.error('Failed to create role', e)
-    errorMessage.value = e?.data?.detail || 'Failed to create role.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to create role')
   }
   finally {
     isCreating.value = false
@@ -202,7 +205,7 @@ const handleUpdate = async () => {
   }
   catch (e: any) {
     console.error('Failed to update role', e)
-    errorMessage.value = e?.data?.detail || 'Failed to update role.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to update role')
   }
 }
 
@@ -220,7 +223,7 @@ const handleDelete = async () => {
   }
   catch (e: any) {
     console.error('Failed to delete role', e)
-    errorMessage.value = e?.data?.detail || 'Failed to delete role.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to delete role')
   }
   finally {
     isDeleteModalOpen.value = false
@@ -229,27 +232,40 @@ const handleDelete = async () => {
 }
 
 // Toggle permission in a target ref
-const togglePermission = (perms: Ref<string[]>, value: string) => {
-  const idx = perms.value.indexOf(value)
-  if (idx === -1) {
-    perms.value.push(value)
+const toggleNewPermission = (value: string) => {
+  if (newPermissions.value.includes(value)) {
+    newPermissions.value = newPermissions.value.filter(v => v !== value)
   }
   else {
-    perms.value.splice(idx, 1)
+    newPermissions.value = [...newPermissions.value, value]
   }
 }
 
-// Select all/clear for a category
-const selectAllCategory = (perms: Ref<string[]>, category: typeof permissionCategories[number]) => {
-  for (const p of category.permissions) {
-    if (!perms.value.includes(p.value)) {
-      perms.value.push(p.value)
-    }
+const toggleEditPermission = (value: string) => {
+  if (editPermissions.value.includes(value)) {
+    editPermissions.value = editPermissions.value.filter(v => v !== value)
+  }
+  else {
+    editPermissions.value = [...editPermissions.value, value]
   }
 }
 
-const clearCategory = (perms: Ref<string[]>, category: typeof permissionCategories[number]) => {
-  perms.value = perms.value.filter(p => !category.permissions.some(cp => cp.value === p))
+const selectAllNewCategory = (category: typeof permissionCategories[number]) => {
+  const toAdd = category.permissions.map(p => p.value).filter(v => !newPermissions.value.includes(v))
+  newPermissions.value = [...newPermissions.value, ...toAdd]
+}
+
+const clearNewCategory = (category: typeof permissionCategories[number]) => {
+  newPermissions.value = newPermissions.value.filter(p => !category.permissions.some(cp => cp.value === p))
+}
+
+const selectAllEditCategory = (category: typeof permissionCategories[number]) => {
+  const toAdd = category.permissions.map(p => p.value).filter(v => !editPermissions.value.includes(v))
+  editPermissions.value = [...editPermissions.value, ...toAdd]
+}
+
+const clearEditCategory = (category: typeof permissionCategories[number]) => {
+  editPermissions.value = editPermissions.value.filter(p => !category.permissions.some(cp => cp.value === p))
 }
 
 const categorySelectedCount = (perms: string[], category: typeof permissionCategories[number]) => {
@@ -294,7 +310,7 @@ onMounted(() => {
     <div class="page-divider" />
 
     <!-- Body -->
-    <div class="flex-1 overflow-y-auto px-6 py-6">
+    <div class="flex-1 overflow-y-auto px-6 py-8">
       <div class="max-w-4xl space-y-8">
         <!-- Error Message -->
         <div
@@ -387,7 +403,7 @@ onMounted(() => {
                       <button
                         type="button"
                         class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1.5 py-0.5 rounded transition-colors"
-                        @click="selectAllCategory(newPermissions, category)"
+                        @click="selectAllNewCategory(category)"
                       >
                         All
                       </button>
@@ -395,7 +411,7 @@ onMounted(() => {
                       <button
                         type="button"
                         class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1.5 py-0.5 rounded transition-colors"
-                        @click="clearCategory(newPermissions, category)"
+                        @click="clearNewCategory(category)"
                       >
                         Clear
                       </button>
@@ -413,7 +429,7 @@ onMounted(() => {
                           ? category.pillActive
                           : 'bg-neutral-900/40 border-neutral-700/50 text-neutral-400 hover:text-neutral-300 hover:border-neutral-600'
                       ]"
-                      @click="togglePermission(newPermissions, perm.value)"
+                      @click="toggleNewPermission(perm.value)"
                     >
                       <span
                         :class="[
@@ -526,7 +542,7 @@ onMounted(() => {
 
                 <!-- Expandable permissions -->
                 <Transition name="expand">
-                  <div v-if="expandedRoles.has(role.id)" class="mt-4 pt-3 border-t border-neutral-800/50 space-y-2">
+                  <div v-if="isRoleExpanded(role.id)" class="mt-4 pt-3 border-t border-neutral-800/50 space-y-2">
                     <div
                       v-for="category in permissionCategories"
                       :key="category.label"
@@ -563,10 +579,10 @@ onMounted(() => {
                     @click="toggleRoleExpand(role.id)"
                   >
                     <UIcon
-                      :name="expandedRoles.has(role.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                      :name="isRoleExpanded(role.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
                       class="text-sm"
                     />
-                    {{ expandedRoles.has(role.id) ? 'Collapse' : 'View permissions' }}
+                    {{ isRoleExpanded(role.id) ? 'Collapse' : 'View permissions' }}
                   </button>
                   <div class="flex items-center gap-1">
                     <UButton
@@ -595,89 +611,119 @@ onMounted(() => {
     </div>
 
     <!-- Edit Role Modal -->
-    <UModal v-model:open="isEditModalOpen">
+    <UModal v-model:open="isEditModalOpen" class="sm:max-w-2xl">
       <template #content>
-        <div class="p-6 space-y-5">
-          <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-pencil" class="text-2xl text-primary-400" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-11 h-11 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-shield" class="text-xl text-primary-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">
                 Edit Role
               </h3>
-              <p class="text-sm text-neutral-400">
-                Update role configuration
+              <p class="text-sm text-neutral-500">
+                Update name, description, and permissions
               </p>
             </div>
           </div>
-          <div class="flex flex-col gap-4">
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Role Name</label>
-              <UInput
-                v-model="editName"
-                placeholder="Role name"
-                :readonly="editingRole?.isSystem"
-              />
+
+          <!-- Body -->
+          <div class="px-6 py-5 space-y-5 max-h-[80vh] overflow-y-auto">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-neutral-400">
+                  Role Name <span class="text-red-400">*</span>
+                </label>
+                <UInput
+                  v-model="editName"
+                  placeholder="Role name"
+                  size="lg"
+                  :readonly="editingRole?.isSystem"
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="block text-xs font-medium text-neutral-400">Description</label>
+                <UInput
+                  v-model="editDescription"
+                  placeholder="Optional description"
+                  size="lg"
+                />
+              </div>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Description</label>
-              <UInput
-                v-model="editDescription"
-                placeholder="Description (optional)"
-              />
-            </div>
+
+            <!-- Permission Grid -->
             <div class="space-y-3">
-              <p class="text-xs font-medium text-neutral-400">Permissions</p>
-              <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+              <div class="flex items-center justify-between">
+                <p class="text-sm font-medium text-neutral-300">Permissions</p>
+                <span class="text-xs text-neutral-500">
+                  {{ editPermissions.length }} selected
+                </span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div
                   v-for="category in permissionCategories"
                   :key="category.label"
-                  :class="['rounded-lg border overflow-hidden', categorySelectedCount(editPermissions, category) > 0 ? category.borderColor : 'border-neutral-800/60']"
+                  :class="[
+                    'perm-category rounded-xl border overflow-hidden transition-all duration-200',
+                    categorySelectedCount(editPermissions, category) > 0
+                      ? category.borderColor
+                      : 'border-neutral-800/60'
+                  ]"
                 >
-                  <div :class="['px-3 py-2 flex items-center justify-between', category.headerBg]">
-                    <div class="flex items-center gap-2">
-                      <UIcon :name="category.icon" :class="['text-sm', category.iconColor]" />
-                      <span class="text-xs font-medium text-neutral-300">{{ category.label }}</span>
+                  <!-- Category header -->
+                  <div :class="['px-4 py-3 flex items-center justify-between', category.headerBg]">
+                    <div class="flex items-center gap-2.5">
+                      <div :class="['w-7 h-7 rounded-lg flex items-center justify-center', category.bgColor]">
+                        <UIcon :name="category.icon" :class="['text-sm', category.iconColor]" />
+                      </div>
+                      <span class="text-sm font-medium text-neutral-200">{{ category.label }}</span>
                       <span
                         v-if="categorySelectedCount(editPermissions, category) > 0"
                         :class="['px-1.5 py-0.5 rounded-full text-[10px] font-bold', category.pillActive]"
                       >
-                        {{ categorySelectedCount(editPermissions, category) }}
+                        {{ categorySelectedCount(editPermissions, category) }}/{{ category.permissions.length }}
                       </span>
                     </div>
                     <div class="flex items-center gap-1">
                       <button
                         type="button"
-                        class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1 transition-colors"
-                        @click="selectAllCategory(editPermissions, category)"
+                        class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1.5 py-0.5 rounded transition-colors"
+                        @click="selectAllEditCategory(category)"
                       >
                         All
                       </button>
-                      <span class="text-neutral-700 text-[10px]">|</span>
+                      <span class="text-neutral-700">|</span>
                       <button
                         type="button"
-                        class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1 transition-colors"
-                        @click="clearCategory(editPermissions, category)"
+                        class="text-[11px] text-neutral-500 hover:text-neutral-300 px-1.5 py-0.5 rounded transition-colors"
+                        @click="clearEditCategory(category)"
                       >
                         Clear
                       </button>
                     </div>
                   </div>
-                  <div class="px-3 py-2 flex flex-wrap gap-1.5 bg-neutral-900/30">
+                  <!-- Permission pills -->
+                  <div class="px-4 py-3 flex flex-wrap gap-2 bg-neutral-900/30">
                     <button
                       v-for="perm in category.permissions"
                       :key="perm.value"
                       type="button"
                       :class="[
-                        'inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer',
+                        'perm-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer',
                         editPermissions.includes(perm.value)
                           ? category.pillActive
-                          : 'bg-neutral-900/40 border-neutral-700/50 text-neutral-400 hover:text-neutral-300'
+                          : 'bg-neutral-900/40 border-neutral-700/50 text-neutral-400 hover:text-neutral-300 hover:border-neutral-600'
                       ]"
-                      @click="togglePermission(editPermissions, perm.value)"
+                      @click="toggleEditPermission(perm.value)"
                     >
-                      <span :class="['w-1.5 h-1.5 rounded-full', editPermissions.includes(perm.value) ? category.dotColor : 'bg-neutral-600']" />
+                      <span
+                        :class="[
+                          'w-1.5 h-1.5 rounded-full transition-colors',
+                          editPermissions.includes(perm.value) ? category.dotColor : 'bg-neutral-600'
+                        ]"
+                      />
                       {{ perm.label }}
                     </button>
                   </div>
@@ -685,7 +731,9 @@ onMounted(() => {
               </div>
             </div>
           </div>
-          <div class="flex justify-end gap-2 pt-2 border-t border-neutral-800/50">
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -695,6 +743,7 @@ onMounted(() => {
             <UButton
               color="primary"
               label="Save Changes"
+              icon="i-lucide-check"
               :disabled="!editName || editPermissions.length === 0"
               @click="handleUpdate"
             />
@@ -706,24 +755,33 @@ onMounted(() => {
     <!-- Delete Confirmation Modal -->
     <UModal v-model:open="isDeleteModalOpen">
       <template #content>
-        <div class="p-6">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-trash-2" class="text-2xl text-red-500" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-12 h-12 rounded-xl bg-red-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-triangle-alert" class="text-2xl text-red-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">
                 Delete Role
               </h3>
-              <p class="text-sm text-neutral-400">
-                This action cannot be undone
+              <p class="text-sm text-neutral-500">
+                This action is permanent and cannot be undone
               </p>
             </div>
           </div>
-          <p class="text-neutral-300 mb-6">
-            Are you sure you want to delete the role <strong>{{ roleToDelete?.name }}</strong>? Users assigned this role will lose its permissions.
-          </p>
-          <div class="flex justify-end gap-2">
+
+          <!-- Body -->
+          <div class="px-6 py-5">
+            <p class="text-sm text-neutral-300 leading-relaxed">
+              Are you sure you want to delete the role
+              <code class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-300 font-semibold text-sm">{{ roleToDelete?.name }}</code>?
+              All users currently assigned this role will lose its permissions immediately.
+            </p>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -733,6 +791,7 @@ onMounted(() => {
             <UButton
               color="error"
               label="Delete Role"
+              icon="i-lucide-trash-2"
               @click="handleDelete"
             />
           </div>

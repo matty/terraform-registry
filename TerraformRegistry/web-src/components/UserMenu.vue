@@ -105,7 +105,15 @@ const handleLogout = () => {
         <div class="h-px bg-neutral-800 mx-3"></div>
 
         <!-- Actions -->
-        <div class="p-2">
+        <div class="p-2 space-y-0.5">
+          <NuxtLink
+            to="/settings/account"
+            @click="isOpen = false"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-400 hover:text-white hover:bg-white/5 transition-all group"
+          >
+            <UIcon name="i-lucide-user-cog" class="text-lg group-hover:text-primary-400 transition-colors" />
+            <span>Account</span>
+          </NuxtLink>
           <button
             @click="handleLogout"
             class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-400 hover:text-white hover:bg-white/5 transition-all group"

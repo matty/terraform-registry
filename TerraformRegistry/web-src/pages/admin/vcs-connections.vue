@@ -2,6 +2,7 @@
 import { useDashboard } from '~/composables/useDashboard'
 import { useVcsConnections } from '~/composables/useVcsConnections'
 import type { VcsConnection, VcsConnectionCreateResponse } from '~/composables/useVcsConnections'
+import { extractErrorMessage } from "~/composables/useErrorMessage"
 
 definePageMeta({
   middleware: 'auth',
@@ -53,7 +54,7 @@ const fetchConnections = async () => {
   }
   catch (e) {
     console.error('Failed to fetch VCS connections', e)
-    errorMessage.value = 'Failed to load VCS connections.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to load VCS connections')
   }
   finally {
     isLoading.value = false
@@ -83,7 +84,7 @@ const handleCreate = async () => {
   }
   catch (e: any) {
     console.error('Failed to create VCS connection', e)
-    errorMessage.value = e?.data?.detail || e?.data?.message || 'Failed to create VCS connection.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to create VCS connection')
   }
   finally {
     isCreating.value = false
@@ -145,7 +146,7 @@ const handleUpdate = async () => {
   }
   catch (e: any) {
     console.error('Failed to update VCS connection', e)
-    errorMessage.value = e?.data?.detail || e?.data?.message || 'Failed to update VCS connection.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to update VCS connection')
   }
 }
 
@@ -163,7 +164,7 @@ const handleDelete = async () => {
   }
   catch (e: any) {
     console.error('Failed to delete VCS connection', e)
-    errorMessage.value = e?.data?.detail || e?.data?.message || 'Failed to delete VCS connection. It may still be referenced by modules.'
+    errorMessage.value = extractErrorMessage(e, 'Failed to delete VCS connection. It may still be referenced by modules.')
   }
   finally {
     isDeleteModalOpen.value = false
@@ -212,7 +213,7 @@ onMounted(() => {
     <div class="page-divider" />
 
     <!-- Body -->
-    <div class="flex-1 overflow-y-auto px-6 py-6">
+    <div class="flex-1 overflow-y-auto px-6 py-8">
       <div class="max-w-4xl space-y-8">
         <!-- Error Message -->
         <div
@@ -334,84 +335,135 @@ onMounted(() => {
         <!-- Create Connection Form -->
         <div class="create-card rounded-2xl border border-neutral-800/80 overflow-hidden">
           <!-- GitHub hero area -->
-          <div class="px-6 py-8 border-b border-neutral-800/60 bg-neutral-900/40 text-center">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-neutral-800 border border-neutral-700/50 mb-4">
-              <UIcon name="i-lucide-github" class="text-4xl text-neutral-200" />
+          <div class="relative px-8 py-10 border-b border-neutral-800/60 overflow-hidden">
+            <!-- Subtle background pattern -->
+            <div class="absolute inset-0 opacity-[0.03]" style="background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0); background-size: 24px 24px;" />
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 rounded-full blur-3xl -translate-y-32 translate-x-32" />
+
+            <div class="relative flex items-center gap-5">
+              <div class="w-16 h-16 rounded-2xl bg-neutral-800/80 border border-neutral-700/50 flex items-center justify-center shadow-lg shadow-black/20">
+                <UIcon name="i-lucide-github" class="text-4xl text-neutral-200" />
+              </div>
+              <div>
+                <h3 class="text-xl font-semibold text-neutral-100">New VCS Connection</h3>
+                <p class="text-sm text-neutral-500 mt-1">Connect a GitHub account to enable automatic module publishing</p>
+              </div>
             </div>
-            <h3 class="text-lg font-semibold text-neutral-100">New VCS Connection</h3>
-            <p class="text-sm text-neutral-500 mt-1">Connect a GitHub account to enable module publishing via webhooks</p>
           </div>
 
-          <div class="p-6 space-y-5">
-            <!-- Label + Provider row -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-neutral-400">
-                  Label <span class="text-red-400">*</span>
-                </label>
+          <div class="p-8 space-y-6">
+            <!-- Section: Identity -->
+            <div>
+              <div class="flex items-center gap-2 mb-4">
+                <div class="w-6 h-6 rounded-md bg-primary-500/10 flex items-center justify-center">
+                  <span class="text-xs font-bold text-primary-400">1</span>
+                </div>
+                <h4 class="text-sm font-medium text-neutral-300">Connection Identity</h4>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pl-8">
+                <div class="sm:col-span-2 space-y-1.5">
+                  <label class="block text-xs font-medium text-neutral-400">
+                    Label <span class="text-red-400">*</span>
+                  </label>
+                  <UInput
+                    v-model="newLabel"
+                    placeholder="e.g. Production GitHub"
+                    icon="i-lucide-tag"
+                  />
+                  <p class="text-[11px] text-neutral-600">A friendly name to identify this connection</p>
+                </div>
+                <div class="space-y-1.5">
+                  <label class="block text-xs font-medium text-neutral-400">Provider</label>
+                  <USelect
+                    v-model="newProvider"
+                    :items="providerOptions"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Section: Authentication -->
+            <div>
+              <div class="flex items-center gap-2 mb-4">
+                <div class="w-6 h-6 rounded-md bg-amber-500/10 flex items-center justify-center">
+                  <span class="text-xs font-bold text-amber-400">2</span>
+                </div>
+                <h4 class="text-sm font-medium text-neutral-300">Authentication</h4>
+                <span class="text-[10px] text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded-full">Optional</span>
+              </div>
+              <div class="pl-8 space-y-1.5">
+                <div class="flex items-center gap-2">
+                  <label class="block text-xs font-medium text-neutral-400">Personal Access Token</label>
+                  <button
+                    type="button"
+                    class="relative text-neutral-500 hover:text-neutral-400 transition-colors"
+                    @mouseenter="showPatTooltip = true"
+                    @mouseleave="showPatTooltip = false"
+                  >
+                    <UIcon name="i-lucide-circle-help" class="text-sm" />
+                    <Transition name="fade">
+                      <div
+                        v-if="showPatTooltip"
+                        class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 p-4 rounded-xl bg-neutral-800 border border-neutral-700 shadow-2xl z-50 text-left"
+                      >
+                        <div class="flex items-center gap-2 mb-2">
+                          <UIcon name="i-lucide-key-round" class="text-amber-400" />
+                          <span class="text-xs font-semibold text-neutral-200">What's a PAT?</span>
+                        </div>
+                        <p class="text-xs text-neutral-300 leading-relaxed">
+                          A <span class="text-primary-400 font-medium">Personal Access Token</span> allows the registry to access your private repositories.
+                        </p>
+                        <div class="mt-2 p-2 rounded-lg bg-neutral-900/80 border border-neutral-700/50">
+                          <p class="text-[11px] text-neutral-400 leading-relaxed">
+                            GitHub → <span class="text-neutral-300">Settings</span> →
+                            <span class="text-neutral-300">Developer settings</span> →
+                            <span class="text-neutral-300">Personal access tokens</span>
+                          </p>
+                          <p class="text-[11px] text-neutral-500 mt-1">
+                            Required scope: <code class="px-1 py-0.5 rounded bg-neutral-800 text-primary-300 text-[10px]">repo</code>
+                          </p>
+                        </div>
+                        <div class="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-neutral-800 border-r border-b border-neutral-700 rotate-45 -mt-1" />
+                      </div>
+                    </Transition>
+                  </button>
+                </div>
                 <UInput
-                  v-model="newLabel"
-                  placeholder="e.g. Production GitHub"
-                  size="lg"
+                  v-model="newPat"
+                  type="password"
+                  placeholder="ghp_... (only needed for private repositories)"
+                  icon="i-lucide-lock"
                 />
+                <p class="text-[11px] text-neutral-600">Leave blank for public repositories. Encrypted at rest with AES-256-GCM.</p>
               </div>
-              <div class="space-y-1.5">
-                <label class="block text-xs font-medium text-neutral-400">Provider</label>
-                <USelect
-                  v-model="newProvider"
-                  :items="providerOptions"
-                  size="lg"
+            </div>
+
+            <!-- Section: Defaults -->
+            <div>
+              <div class="flex items-center gap-2 mb-4">
+                <div class="w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center">
+                  <span class="text-xs font-bold text-blue-400">3</span>
+                </div>
+                <h4 class="text-sm font-medium text-neutral-300">Defaults</h4>
+                <span class="text-[10px] text-neutral-600 bg-neutral-800 px-2 py-0.5 rounded-full">Optional</span>
+              </div>
+              <div class="pl-8 space-y-1.5">
+                <label class="block text-xs font-medium text-neutral-400">Default Organization / Owner</label>
+                <UInput
+                  v-model="newDefaultOrg"
+                  placeholder="e.g. acme-corp"
+                  icon="i-lucide-building-2"
                 />
+                <p class="text-[11px] text-neutral-600">Pre-fills the repository owner when linking modules to this connection</p>
               </div>
             </div>
 
-            <!-- PAT -->
-            <div class="space-y-1.5">
-              <div class="flex items-center gap-2">
-                <label class="block text-xs font-medium text-neutral-400">Personal Access Token</label>
-                <button
-                  type="button"
-                  class="relative text-neutral-500 hover:text-neutral-400 transition-colors"
-                  @mouseenter="showPatTooltip = true"
-                  @mouseleave="showPatTooltip = false"
-                >
-                  <UIcon name="i-lucide-circle-help" class="text-sm" />
-                  <!-- Tooltip -->
-                  <Transition name="fade">
-                    <div
-                      v-if="showPatTooltip"
-                      class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 rounded-xl bg-neutral-800 border border-neutral-700 shadow-xl z-50 text-left"
-                    >
-                      <p class="text-xs text-neutral-300 leading-relaxed">
-                        A <span class="text-primary-400 font-medium">Personal Access Token</span> (PAT) allows the registry to access private repositories.
-                        Generate one in GitHub under
-                        <span class="text-neutral-200">Settings</span> /
-                        <span class="text-neutral-200">Developer settings</span> /
-                        <span class="text-neutral-200">Personal access tokens</span>.
-                        Only <code class="px-1 py-0.5 rounded bg-neutral-900 text-primary-300 text-[10px]">repo</code> scope is required.
-                      </p>
-                      <div class="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-neutral-800 border-r border-b border-neutral-700 rotate-45 -mt-1" />
-                    </div>
-                  </Transition>
-                </button>
-              </div>
-              <UInput
-                v-model="newPat"
-                type="password"
-                placeholder="ghp_... (optional, for private repos)"
-              />
-            </div>
-
-            <!-- Default Org -->
-            <div class="space-y-1.5">
-              <label class="block text-xs font-medium text-neutral-400">Default Organization</label>
-              <UInput
-                v-model="newDefaultOrg"
-                placeholder="Optional -- e.g. acme-corp"
-              />
-            </div>
-
-            <div class="flex justify-end pt-2 border-t border-neutral-800/50">
+            <!-- Submit -->
+            <div class="flex items-center justify-between pt-4 border-t border-neutral-800/50">
+              <p class="text-xs text-neutral-600">
+                <UIcon name="i-lucide-shield-check" class="inline text-green-600 mr-1" />
+                Credentials are encrypted and never exposed via the API
+              </p>
               <UButton
                 icon="i-lucide-plug"
                 label="Create Connection"
@@ -527,43 +579,54 @@ onMounted(() => {
     </div>
 
     <!-- Edit Connection Modal -->
-    <UModal v-model:open="isEditModalOpen">
+    <UModal v-model:open="isEditModalOpen" class="sm:max-w-xl">
       <template #content>
-        <div class="p-6 space-y-5">
-          <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-pencil" class="text-2xl text-primary-400" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-11 h-11 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-git-branch" class="text-xl text-primary-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">
                 Edit Connection
               </h3>
-              <p class="text-sm text-neutral-400">
-                Update connection settings
+              <p class="text-sm text-neutral-500">
+                Update label, credentials, and connection settings
               </p>
             </div>
           </div>
-          <div class="flex flex-col gap-4">
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Label</label>
-              <UInput v-model="editLabel" placeholder="Connection label" />
+
+          <!-- Body -->
+          <div class="px-6 py-5 space-y-5 max-h-[80vh] overflow-y-auto">
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">
+                Label <span class="text-red-400">*</span>
+              </label>
+              <UInput v-model="editLabel" placeholder="Connection label" size="lg" icon="i-lucide-tag" />
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Personal Access Token</label>
-              <UInput v-model="editPat" type="password" placeholder="Leave blank to keep current" />
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">Personal Access Token</label>
+              <UInput v-model="editPat" type="password" placeholder="Leave blank to keep current" size="lg" icon="i-lucide-lock" />
+              <p class="text-[11px] text-neutral-600">Only fill this in if you want to replace the existing token</p>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-neutral-400 mb-1.5">Default Organization</label>
-              <UInput v-model="editDefaultOrg" placeholder="Optional" />
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium text-neutral-400">Default Organization</label>
+              <UInput v-model="editDefaultOrg" placeholder="e.g. acme-corp" size="lg" icon="i-lucide-building-2" />
             </div>
-            <div>
-              <label class="flex items-center gap-2 text-sm text-neutral-300 cursor-pointer">
-                <input v-model="editIsActive" type="checkbox" class="accent-primary-500 rounded" />
-                Active
+            <div class="flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 border border-neutral-800/60">
+              <label class="flex items-center gap-3 text-sm text-neutral-300 cursor-pointer flex-1">
+                <input v-model="editIsActive" type="checkbox" class="w-4 h-4 accent-primary-500 rounded" />
+                <div>
+                  <span class="font-medium">Active</span>
+                  <p class="text-[11px] text-neutral-500 mt-0.5">Inactive connections will not process incoming webhooks</p>
+                </div>
               </label>
             </div>
           </div>
-          <div class="flex justify-end gap-2 pt-2 border-t border-neutral-800/50">
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -573,6 +636,7 @@ onMounted(() => {
             <UButton
               color="primary"
               label="Save Changes"
+              icon="i-lucide-check"
               :disabled="!editLabel"
               @click="handleUpdate"
             />
@@ -584,24 +648,33 @@ onMounted(() => {
     <!-- Delete Confirmation Modal -->
     <UModal v-model:open="isDeleteModalOpen">
       <template #content>
-        <div class="p-6">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-trash-2" class="text-2xl text-red-500" />
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
+            <div class="w-12 h-12 rounded-xl bg-red-500/15 flex items-center justify-center shrink-0">
+              <UIcon name="i-lucide-triangle-alert" class="text-2xl text-red-400" />
             </div>
             <div>
               <h3 class="text-lg font-semibold text-neutral-100">
                 Delete Connection
               </h3>
-              <p class="text-sm text-neutral-400">
-                This action cannot be undone
+              <p class="text-sm text-neutral-500">
+                This action is permanent and cannot be undone
               </p>
             </div>
           </div>
-          <p class="text-neutral-300 mb-6">
-            Are you sure you want to delete the connection <strong>{{ connectionToDelete?.label }}</strong>? This will fail if any modules still reference it.
-          </p>
-          <div class="flex justify-end gap-2">
+
+          <!-- Body -->
+          <div class="px-6 py-5">
+            <p class="text-sm text-neutral-300 leading-relaxed">
+              Are you sure you want to delete the connection
+              <code class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-300 font-semibold text-sm">{{ connectionToDelete?.label }}</code>?
+              This will fail if any modules still reference it.
+            </p>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
               color="neutral"
               variant="ghost"
@@ -611,6 +684,7 @@ onMounted(() => {
             <UButton
               color="error"
               label="Delete Connection"
+              icon="i-lucide-trash-2"
               @click="handleDelete"
             />
           </div>

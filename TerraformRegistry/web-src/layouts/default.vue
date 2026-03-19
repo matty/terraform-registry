@@ -36,11 +36,6 @@ const settingsLinks = [
     icon: "i-lucide-key-round",
     to: "/settings/api-keys",
   },
-  {
-    label: "Account",
-    icon: "i-lucide-user-cog",
-    to: "/settings/account",
-  },
 ];
 
 const adminLinks = [

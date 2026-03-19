@@ -314,19 +314,20 @@ onMounted(() => {
     <!-- Confirmation Modal -->
     <UModal v-model:open="showConfirmModal">
       <template #content>
-        <div class="p-6">
-          <div class="flex items-center gap-3 mb-4">
+        <div class="w-full">
+          <!-- Header -->
+          <div class="flex items-center gap-4 px-6 py-5 border-b border-neutral-800/60">
             <div
               :class="[
-                'w-12 h-12 rounded-xl flex items-center justify-center',
-                confirmAction === 'restore' ? 'bg-green-600/20' : 'bg-red-600/20'
+                'w-12 h-12 rounded-xl flex items-center justify-center shrink-0',
+                confirmAction === 'restore' ? 'bg-green-500/15' : 'bg-red-500/15'
               ]"
             >
               <UIcon
-                :name="confirmAction === 'restore' ? 'i-lucide-undo-2' : 'i-lucide-trash'"
+                :name="confirmAction === 'restore' ? 'i-lucide-undo-2' : 'i-lucide-triangle-alert'"
                 :class="[
                   'text-2xl',
-                  confirmAction === 'restore' ? 'text-green-500' : 'text-red-500'
+                  confirmAction === 'restore' ? 'text-green-400' : 'text-red-400'
                 ]"
               />
             </div>
@@ -334,34 +335,42 @@ onMounted(() => {
               <h3 class="text-lg font-semibold text-neutral-100">
                 {{ confirmAction === 'restore' ? 'Restore Module' : 'Permanently Delete' }}
               </h3>
-              <p class="text-sm text-neutral-400">
-                {{ selectedModule?.namespace }}/{{ selectedModule?.name }}/{{ selectedModule?.provider }}/{{ selectedModule?.version }}
+              <p class="text-sm text-neutral-500">
+                {{ confirmAction === 'restore' ? 'Make this module version available again' : 'This action is permanent and cannot be undone' }}
               </p>
             </div>
           </div>
 
-          <p class="text-neutral-300 mb-6">
-            <template v-if="confirmAction === 'restore'">
-              This will restore the module version and make it available again.
-            </template>
-            <template v-else>
-              This will <strong class="text-red-400">permanently delete</strong> the module version. This action cannot be undone.
-            </template>
-          </p>
+          <!-- Body -->
+          <div class="px-6 py-5">
+            <div class="mb-4 px-3 py-2 rounded-lg bg-neutral-900/60 border border-neutral-800/60">
+              <code class="text-sm text-neutral-200 font-medium">{{ selectedModule?.namespace }}/{{ selectedModule?.name }}/{{ selectedModule?.provider }}/{{ selectedModule?.version }}</code>
+            </div>
+            <p class="text-sm text-neutral-300 leading-relaxed">
+              <template v-if="confirmAction === 'restore'">
+                This will restore the module version and make it available for use in Terraform configurations again.
+              </template>
+              <template v-else>
+                This will <span class="text-red-300 font-medium">permanently delete</span> the module version and all associated data. This action cannot be undone.
+              </template>
+            </p>
+          </div>
 
-          <div class="flex justify-end gap-2">
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 px-6 py-4 border-t border-neutral-800/60">
             <UButton
-              @click="showConfirmModal = false"
               variant="ghost"
               color="neutral"
               :disabled="isProcessing"
+              @click="showConfirmModal = false"
             >
               Cancel
             </UButton>
             <UButton
-              @click="handleConfirm"
               :loading="isProcessing"
               :color="confirmAction === 'restore' ? 'success' : 'error'"
+              :icon="confirmAction === 'restore' ? 'i-lucide-undo-2' : 'i-lucide-trash'"
+              @click="handleConfirm"
             >
               {{ confirmAction === 'restore' ? 'Restore' : 'Delete Forever' }}
             </UButton>
@@ -371,3 +380,6 @@ onMounted(() => {
     </UModal>
   </div>
 </template>
+
+<style scoped>
+</style>
