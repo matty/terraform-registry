@@ -10,7 +10,7 @@ using TerraformRegistry.Handlers;
 using TerraformRegistry.Middleware;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
-using TerraformRegistry.PostgreSQL.Migrations;
+using TerraformRegistry.Migrations;
 using TerraformRegistry.Services;
 
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -24,7 +24,7 @@ builder.Configuration
 builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
 
 // Register MigrationManager and IInitializableDb for database initialization
-builder.Services.AddSingleton<MigrationManager>();
+builder.Services.AddSingleton<DbUpMigrator>();
 builder.Services.AddSingleton<IInitializableDb>(provider =>
 {
     var db = provider.GetRequiredService<IDatabaseService>();
@@ -37,7 +37,7 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
 {
     var config = provider.GetRequiredService<IConfiguration>();
     var loggerDb = provider.GetRequiredService<ILogger<PostgreSqlDatabaseService>>();
-    var migrationManager = provider.GetRequiredService<MigrationManager>();
+    var dbUpMigrator = provider.GetRequiredService<DbUpMigrator>();
     var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
     var baseUrl = config["BaseUrl"] ?? "http://localhost:5131";
 
@@ -50,11 +50,11 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
             if (string.IsNullOrEmpty(connectionString))
                 throw new InvalidOperationException(
                     "PostgreSQL connection string is missing or empty. Please check your configuration.");
-            return new PostgreSqlDatabaseService(connectionString, baseUrl, loggerDb, migrationManager);
+            return new PostgreSqlDatabaseService(connectionString, baseUrl, loggerDb, dbUpMigrator);
         case "sqlite":
             var sqliteConn = config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db";
             var sqliteLogger = provider.GetRequiredService<ILogger<SqliteDatabaseService>>();
-            return new SqliteDatabaseService(sqliteConn, baseUrl, sqliteLogger);
+            return new SqliteDatabaseService(sqliteConn, baseUrl, sqliteLogger, dbUpMigrator);
         default:
             throw new Exception($"Invalid database provider specified: '{databaseProvider}'. Check configuration.");
     }

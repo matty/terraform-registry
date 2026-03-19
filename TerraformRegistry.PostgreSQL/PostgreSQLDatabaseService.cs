@@ -4,7 +4,7 @@ using Npgsql;
 using NpgsqlTypes;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
-using TerraformRegistry.PostgreSQL.Migrations;
+using TerraformRegistry.Migrations;
 
 namespace TerraformRegistry.PostgreSQL;
 
@@ -16,14 +16,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     private readonly string _baseUrl;
     private readonly string _connectionString;
     private readonly ILogger<PostgreSqlDatabaseService> _logger;
-    private readonly MigrationManager _migrationManager;
+    private readonly DbUpMigrator _dbUpMigrator;
 
     public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger,
-        MigrationManager migrationManager)
+        DbUpMigrator dbUpMigrator)
     {
         _connectionString = connectionString;
         _baseUrl = baseUrl;
-        _migrationManager = migrationManager;
+        _dbUpMigrator = dbUpMigrator;
         _logger = logger;
     }
 
@@ -906,31 +906,10 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
-    public async Task InitializeDatabase()
+    public Task InitializeDatabase()
     {
-        await InitializeDatabaseImpl();
-    }
-
-    private async Task InitializeDatabaseImpl()
-    {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        if (await _migrationManager.NeedsInitializationAsync(connection))
-        {
-            await using var transaction = await connection.BeginTransactionAsync();
-            try
-            {
-                await _migrationManager.InitializeDatabaseAsync(connection, transaction);
-                await transaction.CommitAsync();
-                _logger.LogInformation("Database initialization and migrations completed successfully");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error initializing database");
-                throw;
-            }
-        }
+        _dbUpMigrator.Migrate("postgres", _connectionString);
+        _logger.LogInformation("PostgreSQL database initialization completed via DbUp");
+        return Task.CompletedTask;
     }
 }

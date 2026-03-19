@@ -2,6 +2,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -15,240 +16,22 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
     private readonly string _connectionString;
     private readonly string _baseUrl;
     private readonly ILogger<SqliteDatabaseService> _logger;
+    private readonly DbUpMigrator _dbUpMigrator;
 
-    public SqliteDatabaseService(string connectionString, string baseUrl, ILogger<SqliteDatabaseService> logger)
+    public SqliteDatabaseService(string connectionString, string baseUrl, ILogger<SqliteDatabaseService> logger,
+        DbUpMigrator dbUpMigrator)
     {
         _connectionString = connectionString;
         _baseUrl = baseUrl;
         _logger = logger;
+        _dbUpMigrator = dbUpMigrator;
     }
 
-    public async Task InitializeDatabase()
+    public Task InitializeDatabase()
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-
-        var createSql = @"
-        CREATE TABLE IF NOT EXISTS modules (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            namespace TEXT NOT NULL,
-            name TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            version TEXT NOT NULL,
-            description TEXT NOT NULL,
-            storage_path TEXT NOT NULL,
-            published_at TEXT NOT NULL,
-            dependencies TEXT NOT NULL,
-            deleted_at TEXT NULL,
-            UNIQUE(namespace, name, provider, version)
-        );";
-
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = createSql;
-        await cmd.ExecuteNonQueryAsync();
-
-        // Add deleted_at column if it doesn't exist (for existing databases)
-        try
-        {
-            await using var alterCmd = connection.CreateCommand();
-            alterCmd.CommandText = "ALTER TABLE modules ADD COLUMN deleted_at TEXT NULL;";
-            await alterCmd.ExecuteNonQueryAsync();
-        }
-        catch (SqliteException)
-        {
-            // Column already exists, ignore
-        }
-
-        // Helpful index for lookups
-        var indexSql = "CREATE INDEX IF NOT EXISTS idx_modules_lookup ON modules(namespace, name, provider);";
-        await using var idx = connection.CreateCommand();
-        idx.CommandText = indexSql;
-        await idx.ExecuteNonQueryAsync();
-
-        // Index for soft delete queries
-        var deletedIndexSql = "CREATE INDEX IF NOT EXISTS idx_modules_deleted_at ON modules(deleted_at);";
-        await using var deletedIdx = connection.CreateCommand();
-        deletedIdx.CommandText = deletedIndexSql;
-        await deletedIdx.ExecuteNonQueryAsync();
-
-        var createUsersSql = @"
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            provider_id TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(email)
-        );";
-
-        await using var cmdUsers = connection.CreateCommand();
-        cmdUsers.CommandText = createUsersSql;
-        await cmdUsers.ExecuteNonQueryAsync();
-
-        var createApiKeysSql = @"
-        CREATE TABLE IF NOT EXISTS api_keys (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            description TEXT NOT NULL,
-            token_hash TEXT NOT NULL,
-            prefix TEXT NOT NULL,
-            is_shared INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            expires_at TEXT,
-            last_used_at TEXT,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        );";
-
-        await using var cmdApiKeys = connection.CreateCommand();
-        cmdApiKeys.CommandText = createApiKeysSql;
-        await cmdApiKeys.ExecuteNonQueryAsync();
-
-        var indexApiKeysSql = "CREATE INDEX IF NOT EXISTS idx_api_keys_prefix ON api_keys(prefix);";
-        await using var idxApiKeys = connection.CreateCommand();
-        idxApiKeys.CommandText = indexApiKeysSql;
-        await idxApiKeys.ExecuteNonQueryAsync();
-
-        var createDownloadsSql = @"
-        CREATE TABLE IF NOT EXISTS module_downloads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            module_id INTEGER REFERENCES modules(id) ON DELETE CASCADE,
-            namespace TEXT NOT NULL,
-            name TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            version TEXT NOT NULL,
-            download_time TEXT NOT NULL DEFAULT (datetime('now')),
-            client_ip TEXT,
-            user_agent TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_module_downloads_time ON module_downloads(download_time);";
-
-        await using var cmdDownloads = connection.CreateCommand();
-        cmdDownloads.CommandText = createDownloadsSql;
-        await cmdDownloads.ExecuteNonQueryAsync();
-
-        var createWebhooksSql = @"
-        CREATE TABLE IF NOT EXISTS webhooks (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            url TEXT NOT NULL,
-            secret TEXT,
-            events TEXT NOT NULL,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            format TEXT NOT NULL DEFAULT 'generic',
-            template TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );";
-
-        await using var cmdWebhooks = connection.CreateCommand();
-        cmdWebhooks.CommandText = createWebhooksSql;
-        await cmdWebhooks.ExecuteNonQueryAsync();
-
-        // Migrate existing webhooks table — add columns if missing
-        await using var cmdPragma = connection.CreateCommand();
-        cmdPragma.CommandText = "PRAGMA table_info(webhooks)";
-        await using var pragmaReader = await cmdPragma.ExecuteReaderAsync();
-        var existingColumns = new HashSet<string>();
-        while (await pragmaReader.ReadAsync())
-        {
-            existingColumns.Add(pragmaReader.GetString(1));
-        }
-        await pragmaReader.CloseAsync();
-
-        if (!existingColumns.Contains("format"))
-        {
-            await using var alter1 = connection.CreateCommand();
-            alter1.CommandText = "ALTER TABLE webhooks ADD COLUMN format TEXT NOT NULL DEFAULT 'generic'";
-            await alter1.ExecuteNonQueryAsync();
-        }
-        if (!existingColumns.Contains("template"))
-        {
-            await using var alter2 = connection.CreateCommand();
-            alter2.CommandText = "ALTER TABLE webhooks ADD COLUMN template TEXT";
-            await alter2.ExecuteNonQueryAsync();
-        }
-
-        var createVcsConnectionsSql = @"
-        CREATE TABLE IF NOT EXISTS vcs_connections (
-            id TEXT PRIMARY KEY,
-            label TEXT NOT NULL,
-            provider TEXT NOT NULL DEFAULT 'github',
-            pat_encrypted TEXT,
-            default_org TEXT,
-            webhook_secret TEXT NOT NULL,
-            created_by TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );";
-
-        await using var cmdVcsConnections = connection.CreateCommand();
-        cmdVcsConnections.CommandText = createVcsConnectionsSql;
-        await cmdVcsConnections.ExecuteNonQueryAsync();
-
-        var createVcsSourcesSql = @"
-        CREATE TABLE IF NOT EXISTS vcs_sources (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            namespace TEXT NOT NULL,
-            name TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            repo_owner TEXT NOT NULL,
-            repo_name TEXT NOT NULL,
-            connection_id TEXT NOT NULL REFERENCES vcs_connections(id) ON DELETE CASCADE,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_vcs_sources_module ON vcs_sources(namespace, name, provider);
-        CREATE INDEX IF NOT EXISTS idx_vcs_sources_repo ON vcs_sources(repo_owner, repo_name);";
-
-        await using var cmdVcsSources = connection.CreateCommand();
-        cmdVcsSources.CommandText = createVcsSourcesSql;
-        await cmdVcsSources.ExecuteNonQueryAsync();
-
-        var createRolesSql = @"
-        CREATE TABLE IF NOT EXISTS roles (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            description TEXT,
-            permissions TEXT NOT NULL DEFAULT '[]',
-            is_system INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS user_roles (
-            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-            assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
-            assigned_by TEXT,
-            PRIMARY KEY (user_id, role_id)
-        );";
-
-        await using var cmdRoles = connection.CreateCommand();
-        cmdRoles.CommandText = createRolesSql;
-        await cmdRoles.ExecuteNonQueryAsync();
-
-        var createAuditLogsSql = @"
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id TEXT PRIMARY KEY,
-            user_id TEXT,
-            action TEXT NOT NULL,
-            resource_type TEXT NOT NULL,
-            resource_id TEXT,
-            details TEXT,
-            ip_address TEXT,
-            timestamp TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action, timestamp);";
-
-        await using var cmdAuditLogs = connection.CreateCommand();
-        cmdAuditLogs.CommandText = createAuditLogsSql;
-        await cmdAuditLogs.ExecuteNonQueryAsync();
+        _dbUpMigrator.Migrate("sqlite", _connectionString);
+        _logger.LogInformation("SQLite database initialization completed via DbUp");
+        return Task.CompletedTask;
     }
 
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)

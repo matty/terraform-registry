@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using Xunit;
@@ -47,7 +48,9 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     private static SqliteDatabaseService CreateService(string connStr, string baseUrl = "http://localhost")
     {
         var logger = new Mock<ILogger<SqliteDatabaseService>>();
-        return new SqliteDatabaseService(connStr, baseUrl, logger.Object);
+        var migratorLogger = new Mock<ILogger<DbUpMigrator>>();
+        var dbUpMigrator = new DbUpMigrator(migratorLogger.Object);
+        return new SqliteDatabaseService(connStr, baseUrl, logger.Object, dbUpMigrator);
     }
 
     private static ModuleStorage MakeModule(
