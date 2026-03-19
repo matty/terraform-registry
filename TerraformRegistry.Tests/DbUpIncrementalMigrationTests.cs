@@ -196,9 +196,50 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration010_FixesConstraintsAndAddsIndexes()
+    {
+        MigrateUpTo(10, _connectionString);
+
+        // Verify modules.description is now nullable (insert with NULL description)
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"INSERT INTO modules (namespace, name, provider, version, description, storage_path, published_at, dependencies)
+            VALUES ('test', 'test', 'test', '1.0.0', NULL, '/path', '2026-01-01', '[]')";
+        cmd.ExecuteNonQuery(); // Should not throw
+
+        // Verify users has UNIQUE(provider, provider_id)
+        cmd.CommandText = @"INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('u1', 'a@test.com', 'github', 'gh1', '2026-01-01', '2026-01-01')";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = @"INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('u2', 'b@test.com', 'github', 'gh1', '2026-01-01', '2026-01-01')";
+        var ex = Assert.Throws<Microsoft.Data.Sqlite.SqliteException>(() => cmd.ExecuteNonQuery());
+        Assert.Contains("UNIQUE constraint failed", ex.Message);
+
+        // Verify api_keys ON DELETE CASCADE works
+        cmd.CommandText = @"INSERT INTO api_keys (id, user_id, description, token_hash, prefix, is_shared, created_at)
+            VALUES ('k1', 'u1', 'key', 'hash', 'pfx', 0, '2026-01-01')";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = "DELETE FROM users WHERE id = 'u1'";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = "SELECT COUNT(*) FROM api_keys WHERE user_id = 'u1'";
+        Assert.Equal(0L, (long)cmd.ExecuteScalar()!); // Cascaded
+
+        // Verify new indexes exist
+        var indexes = GetIndexes(_connection);
+        Assert.Contains("idx_api_keys_user_id", indexes);
+        Assert.Contains("idx_api_keys_is_shared", indexes);
+        Assert.Contains("idx_webhooks_user_id", indexes);
+        Assert.Contains("idx_vcs_sources_user", indexes);
+        Assert.Contains("idx_vcs_sources_connection", indexes);
+        Assert.Contains("idx_module_downloads_namespace", indexes);
+        Assert.Contains("idx_module_downloads_name", indexes);
+        Assert.Contains("idx_module_downloads_provider", indexes);
+    }
+
+    [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
-        MigrateUpTo(9, _connectionString);
+        MigrateUpTo(10, _connectionString);
 
         using var cmd = _connection.CreateCommand();
 

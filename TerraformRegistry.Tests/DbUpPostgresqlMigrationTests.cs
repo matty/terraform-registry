@@ -285,11 +285,26 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration011_AddsWebhooksUserIdIndex()
+    {
+        var connStr = CreateFreshDatabase();
+        MigrateUpTo(11, connStr);
+
+        await using var conn = new NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_webhooks_user_id'";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.NotNull(result);
+        Assert.Equal("idx_webhooks_user_id", result!.ToString());
+    }
+
+    [Fact]
     public async Task FullMigration_DataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
 
-        MigrateUpTo(10, connectionString);
+        MigrateUpTo(11, connectionString);
 
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
