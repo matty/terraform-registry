@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "release/**"
+      - "hotfix/**"
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override"
+        required: false
+        type: string
+      push_image:
+        description: "Push image to GHCR"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests with coverage
+        run: dotnet test TerraformRegistry.Tests/TerraformRegistry.Tests.csproj --no-build --configuration Release --logger "trx;LogFileName=test_results.trx" /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=./TestResults/coverage.cobertura.xml
+        env:
+          ASPNETCORE_ENVIRONMENT: Test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TerraformRegistry.Tests/TestResults/test_results.trx
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: TerraformRegistry.Tests/TestResults/coverage.cobertura.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: TerraformRegistry.Tests/TestResults/coverage.cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    name: Build and Publish Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    # Skip Docker build on PRs — only build on push/tag/manual
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v0.10.2
+        with:
+          versionSpec: "5.x"
+
+      - name: Determine Version
+        id: set-version
+        uses: gittools/actions/gitversion/execute@v0.10.2
+        with:
+          useConfigFile: true
+
+      - name: Resolve Version
+        id: resolved-version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ steps.set-version.outputs.semVer }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_image }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/terraform-registry:${{ env.VERSION }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/terraform-registry:latest', github.repository_owner) || '' }}
+            ${{ startsWith(github.ref, 'refs/heads/develop') && format('ghcr.io/{0}/terraform-registry:develop', github.repository_owner) || '' }}
+            ${{ startsWith(github.ref, 'refs/heads/release/') && format('ghcr.io/{0}/terraform-registry:release', github.repository_owner) || '' }}
