@@ -65,9 +65,8 @@ public class DbUpMigratorTests : IDisposable
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var count = (long)cmd.ExecuteScalar()!;
 
-        // Should have exactly the number of SQLite scripts, not double
-        Assert.True(count > 0);
-        Assert.True(count < 20); // Sanity check — we have 9 scripts
+        // Should have exactly 9 SQLite scripts, not double
+        Assert.Equal(9L, count);
     }
 
     [Fact]

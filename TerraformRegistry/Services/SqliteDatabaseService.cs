@@ -30,7 +30,6 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
     public Task InitializeDatabase()
     {
         _dbUpMigrator.Migrate("sqlite", _connectionString);
-        _logger.LogInformation("SQLite database initialization completed via DbUp");
         return Task.CompletedTask;
     }
 

@@ -909,7 +909,6 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     public Task InitializeDatabase()
     {
         _dbUpMigrator.Migrate("postgres", _connectionString);
-        _logger.LogInformation("PostgreSQL database initialization completed via DbUp");
         return Task.CompletedTask;
     }
 }

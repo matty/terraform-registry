@@ -30,12 +30,6 @@ public class DbUpMigrator
 
         BootstrapExistingDatabase(provider, connectionString, upgrader);
 
-        if (!upgrader.IsUpgradeRequired())
-        {
-            _logger.LogInformation("Database is already up to date");
-            return;
-        }
-
         var result = upgrader.PerformUpgrade();
 
         if (!result.Successful)
@@ -44,10 +38,17 @@ public class DbUpMigrator
             throw new InvalidOperationException($"Database migration failed: {result.Error.Message}", result.Error);
         }
 
-        _logger.LogInformation("Database migration completed. Executed {Count} script(s)", result.Scripts.Count());
-        foreach (var script in result.Scripts)
+        if (result.Scripts.Any())
         {
-            _logger.LogInformation("  Executed: {Script}", script.Name);
+            _logger.LogInformation("Database migration completed. Executed {Count} script(s)", result.Scripts.Count());
+            foreach (var script in result.Scripts)
+            {
+                _logger.LogInformation("  Executed: {Script}", script.Name);
+            }
+        }
+        else
+        {
+            _logger.LogInformation("Database is already up to date");
         }
     }
 
@@ -124,21 +125,29 @@ public class DbUpMigrator
         }
 
         _logger.LogInformation("Bootstrapped {Count} script(s) in DbUp journal", result.Scripts.Count());
-
-        // Drop the legacy schema_version table (PostgreSQL only)
-        if (provider == "postgres")
-        {
-            DropLegacySchemaVersionTable(connectionString);
-        }
     }
 
-    private static bool IsExistingPostgresDatabase(string connectionString)
+    /// <summary>
+    ///     Checks for legacy schema_version table and drops it in the same connection
+    ///     to avoid an extra round-trip.
+    /// </summary>
+    private bool IsExistingPostgresDatabase(string connectionString)
     {
         using var conn = new Npgsql.NpgsqlConnection(connectionString);
         conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
-        return (bool)(cmd.ExecuteScalar() ?? false);
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
+        var exists = (bool)(checkCmd.ExecuteScalar() ?? false);
+
+        if (exists)
+        {
+            using var dropCmd = conn.CreateCommand();
+            dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
+            dropCmd.ExecuteNonQuery();
+            _logger.LogInformation("Removed legacy schema_version table");
+        }
+
+        return exists;
     }
 
     private static bool IsExistingSqliteDatabase(string connectionString)
@@ -148,15 +157,5 @@ public class DbUpMigrator
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='modules'";
         return (long)(cmd.ExecuteScalar() ?? 0L) > 0;
-    }
-
-    private void DropLegacySchemaVersionTable(string connectionString)
-    {
-        using var conn = new Npgsql.NpgsqlConnection(connectionString);
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DROP TABLE IF EXISTS schema_version";
-        cmd.ExecuteNonQuery();
-        _logger.LogInformation("Removed legacy schema_version table");
     }
 }
