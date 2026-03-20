@@ -5,7 +5,7 @@ import { useImpersonation } from "~/composables/useImpersonation";
 
 const { isAuthenticated } = useAuth();
 const { isSidebarOpen, isSidebarCollapsed } = useDashboard();
-const { isAdmin } = usePermissions();
+const { isAdmin, hasAdminSection, hasPermission } = usePermissions();
 const { impersonatedUser, isImpersonating, stopImpersonation } = useImpersonation();
 const route = useRoute();
 
@@ -41,12 +41,16 @@ const settingsLinks = [
 ];
 
 const adminLinks = [
-  { label: 'Roles', icon: 'i-lucide-shield', to: '/admin/roles' },
-  { label: 'Users', icon: 'i-lucide-users', to: '/admin/users' },
-  { label: 'Webhooks', icon: 'i-lucide-webhook', to: '/admin/webhooks' },
-  { label: 'VCS Connections', icon: 'i-lucide-git-branch', to: '/admin/vcs-connections' },
-  { label: 'Audit Log', icon: 'i-lucide-scroll-text', to: '/admin/audit' },
+  { label: 'Roles', icon: 'i-lucide-shield', to: '/admin/roles', permission: 'admin.roles' },
+  { label: 'Users', icon: 'i-lucide-users', to: '/admin/users', permission: 'admin.users' },
+  { label: 'Webhooks', icon: 'i-lucide-webhook', to: '/admin/webhooks', permission: 'webhooks.manage' },
+  { label: 'VCS Connections', icon: 'i-lucide-git-branch', to: '/admin/vcs-connections', permission: 'vcs.manage' },
+  { label: 'Audit Log', icon: 'i-lucide-scroll-text', to: '/admin/audit', permission: 'admin.audit' },
 ];
+
+const visibleAdminLinks = computed(() =>
+  adminLinks.filter(link => hasPermission(link.permission))
+);
 
 const isActive = (path: string) => {
   if (path === '/') return route.path === '/';
@@ -170,7 +174,7 @@ const toggleAdmin = () => {
         </div>
 
         <!-- Admin Section -->
-        <div v-if="isAdmin" class="pt-4 border-t border-neutral-800">
+        <div v-if="hasAdminSection" class="pt-4 border-t border-neutral-800">
           <button
             v-if="!isSidebarCollapsed"
             @click="toggleAdmin"
@@ -194,7 +198,7 @@ const toggleAdmin = () => {
             class="space-y-0.5"
           >
             <NuxtLink
-              v-for="link in adminLinks"
+              v-for="link in visibleAdminLinks"
               :key="link.to"
               :to="link.to"
               :class="[
@@ -304,7 +308,7 @@ const toggleAdmin = () => {
             </div>
 
             <!-- Admin Section (mobile) -->
-            <div v-if="isAdmin" class="pt-4 border-t border-neutral-800">
+            <div v-if="hasAdminSection" class="pt-4 border-t border-neutral-800">
               <button
                 @click="toggleAdmin"
                 :class="[
@@ -320,7 +324,7 @@ const toggleAdmin = () => {
               </button>
               <div v-if="isAdminExpanded" class="space-y-0.5">
                 <NuxtLink
-                  v-for="link in adminLinks"
+                  v-for="link in visibleAdminLinks"
                   :key="link.to"
                   :to="link.to"
                   :class="[
