@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import { usePermissions } from "~/composables/usePermissions";
+import { useImpersonation } from "~/composables/useImpersonation";
 
 const { isAuthenticated } = useAuth();
 const { isSidebarOpen, isSidebarCollapsed } = useDashboard();
 const { isAdmin } = usePermissions();
+const { impersonatedUser, isImpersonating, stopImpersonation } = useImpersonation();
 const route = useRoute();
 
 // Settings sub-menu expansion state
@@ -346,6 +348,29 @@ const toggleAdmin = () => {
 
     <!-- Main Content -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-neutral-950">
+      <!-- Impersonation Banner -->
+      <div
+        v-if="isImpersonating"
+        class="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-500/15 border-b border-amber-500/30"
+      >
+        <div class="flex items-center gap-2.5 min-w-0">
+          <UIcon name="i-lucide-eye" class="text-amber-400 text-lg shrink-0" />
+          <span class="text-sm text-amber-200 truncate">
+            Viewing as <strong class="text-amber-100">{{ impersonatedUser?.email }}</strong>
+            <span class="text-amber-400/70 ml-1 text-xs">
+              ({{ impersonatedUser?.permissions?.length || 0 }} permissions)
+            </span>
+          </span>
+        </div>
+        <UButton
+          icon="i-lucide-x"
+          label="Exit"
+          color="warning"
+          variant="soft"
+          size="xs"
+          @click="stopImpersonation"
+        />
+      </div>
       <div class="flex-1 overflow-y-auto">
         <slot />
       </div>

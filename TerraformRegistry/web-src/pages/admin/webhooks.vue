@@ -818,6 +818,7 @@ onMounted(() => {
                 placeholder="https://example.com/webhook"
                 size="lg"
                 icon="i-lucide-link"
+                class="webhook-input"
               />
             </div>
             <div class="space-y-1.5">
@@ -828,6 +829,7 @@ onMounted(() => {
                 placeholder="Leave blank to keep current"
                 size="lg"
                 icon="i-lucide-lock"
+                class="webhook-input"
               />
             </div>
             <div class="space-y-1.5">
@@ -975,6 +977,14 @@ onMounted(() => {
 
 .webhook-list-card:hover {
   background: linear-gradient(145deg, rgba(28, 28, 28, 0.7), rgba(18, 18, 18, 0.9));
+}
+
+.webhook-input :deep(input) {
+  width: 100%;
+}
+
+.webhook-input {
+  width: 100%;
 }
 
 .format-card:hover {

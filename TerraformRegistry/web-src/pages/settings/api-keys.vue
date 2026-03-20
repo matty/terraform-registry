@@ -234,8 +234,9 @@ onMounted(() => {
                 </label>
                 <UInput
                   v-model="newKeyDescription"
-                  placeholder="e.g. Laptop CLI, CI Pipeline, Atlantis"
+                  placeholder="e.g. CLI, Pipeline"
                   icon="i-lucide-tag"
+                  class="w-full"
                   @keyup.enter="createKey"
                 />
                 <p class="text-[11px] text-neutral-600">A friendly name to identify where this key is used</p>

@@ -3,6 +3,7 @@ import { useDashboard } from '~/composables/useDashboard'
 import { useAdmin } from '~/composables/useAdmin'
 import type { AdminRole, AdminUser } from '~/composables/useAdmin'
 import { extractErrorMessage } from "~/composables/useErrorMessage"
+import { useImpersonation } from '~/composables/useImpersonation'
 
 definePageMeta({
   middleware: 'auth',
@@ -10,6 +11,7 @@ definePageMeta({
 
 const { isSidebarOpen } = useDashboard()
 const { listUsers, listRoles, getUserRoles, assignRole, removeRole } = useAdmin()
+const { startImpersonation } = useImpersonation()
 
 // State
 const users = ref<AdminUser[]>([])
@@ -95,6 +97,19 @@ const handleRemoveRole = async (userId: string, roleId: string) => {
     console.error('Failed to remove role', e)
     errorMessage.value = extractErrorMessage(e, 'Failed to remove role')
   }
+}
+
+const handleViewAs = (user: AdminUser) => {
+  const roles = userRolesMap.value[user.id] || []
+  const allPermissions = roles.flatMap(r => r.permissions)
+  const uniquePermissions = [...new Set(allPermissions)]
+  startImpersonation({
+    id: user.id,
+    email: user.email,
+    permissions: uniquePermissions,
+    roles: roles.map(r => r.name),
+  })
+  navigateTo('/')
 }
 
 const providerColor = (provider: string): string => {
@@ -447,6 +462,19 @@ onMounted(() => {
                         @click.stop="handleAssignRole"
                       />
                     </div>
+                  </div>
+
+                  <!-- View As -->
+                  <div class="pt-3 border-t border-neutral-800/40">
+                    <UButton
+                      icon="i-lucide-eye"
+                      label="View as this user"
+                      color="neutral"
+                      variant="soft"
+                      size="sm"
+                      block
+                      @click.stop="handleViewAs(u)"
+                    />
                   </div>
                 </div>
               </div>

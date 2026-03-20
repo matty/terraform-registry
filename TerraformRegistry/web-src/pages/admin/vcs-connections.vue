@@ -369,6 +369,7 @@ onMounted(() => {
                     v-model="newLabel"
                     placeholder="e.g. Production GitHub"
                     icon="i-lucide-tag"
+                    class="w-full"
                   />
                   <p class="text-[11px] text-neutral-600">A friendly name to identify this connection</p>
                 </div>
@@ -377,6 +378,7 @@ onMounted(() => {
                   <USelect
                     v-model="newProvider"
                     :items="providerOptions"
+                    class="w-full"
                   />
                 </div>
               </div>
@@ -433,6 +435,7 @@ onMounted(() => {
                   type="password"
                   placeholder="ghp_... (only needed for private repositories)"
                   icon="i-lucide-lock"
+                  class="w-full"
                 />
                 <p class="text-[11px] text-neutral-600">Leave blank for public repositories. Encrypted at rest with AES-256-GCM.</p>
               </div>
@@ -453,6 +456,7 @@ onMounted(() => {
                   v-model="newDefaultOrg"
                   placeholder="e.g. acme-corp"
                   icon="i-lucide-building-2"
+                  class="w-full"
                 />
                 <p class="text-[11px] text-neutral-600">Pre-fills the repository owner when linking modules to this connection</p>
               </div>
@@ -603,16 +607,16 @@ onMounted(() => {
               <label class="block text-xs font-medium text-neutral-400">
                 Label <span class="text-red-400">*</span>
               </label>
-              <UInput v-model="editLabel" placeholder="Connection label" size="lg" icon="i-lucide-tag" />
+              <UInput v-model="editLabel" placeholder="Connection label" size="lg" icon="i-lucide-tag" class="w-full" />
             </div>
             <div class="space-y-1.5">
               <label class="block text-xs font-medium text-neutral-400">Personal Access Token</label>
-              <UInput v-model="editPat" type="password" placeholder="Leave blank to keep current" size="lg" icon="i-lucide-lock" />
+              <UInput v-model="editPat" type="password" placeholder="Leave blank to keep current" size="lg" icon="i-lucide-lock" class="w-full" />
               <p class="text-[11px] text-neutral-600">Only fill this in if you want to replace the existing token</p>
             </div>
             <div class="space-y-1.5">
               <label class="block text-xs font-medium text-neutral-400">Default Organization</label>
-              <UInput v-model="editDefaultOrg" placeholder="e.g. acme-corp" size="lg" icon="i-lucide-building-2" />
+              <UInput v-model="editDefaultOrg" placeholder="e.g. acme-corp" size="lg" icon="i-lucide-building-2" class="w-full" />
             </div>
             <div class="flex items-center gap-3 p-3 rounded-xl bg-neutral-900/40 border border-neutral-800/60">
               <label class="flex items-center gap-3 text-sm text-neutral-300 cursor-pointer flex-1">
