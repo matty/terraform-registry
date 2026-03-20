@@ -29,6 +29,7 @@ public class DbUpMigrator
         var upgrader = BuildUpgrader(provider, connectionString, scriptFilter);
 
         BootstrapExistingDatabase(provider, connectionString, upgrader);
+        RepairOverBootstrappedJournal(provider, connectionString, upgrader);
 
         var result = upgrader.PerformUpgrade();
 
@@ -141,6 +142,96 @@ public class DbUpMigrator
         {
             _logger.LogInformation("  Marked as executed: {Script}", script.Name);
         }
+    }
+
+    /// <summary>
+    ///     TEMPORARY: Repairs a journal that was over-bootstrapped by a previous buggy release.
+    ///     If the journal says 008_rbac was executed but the roles table doesn't exist,
+    ///     removes journal entries for scripts that weren't actually applied.
+    ///     TODO: Remove this method after production has been repaired.
+    /// </summary>
+    private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader)
+    {
+        if (provider != "postgres")
+            return;
+
+        var executedScripts = upgrader.GetExecutedScripts();
+        if (executedScripts.Count == 0)
+            return;
+
+        var hasRbacInJournal = executedScripts.Any(s => s.Contains("008_rbac", StringComparison.OrdinalIgnoreCase));
+        if (!hasRbacInJournal)
+            return;
+
+        using var conn = new Npgsql.NpgsqlConnection(connectionString);
+        conn.Open();
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'roles')";
+        var rolesExist = (bool)(checkCmd.ExecuteScalar() ?? false);
+
+        if (rolesExist)
+            return;
+
+        _logger.LogWarning("Detected over-bootstrapped DbUp journal — roles table missing despite journal entry. Repairing...");
+
+        // Scripts that create new tables — check if the table actually exists
+        var tableChecks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["003_soft_delete"] = "deleted_modules",
+            ["005_webhooks"] = "webhooks",
+            ["007_vcs_sources"] = "vcs_sources",
+            ["008_rbac"] = "roles",
+            ["009_audit_logs"] = "audit_logs",
+            ["010_vcs_connections"] = "vcs_connections",
+        };
+
+        // Scripts that ALTER existing tables — check if their prerequisite table exists
+        var alterChecks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["004_fk_cascading"] = "deleted_modules",
+            ["006_webhook_format"] = "webhooks",
+            ["011_schema_fixes"] = "webhooks",
+        };
+
+        var scriptsToRemove = new List<string>();
+
+        foreach (var checks in new[] { tableChecks, alterChecks })
+        {
+            foreach (var (scriptFragment, tableName) in checks)
+            {
+                var journalEntry = executedScripts.FirstOrDefault(s =>
+                    s.Contains(scriptFragment, StringComparison.OrdinalIgnoreCase));
+                if (journalEntry == null)
+                    continue;
+
+                using var tableCheck = conn.CreateCommand();
+                tableCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)";
+                var param = tableCheck.CreateParameter();
+                param.ParameterName = "$1";
+                param.Value = tableName;
+                tableCheck.Parameters.Add(param);
+
+                if (!(bool)(tableCheck.ExecuteScalar() ?? false))
+                    scriptsToRemove.Add(journalEntry);
+            }
+        }
+
+        if (scriptsToRemove.Count == 0)
+            return;
+
+        foreach (var scriptName in scriptsToRemove)
+        {
+            using var deleteCmd = conn.CreateCommand();
+            deleteCmd.CommandText = "DELETE FROM schemaversions WHERE scriptname = $1";
+            var param = deleteCmd.CreateParameter();
+            param.ParameterName = "$1";
+            param.Value = scriptName;
+            deleteCmd.Parameters.Add(param);
+            deleteCmd.ExecuteNonQuery();
+            _logger.LogInformation("  Removed bogus journal entry: {Script}", scriptName);
+        }
+
+        _logger.LogInformation("Repaired journal — removed {Count} over-bootstrapped entries. Scripts will now run.", scriptsToRemove.Count);
     }
 
     /// <summary>
