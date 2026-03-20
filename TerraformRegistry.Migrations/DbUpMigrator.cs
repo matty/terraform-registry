@@ -205,11 +205,8 @@ public class DbUpMigrator
                     continue;
 
                 using var tableCheck = conn.CreateCommand();
-                tableCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)";
-                var param = tableCheck.CreateParameter();
-                param.ParameterName = "$1";
-                param.Value = tableName;
-                tableCheck.Parameters.Add(param);
+                tableCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = @name)";
+                tableCheck.Parameters.AddWithValue("name", tableName);
 
                 if (!(bool)(tableCheck.ExecuteScalar() ?? false))
                     scriptsToRemove.Add(journalEntry);
@@ -222,11 +219,8 @@ public class DbUpMigrator
         foreach (var scriptName in scriptsToRemove)
         {
             using var deleteCmd = conn.CreateCommand();
-            deleteCmd.CommandText = "DELETE FROM schemaversions WHERE scriptname = $1";
-            var param = deleteCmd.CreateParameter();
-            param.ParameterName = "$1";
-            param.Value = scriptName;
-            deleteCmd.Parameters.Add(param);
+            deleteCmd.CommandText = "DELETE FROM schemaversions WHERE scriptname = @name";
+            deleteCmd.Parameters.AddWithValue("name", scriptName);
             deleteCmd.ExecuteNonQuery();
             _logger.LogInformation("  Removed bogus journal entry: {Script}", scriptName);
         }
