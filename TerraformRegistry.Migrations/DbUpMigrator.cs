@@ -145,10 +145,10 @@ public class DbUpMigrator
     }
 
     /// <summary>
-    ///     TEMPORARY: Repairs a journal that was over-bootstrapped by a previous buggy release.
+    ///     Repairs a journal that was over-bootstrapped by a previous buggy release.
     ///     If the journal says 008_rbac was executed but the roles table doesn't exist,
     ///     removes journal entries for scripts that weren't actually applied.
-    ///     TODO: Remove this method after production has been repaired.
+    ///     No-op once the database is healthy (short-circuits on roles table check).
     /// </summary>
     private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader)
     {
