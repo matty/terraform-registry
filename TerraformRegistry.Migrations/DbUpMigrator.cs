@@ -90,10 +90,9 @@ public class DbUpMigrator
     }
 
     /// <summary>
-    ///     Detects existing databases and pre-populates the DbUp journal so baseline
-    ///     scripts are not re-executed against already-migrated databases.
-    ///     Uses DbUp's built-in MarkAsExecuted() API to write to the journal table
-    ///     with the correct schema — no manual table creation needed.
+    ///     Detects existing databases migrated by the legacy MigrationManager and
+    ///     pre-populates the DbUp journal with only the scripts that correspond to
+    ///     already-applied migrations. New scripts will then run normally.
     /// </summary>
     private void BootstrapExistingDatabase(string provider, string connectionString, UpgradeEngine upgrader)
     {
@@ -101,22 +100,35 @@ public class DbUpMigrator
         if (alreadyBootstrapped)
             return;
 
-        var isExistingDatabase = provider switch
+        var legacyMigrationCount = provider switch
         {
-            "postgres" => IsExistingPostgresDatabase(connectionString),
-            "sqlite" => IsExistingSqliteDatabase(connectionString),
-            _ => false
+            "postgres" => GetPostgresLegacyMigrationCount(connectionString),
+            "sqlite" => GetSqliteLegacyMigrationCount(connectionString),
+            _ => 0
         };
 
-        if (!isExistingDatabase)
+        if (legacyMigrationCount == 0)
             return;
 
-        _logger.LogInformation("Detected existing {Provider} database — bootstrapping DbUp journal", provider);
+        _logger.LogInformation(
+            "Detected existing {Provider} database with {Count} legacy migration(s) — bootstrapping DbUp journal",
+            provider, legacyMigrationCount);
 
-        // Use DbUp's built-in MarkAsExecuted() to record all scripts in the journal
-        // without actually running them. This creates the journal table with the
-        // correct provider-specific schema automatically.
-        var result = upgrader.MarkAsExecuted();
+        // Get the pending scripts sorted by name, then mark only those that
+        // correspond to already-applied legacy migrations.
+        var scriptsToMark = upgrader.GetScriptsToExecute()
+            .OrderBy(s => s.Name)
+            .Take(legacyMigrationCount)
+            .ToList();
+
+        // Build a separate upgrader that only contains the scripts to mark,
+        // then use MarkAsExecuted() to record them in the journal.
+        var scriptFilter = GetScriptFilter(provider);
+        var scriptNames = scriptsToMark.Select(s => s.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var bootstrapUpgrader = BuildUpgrader(provider, connectionString,
+            name => scriptFilter(name) && scriptNames.Contains(name));
+
+        var result = bootstrapUpgrader.MarkAsExecuted();
         if (!result.Successful)
         {
             throw new InvalidOperationException(
@@ -124,38 +136,62 @@ public class DbUpMigrator
                 result.Error);
         }
 
-        _logger.LogInformation("Bootstrapped {Count} script(s) in DbUp journal", result.Scripts.Count());
+        _logger.LogInformation("Bootstrapped {Count} script(s) in DbUp journal", scriptsToMark.Count);
+        foreach (var script in scriptsToMark)
+        {
+            _logger.LogInformation("  Marked as executed: {Script}", script.Name);
+        }
     }
 
     /// <summary>
-    ///     Checks for legacy schema_version table and drops it in the same connection
-    ///     to avoid an extra round-trip.
+    ///     Counts legacy migrations in the schema_version table, then drops it.
+    ///     Returns 0 if the table does not exist (fresh database).
     /// </summary>
-    private bool IsExistingPostgresDatabase(string connectionString)
+    private int GetPostgresLegacyMigrationCount(string connectionString)
     {
         using var conn = new Npgsql.NpgsqlConnection(connectionString);
         conn.Open();
+
         using var checkCmd = conn.CreateCommand();
         checkCmd.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
         var exists = (bool)(checkCmd.ExecuteScalar() ?? false);
+        if (!exists)
+            return 0;
 
-        if (exists)
-        {
-            using var dropCmd = conn.CreateCommand();
-            dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
-            dropCmd.ExecuteNonQuery();
-            _logger.LogInformation("Removed legacy schema_version table");
-        }
+        using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
+        var count = Convert.ToInt32(countCmd.ExecuteScalar());
 
-        return exists;
+        using var dropCmd = conn.CreateCommand();
+        dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
+        dropCmd.ExecuteNonQuery();
+        _logger.LogInformation("Removed legacy schema_version table ({Count} entries)", count);
+
+        return count;
     }
 
-    private static bool IsExistingSqliteDatabase(string connectionString)
+    /// <summary>
+    ///     Counts legacy migrations in the SQLite schema_version table, then drops it.
+    ///     Returns 0 if the table does not exist (fresh database).
+    /// </summary>
+    private static int GetSqliteLegacyMigrationCount(string connectionString)
     {
         using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
         conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='modules'";
-        return (long)(cmd.ExecuteScalar() ?? 0L) > 0;
+
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'";
+        if ((long)(checkCmd.ExecuteScalar() ?? 0L) == 0)
+            return 0;
+
+        using var countCmd = conn.CreateCommand();
+        countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
+        var count = Convert.ToInt32(countCmd.ExecuteScalar());
+
+        using var dropCmd = conn.CreateCommand();
+        dropCmd.CommandText = "DROP TABLE schema_version";
+        dropCmd.ExecuteNonQuery();
+
+        return count;
     }
 }
