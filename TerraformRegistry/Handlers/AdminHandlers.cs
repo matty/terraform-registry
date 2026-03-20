@@ -42,6 +42,11 @@ public static class AdminHandlers
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.AdminRoles))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
+        // Prevent editing the admin role
+        var existing = (await roleService.ListRolesAsync()).FirstOrDefault(r => r.Id == id);
+        if (existing != null && existing.Name == RoleNames.Admin)
+            return Results.BadRequest(new { error = "The admin role cannot be modified" });
+
         var body = await request.ReadFromJsonAsync<UpdateRoleRequest>();
         if (body == null)
             return Results.BadRequest(new { error = "Request body is required" });

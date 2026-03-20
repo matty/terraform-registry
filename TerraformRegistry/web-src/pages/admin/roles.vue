@@ -591,6 +591,7 @@ onMounted(() => {
                       variant="ghost"
                       size="xs"
                       label="Edit"
+                      :disabled="role.name === 'admin'"
                       @click="openEdit(role)"
                     />
                     <UButton
