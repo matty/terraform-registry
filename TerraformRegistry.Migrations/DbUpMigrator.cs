@@ -28,8 +28,9 @@ public class DbUpMigrator
         var scriptFilter = GetScriptFilter(provider);
         var upgrader = BuildUpgrader(provider, connectionString, scriptFilter);
 
-        BootstrapExistingDatabase(provider, connectionString, upgrader);
-        RepairOverBootstrappedJournal(provider, connectionString, upgrader);
+        var executedScripts = upgrader.GetExecutedScripts();
+        BootstrapExistingDatabase(provider, connectionString, upgrader, executedScripts);
+        RepairOverBootstrappedJournal(provider, connectionString, upgrader, executedScripts);
 
         var result = upgrader.PerformUpgrade();
 
@@ -95,16 +96,15 @@ public class DbUpMigrator
     ///     pre-populates the DbUp journal with only the scripts that correspond to
     ///     already-applied migrations. New scripts will then run normally.
     /// </summary>
-    private void BootstrapExistingDatabase(string provider, string connectionString, UpgradeEngine upgrader)
+    private void BootstrapExistingDatabase(string provider, string connectionString, UpgradeEngine upgrader, IReadOnlyList<string> executedScripts)
     {
-        var alreadyBootstrapped = upgrader.GetExecutedScripts().Count > 0;
-        if (alreadyBootstrapped)
+        if (executedScripts.Count > 0)
             return;
 
         var legacyMigrationCount = provider switch
         {
-            "postgres" => GetPostgresLegacyMigrationCount(connectionString),
-            "sqlite" => GetSqliteLegacyMigrationCount(connectionString),
+            "postgres" => GetPostgresLegacyMigrationCount(connectionString, dropTable: false),
+            "sqlite" => GetSqliteLegacyMigrationCount(connectionString, dropTable: false),
             _ => 0
         };
 
@@ -137,6 +137,14 @@ public class DbUpMigrator
                 result.Error);
         }
 
+        // Drop legacy table only after journal is safely populated
+        _ = provider switch
+        {
+            "postgres" => GetPostgresLegacyMigrationCount(connectionString, dropTable: true),
+            "sqlite" => GetSqliteLegacyMigrationCount(connectionString, dropTable: true),
+            _ => 0
+        };
+
         _logger.LogInformation("Bootstrapped {Count} script(s) in DbUp journal", scriptsToMark.Count);
         foreach (var script in scriptsToMark)
         {
@@ -150,12 +158,11 @@ public class DbUpMigrator
     ///     removes journal entries for scripts that weren't actually applied.
     ///     No-op once the database is healthy (short-circuits on roles table check).
     /// </summary>
-    private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader)
+    private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader, IReadOnlyList<string> executedScripts)
     {
         if (provider != "postgres")
             return;
 
-        var executedScripts = upgrader.GetExecutedScripts();
         if (executedScripts.Count == 0)
             return;
 
@@ -174,43 +181,35 @@ public class DbUpMigrator
 
         _logger.LogWarning("Detected over-bootstrapped DbUp journal — roles table missing despite journal entry. Repairing...");
 
-        // Scripts that create new tables — check if the table actually exists
-        var tableChecks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        // Scripts that create new tables — check if the table actually exists.
+        // Scripts 003 (ALTER ADD COLUMN) and 004 (ALTER FK) are idempotent and
+        // have no sentinel table to check, so they are excluded.
+        var scriptToTable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["003_soft_delete"] = "deleted_modules",
             ["005_webhooks"] = "webhooks",
+            ["006_webhook_format"] = "webhooks",
             ["007_vcs_sources"] = "vcs_sources",
             ["008_rbac"] = "roles",
             ["009_audit_logs"] = "audit_logs",
             ["010_vcs_connections"] = "vcs_connections",
-        };
-
-        // Scripts that ALTER existing tables — check if their prerequisite table exists
-        var alterChecks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["004_fk_cascading"] = "deleted_modules",
-            ["006_webhook_format"] = "webhooks",
             ["011_schema_fixes"] = "webhooks",
         };
 
         var scriptsToRemove = new List<string>();
 
-        foreach (var checks in new[] { tableChecks, alterChecks })
+        foreach (var (scriptFragment, tableName) in scriptToTable)
         {
-            foreach (var (scriptFragment, tableName) in checks)
-            {
-                var journalEntry = executedScripts.FirstOrDefault(s =>
-                    s.Contains(scriptFragment, StringComparison.OrdinalIgnoreCase));
-                if (journalEntry == null)
-                    continue;
+            var journalEntry = executedScripts.FirstOrDefault(s =>
+                s.Contains(scriptFragment, StringComparison.OrdinalIgnoreCase));
+            if (journalEntry == null)
+                continue;
 
-                using var tableCheck = conn.CreateCommand();
-                tableCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = @name)";
-                tableCheck.Parameters.AddWithValue("name", tableName);
+            using var tableCheck = conn.CreateCommand();
+            tableCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = @name)";
+            tableCheck.Parameters.AddWithValue("name", tableName);
 
-                if (!(bool)(tableCheck.ExecuteScalar() ?? false))
-                    scriptsToRemove.Add(journalEntry);
-            }
+            if (!(bool)(tableCheck.ExecuteScalar() ?? false))
+                scriptsToRemove.Add(journalEntry);
         }
 
         if (scriptsToRemove.Count == 0)
@@ -232,7 +231,7 @@ public class DbUpMigrator
     ///     Counts legacy migrations in the schema_version table, then drops it.
     ///     Returns 0 if the table does not exist (fresh database).
     /// </summary>
-    private int GetPostgresLegacyMigrationCount(string connectionString)
+    private int GetPostgresLegacyMigrationCount(string connectionString, bool dropTable)
     {
         using var conn = new Npgsql.NpgsqlConnection(connectionString);
         conn.Open();
@@ -247,10 +246,13 @@ public class DbUpMigrator
         countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
         var count = Convert.ToInt32(countCmd.ExecuteScalar());
 
-        using var dropCmd = conn.CreateCommand();
-        dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
-        dropCmd.ExecuteNonQuery();
-        _logger.LogInformation("Removed legacy schema_version table ({Count} entries)", count);
+        if (dropTable)
+        {
+            using var dropCmd = conn.CreateCommand();
+            dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
+            dropCmd.ExecuteNonQuery();
+            _logger.LogInformation("Removed legacy schema_version table ({Count} entries)", count);
+        }
 
         return count;
     }
@@ -259,7 +261,7 @@ public class DbUpMigrator
     ///     Counts legacy migrations in the SQLite schema_version table, then drops it.
     ///     Returns 0 if the table does not exist (fresh database).
     /// </summary>
-    private static int GetSqliteLegacyMigrationCount(string connectionString)
+    private static int GetSqliteLegacyMigrationCount(string connectionString, bool dropTable)
     {
         using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
         conn.Open();
@@ -273,9 +275,12 @@ public class DbUpMigrator
         countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
         var count = Convert.ToInt32(countCmd.ExecuteScalar());
 
-        using var dropCmd = conn.CreateCommand();
-        dropCmd.CommandText = "DROP TABLE schema_version";
-        dropCmd.ExecuteNonQuery();
+        if (dropTable)
+        {
+            using var dropCmd = conn.CreateCommand();
+            dropCmd.CommandText = "DROP TABLE schema_version";
+            dropCmd.ExecuteNonQuery();
+        }
 
         return count;
     }
