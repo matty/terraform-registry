@@ -389,6 +389,108 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         Assert.Equal(2, downloadCount);
     }
 
+    [Fact]
+    public async Task Migrate_ExistingPostgresDatabase_WithLegacySchemaVersion_BootstrapsOnlyAppliedScripts()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        // Simulate a production database from main: only scripts 001+002 were applied
+        // via the old MigrationManager. Create those tables + the legacy schema_version table.
+        MigrateUpTo(2, connectionString);
+
+        // Remove the DbUp journal (simulates pre-DbUp state) and add legacy schema_version
+        await using var setupConn = new NpgsqlConnection(connectionString);
+        await setupConn.OpenAsync();
+        await using var dropJournal = setupConn.CreateCommand();
+        dropJournal.CommandText = "DROP TABLE IF EXISTS schemaversions";
+        await dropJournal.ExecuteNonQueryAsync();
+
+        await using var createSv = setupConn.CreateCommand();
+        createSv.CommandText = @"
+            CREATE TABLE schema_version (
+                version TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO schema_version VALUES ('1.0.0', 'Initial schema', NOW());
+            INSERT INTO schema_version VALUES ('1.0.1', 'Users and API keys', NOW())";
+        await createSv.ExecuteNonQueryAsync();
+
+        // Now run the full DbUp migrator — should bootstrap 2, execute remaining 9
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
+        var migrator = new DbUpMigrator(logger);
+        migrator.Migrate("postgres", connectionString);
+
+        // Verify all tables exist (including new ones from scripts 003-011)
+        await using var verifyConn = new NpgsqlConnection(connectionString);
+        await verifyConn.OpenAsync();
+        var tables = GetTables(verifyConn);
+
+        Assert.Contains("modules", tables);
+        Assert.Contains("users", tables);
+        Assert.Contains("api_keys", tables);
+        Assert.Contains("webhooks", tables);            // 005
+        Assert.Contains("vcs_sources", tables);         // 007
+        Assert.Contains("roles", tables);               // 008
+        Assert.Contains("user_roles", tables);          // 008
+        Assert.Contains("audit_logs", tables);          // 009
+        Assert.Contains("vcs_connections", tables);     // 010
+
+        // Verify legacy schema_version was dropped
+        await using var svCheck = verifyConn.CreateCommand();
+        svCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
+        Assert.False((bool)(await svCheck.ExecuteScalarAsync())!);
+
+        // Verify journal has all 11 scripts recorded
+        await using var journalCmd = verifyConn.CreateCommand();
+        journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
+        var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
+        Assert.Equal(11, journalCount);
+    }
+
+    [Fact]
+    public async Task Migrate_ExistingPostgresDatabase_MarkAsExecuted_DoesNotOverMark()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        // Simulate: only 1 old migration applied
+        MigrateUpTo(1, connectionString);
+
+        await using var setupConn = new NpgsqlConnection(connectionString);
+        await setupConn.OpenAsync();
+        await using var dropJournal = setupConn.CreateCommand();
+        dropJournal.CommandText = "DROP TABLE IF EXISTS schemaversions";
+        await dropJournal.ExecuteNonQueryAsync();
+
+        await using var createSv = setupConn.CreateCommand();
+        createSv.CommandText = @"
+            CREATE TABLE schema_version (
+                version TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO schema_version VALUES ('1.0.0', 'Initial schema', NOW())";
+        await createSv.ExecuteNonQueryAsync();
+
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
+        var migrator = new DbUpMigrator(logger);
+        migrator.Migrate("postgres", connectionString);
+
+        // All tables should exist — 1 bootstrapped, 10 executed
+        await using var verifyConn = new NpgsqlConnection(connectionString);
+        await verifyConn.OpenAsync();
+        var tables = GetTables(verifyConn);
+
+        Assert.Contains("users", tables);          // 002 — executed, not bootstrapped
+        Assert.Contains("roles", tables);           // 008
+        Assert.Contains("user_roles", tables);      // 008
+
+        await using var journalCmd = verifyConn.CreateCommand();
+        journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
+        var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
+        Assert.Equal(11, journalCount);
+    }
+
     private string CreateFreshDatabase()
     {
         var dbName = $"test_{Guid.NewGuid():N}";

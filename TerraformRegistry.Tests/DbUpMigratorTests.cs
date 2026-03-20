@@ -70,9 +70,10 @@ public class DbUpMigratorTests : IDisposable
     }
 
     [Fact]
-    public void Migrate_ExistingSqliteDatabase_BootstrapsJournal()
+    public void Migrate_ExistingSqliteDatabase_WithLegacySchemaVersion_BootstrapsOnlyAppliedScripts()
     {
-        // Simulate an existing database by creating the modules table manually
+        // Simulate a database that had 2 legacy migrations applied (like production on main)
+        // by creating the tables those migrations would have created, plus the schema_version table
         using var setupCmd = _connection.CreateCommand();
         setupCmd.CommandText = @"
             CREATE TABLE modules (
@@ -87,22 +88,64 @@ public class DbUpMigratorTests : IDisposable
                 dependencies TEXT NOT NULL,
                 deleted_at TEXT NULL,
                 UNIQUE(namespace, name, provider, version)
-            )";
+            );
+            CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                provider_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(email)
+            );
+            CREATE TABLE api_keys (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                description TEXT NOT NULL,
+                token_hash TEXT NOT NULL,
+                prefix TEXT NOT NULL,
+                is_shared INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                last_used_at TEXT,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+            CREATE TABLE schema_version (
+                version TEXT PRIMARY KEY,
+                description TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            );
+            INSERT INTO schema_version VALUES ('1.0.0', 'Initial schema', '2026-01-01');
+            INSERT INTO schema_version VALUES ('1.0.1', 'Users and API keys', '2026-01-01')";
         setupCmd.ExecuteNonQuery();
 
         var migrator = new DbUpMigrator(_logger);
         migrator.Migrate("sqlite", _connectionString);
 
-        // Journal should have entries (bootstrapped)
+        // Journal should have exactly 10 entries (2 bootstrapped + 8 executed)
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
-        var count = (long)cmd.ExecuteScalar()!;
-        Assert.True(count > 0);
+        var journalCount = (long)cmd.ExecuteScalar()!;
+        Assert.Equal(10L, journalCount);
 
-        // Tables should still exist (not recreated)
+        // Legacy schema_version table should be dropped
+        using var svCmd = _connection.CreateCommand();
+        svCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'";
+        Assert.Equal(0L, (long)svCmd.ExecuteScalar()!);
+
+        // New tables from scripts 003+ should exist
         using var tableCmd = _connection.CreateCommand();
-        tableCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='modules'";
-        Assert.Equal(1L, (long)tableCmd.ExecuteScalar()!);
+        tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+        using var reader = tableCmd.ExecuteReader();
+        var tables = new List<string>();
+        while (reader.Read()) tables.Add(reader.GetString(0));
+
+        Assert.Contains("roles", tables);
+        Assert.Contains("user_roles", tables);
+        Assert.Contains("audit_logs", tables);
+        Assert.Contains("webhooks", tables);
+        Assert.Contains("vcs_connections", tables);
+        Assert.Contains("vcs_sources", tables);
     }
 
     [Fact]
