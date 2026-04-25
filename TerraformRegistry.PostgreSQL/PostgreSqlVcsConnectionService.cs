@@ -150,7 +150,8 @@ public class PostgreSqlVcsConnectionService : IVcsConnectionService
 
     public async Task<IEnumerable<VcsConnection>> ListConnectionSummariesAsync()
     {
-        return await ListConnectionsAsync();
+        var connections = await ListConnectionsAsync();
+        return connections.Where(c => c.IsActive);
     }
 
     private static VcsConnection MapConnection(NpgsqlDataReader reader)

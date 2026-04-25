@@ -106,6 +106,11 @@ public class GitHubVcsService
             return ("error", "Signature verification failed", null);
         }
 
+        if (!vcsConnection.IsActive)
+        {
+            return ("skipped", $"Inactive VCS connection {vcsConnection.Id}", null);
+        }
+
         // Parse version from tag
         var tag = gitRef["refs/tags/".Length..];
         var version = tag.StartsWith('v') ? tag[1..] : tag;

@@ -13,6 +13,8 @@ const { isSidebarOpen } = useDashboard();
 const { getModuleVersions, deleteModuleVersion, updateModuleDescription } = useModules();
 const { listVcsSources, deleteVcsSource } = useVcsSources();
 const { getAuthHeaders } = useAuth();
+const { hasPermission } = usePermissions();
+const canManageVcs = computed(() => hasPermission("vcs.manage"));
 
 // Route params
 const namespace = computed(() => route.params.namespace as string);
@@ -31,6 +33,11 @@ const vcsSource = ref<VcsSource | null>(null);
 const isDisconnectingVcs = ref(false);
 
 const fetchVcsSource = async () => {
+  if (!canManageVcs.value) {
+    vcsSource.value = null;
+    return;
+  }
+
   try {
     const sources = await listVcsSources();
     vcsSource.value = sources.find(
@@ -328,7 +335,7 @@ onMounted(() => {
                     <UIcon name="i-lucide-check-circle" class="mr-1" />
                     Active
                   </UBadge>
-                  <UBadge v-if="vcsSource" variant="soft" color="info" size="xs">
+                  <UBadge v-if="canManageVcs && vcsSource" variant="soft" color="info" size="xs">
                     <UIcon name="i-lucide-git-branch" class="mr-1" />
                     VCS
                   </UBadge>
@@ -428,7 +435,7 @@ onMounted(() => {
 
           <!-- VCS Source Section -->
           <div
-            v-if="vcsSource"
+            v-if="canManageVcs && vcsSource"
             class="rounded-2xl bg-neutral-900/50 border border-neutral-800 overflow-hidden"
           >
             <div class="px-5 py-4 flex items-center justify-between">
@@ -468,7 +475,7 @@ onMounted(() => {
 
           <!-- Link to GitHub (when no VCS source) -->
           <div
-            v-else-if="!isLoading && useRuntimeConfig().public.featureCreateModule"
+            v-else-if="canManageVcs && !isLoading && useRuntimeConfig().public.featureCreateModule"
             class="flex justify-end"
           >
             <NuxtLink :to="{ path: '/', query: { addModule: '1' } }">

@@ -466,8 +466,8 @@ app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionSer
         VcsHandlers.CreateVcsSource(vcsService, connectionService, auditService, context, request))
     .WithTags("VCS");
 
-app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.UpdateVcsSource(id, vcsService, auditService, context, request))
+app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.UpdateVcsSource(id, vcsService, connectionService, auditService, context, request))
     .WithTags("VCS");
 
 app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context) =>

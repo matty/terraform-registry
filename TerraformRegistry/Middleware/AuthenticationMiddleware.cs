@@ -16,7 +16,7 @@ public class AuthenticationMiddleware(
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
     private const string SessionCookieName = "tf-session";
-    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/vcs/sources", "/api/admin"];
+    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/vcs/sources", "/api/vcs/connections", "/api/admin"];
     private static readonly string[] StaticTokenPathPrefixes = ["/v1/"];
     private static readonly string[] StaticTokenPermissions =
     [

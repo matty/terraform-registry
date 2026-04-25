@@ -38,11 +38,15 @@ public static class VcsHandlers
             return Results.BadRequest(new { error = "namespace, name, provider, repoOwner, repoName, and connectionId are required" });
         }
 
-        // Verify the connection exists
+        // Verify the connection exists and is active before linking a source to it.
         var conn = await connectionService.GetConnectionAsync(body.ConnectionId);
         if (conn == null)
         {
             return Results.BadRequest(new { error = "VCS connection not found" });
+        }
+        if (!conn.IsActive)
+        {
+            return Results.BadRequest(new { error = "VCS connection is inactive" });
         }
 
         var source = await vcsService.CreateVcsSourceAsync(
@@ -66,7 +70,7 @@ public static class VcsHandlers
         });
     }
 
-    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> UpdateVcsSource(Guid id, IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -75,6 +79,19 @@ public static class VcsHandlers
         if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
 
         var body = await request.ReadFromJsonAsync<UpdateVcsSourceRequest>();
+
+        if (body?.ConnectionId is Guid connectionId)
+        {
+            var conn = await connectionService.GetConnectionAsync(connectionId);
+            if (conn == null)
+            {
+                return Results.BadRequest(new { error = "VCS connection not found" });
+            }
+            if (!conn.IsActive)
+            {
+                return Results.BadRequest(new { error = "VCS connection is inactive" });
+            }
+        }
 
         var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, body?.ConnectionId, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS source not found or access denied" });
@@ -192,6 +209,8 @@ public static class VcsHandlers
     {
         if (context.User.Identity?.IsAuthenticated != true)
             return Results.Unauthorized();
+        if (!context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
         var connections = await connectionService.ListConnectionSummariesAsync();
         return Results.Ok(connections.Select(c => new { c.Id, c.Label, c.Provider, c.DefaultOrg }));
     }

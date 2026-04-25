@@ -10,10 +10,13 @@ definePageMeta({
 });
 
 const { getAuthHeaders } = useAuth();
+const { hasPermission } = usePermissions();
 const { isSidebarOpen } = useDashboard();
 const { createVcsSource } = useVcsSources();
 const { listConnectionSummaries } = useVcsConnections();
 const { featureCreateModule } = useRuntimeConfig().public;
+const canManageVcs = computed(() => hasPermission("vcs.manage"));
+const canCreateVcsModule = computed(() => featureCreateModule && canManageVcs.value);
 
 const modules = ref<Module[]>([]);
 const isLoading = ref(false);
@@ -62,6 +65,7 @@ const resetAddModuleForm = () => {
 };
 
 const openAddModule = () => {
+  if (!canCreateVcsModule.value) return;
   resetAddModuleForm();
   isAddModuleOpen.value = true;
 };
@@ -174,7 +178,7 @@ const loadMoreModules = () => {
 const route = useRoute();
 onMounted(async () => {
   fetchModules();
-  if (featureCreateModule) {
+  if (canCreateVcsModule.value) {
     try {
       connectionSummaries.value = await listConnectionSummaries();
     } catch (e) {
@@ -182,7 +186,7 @@ onMounted(async () => {
     }
   }
   // Auto-open Add Module modal if ?addModule=1 query param is present
-  if (featureCreateModule && route.query.addModule === '1') {
+  if (canCreateVcsModule.value && route.query.addModule === '1') {
     openAddModule();
   }
 });
@@ -229,7 +233,7 @@ onMounted(async () => {
           size="sm"
         />
         <UButton
-          v-if="featureCreateModule"
+          v-if="canCreateVcsModule"
           label="Add Module"
           icon="i-lucide-plus"
           color="primary"
@@ -368,7 +372,7 @@ onMounted(async () => {
       </div>
     </div>
     <!-- Add Module Modal -->
-    <UModal v-if="featureCreateModule" v-model:open="isAddModuleOpen">
+    <UModal v-if="canCreateVcsModule" v-model:open="isAddModuleOpen">
       <template #content>
         <div class="p-6 max-h-[80vh] overflow-y-auto">
           <!-- Header -->
@@ -479,4 +483,3 @@ onMounted(async () => {
     </UModal>
   </div>
 </template>
-
