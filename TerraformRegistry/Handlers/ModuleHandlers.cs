@@ -38,6 +38,12 @@ public static class ModuleHandlers
         return null;
     }
 
+    private static IResult? ValidateCoordinates(string @namespace, string name, string provider)
+    {
+        var error = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
+        return error == null ? null : ErrorResponseExtensions.BadRequest(error);
+    }
+
     /// <summary>
     ///     Lists or searches modules
     /// </summary>
@@ -82,6 +88,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Getting module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -104,6 +112,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Getting versions for module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
@@ -129,6 +139,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -182,6 +194,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Downloading latest module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
@@ -212,6 +226,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesUpload);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -266,9 +282,10 @@ public static class ModuleHandlers
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };
             return Created($"/v1/modules/{@namespace}/{name}/{provider}/{version}", response);
         }
-        catch (ArgumentException ex) when (ex.Message.Contains("Version"))
+        catch (ArgumentException ex)
         {
-            _logger.LogWarning("Invalid version format: {Version} - {Message}", version, ex.Message);
+            _logger.LogWarning("Invalid module upload request for {Namespace}/{Name}/{Provider}/{Version}: {Message}",
+                @namespace, name, provider, version, ex.Message);
             return ErrorResponseExtensions.BadRequest(ex.Message);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
@@ -295,6 +312,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesDelete);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -330,6 +349,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesRestore);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -365,6 +386,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesPurge);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -428,6 +451,8 @@ public static class ModuleHandlers
     {
         var denied = CheckPermission(context, Permissions.ModulesDescription);
         if (denied != null) return denied;
+        var invalid = ValidateCoordinates(@namespace, name, provider);
+        if (invalid != null) return invalid;
 
         _logger.LogInformation("Updating description for module {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);

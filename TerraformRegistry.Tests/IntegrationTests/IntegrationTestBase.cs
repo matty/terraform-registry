@@ -1,9 +1,13 @@
+using System.Net.Http.Headers;
 using System.Text;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Services;
 using Testcontainers.PostgreSql;
 using Xunit.Abstractions;
 using Xunit.Extensions.Logging;
@@ -97,6 +101,24 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         _loggerProvider = new XunitLoggerProvider(_output, (_, _) => true);
 
         _client = _factory.CreateClient();
+    }
+
+    protected async Task<HttpClient> CreateClientWithPermissionsAsync(string email, string providerId,
+        string[] permissions)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+        var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
+
+        var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
+        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "test-key");
+        var role = await roleService.CreateRoleAsync($"test-role-{Guid.NewGuid():N}", null, permissions);
+        await permissionService.AssignRoleAsync(user.Id, role.Id, null);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
+        return client;
     }
 
     public virtual async Task DisposeAsync()

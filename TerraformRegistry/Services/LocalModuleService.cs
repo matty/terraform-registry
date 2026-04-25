@@ -19,6 +19,7 @@ public class LocalModuleService : ModuleService
     private readonly IDatabaseService _databaseService;
     private readonly ILogger<LocalModuleService> _logger;
     private readonly string _moduleStoragePath;
+    private readonly string _moduleStorageRoot;
 
     public LocalModuleService(IConfiguration configuration, IDatabaseService databaseService,
         ILogger<LocalModuleService> logger)
@@ -29,12 +30,13 @@ public class LocalModuleService : ModuleService
         // Get storage path from configuration, with a reasonable default if not specified
         _moduleStoragePath = configuration["ModuleStoragePath"] ??
                              Path.Combine(Directory.GetCurrentDirectory(), "modules");
+        _moduleStorageRoot = Path.GetFullPath(_moduleStoragePath);
 
         // Log the storage path being used
-        _logger.LogInformation("Using local module storage path: {Path}", _moduleStoragePath);
+        _logger.LogInformation("Using local module storage path: {Path}", _moduleStorageRoot);
 
         // Ensure module storage directory exists
-        if (!Directory.Exists(_moduleStoragePath)) Directory.CreateDirectory(_moduleStoragePath);
+        if (!Directory.Exists(_moduleStorageRoot)) Directory.CreateDirectory(_moduleStorageRoot);
 
         // Load existing modules from disk
         LoadExistingModules();
@@ -48,12 +50,18 @@ public class LocalModuleService : ModuleService
         try
         {
             // Check if the directory exists
-            if (!Directory.Exists(_moduleStoragePath)) return;
+            if (!Directory.Exists(_moduleStorageRoot)) return;
 
             // Scan namespace directories
-            foreach (var namespaceDir in Directory.GetDirectories(_moduleStoragePath))
+            foreach (var namespaceDir in Directory.GetDirectories(_moduleStorageRoot))
             {
                 var namespaceName = Path.GetFileName(namespaceDir);
+                if (!ModuleIdentifierValidator.IsValidSegment(namespaceName))
+                {
+                    _logger.LogWarning("Skipping module namespace directory with invalid name: {Namespace}",
+                        namespaceName);
+                    continue;
+                }
 
                 // Scan for module zip files
                 foreach (var zipFile in Directory.GetFiles(namespaceDir, "*.zip"))
@@ -99,6 +107,13 @@ public class LocalModuleService : ModuleService
         var provider = parts[^2];
         // All remaining parts (if multiple) form the name
         var name = string.Join("-", parts.Take(parts.Length - 2));
+
+        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(namespaceName, name, provider);
+        if (coordinateError != null)
+        {
+            _logger.LogWarning("Skipping module {FileName}: {Message}", fileName, coordinateError);
+            return;
+        }
 
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
@@ -188,11 +203,18 @@ public class LocalModuleService : ModuleService
         var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
         if (moduleStorage == null)
             return null;
+        if (!IsInsideStorageRoot(moduleStorage.FilePath))
+        {
+            _logger.LogWarning(
+                "Refusing to create download token for module outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            return null;
+        }
 
         // Generate a unique token
         var token = Guid.NewGuid().ToString("N");
         var expiry = DateTime.UtcNow.Add(TokenLifetime);
-        DownloadTokens[token] = (moduleStorage.FilePath, expiry);
+        DownloadTokens[token] = (Path.GetFullPath(moduleStorage.FilePath), expiry);
 
         // Return the download link (adjust the base path as needed)
         return $"/module/download?token={token}";
@@ -221,13 +243,17 @@ public class LocalModuleService : ModuleService
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace)
     {
-        var namespaceDir = Path.Combine(_moduleStoragePath, @namespace);
+        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
+        if (coordinateError != null)
+            throw new ArgumentException(coordinateError);
+
+        var namespaceDir = GetNamespaceDirectory(@namespace);
         if (!Directory.Exists(namespaceDir)) Directory.CreateDirectory(namespaceDir);
 
         var fileName = $"{name}-{provider}-{version}.zip";
         var tempFileName = $"{fileName}.tmp";
-        var tempFilePath = Path.Combine(namespaceDir, tempFileName);
-        var finalFilePath = Path.Combine(namespaceDir, fileName);
+        var tempFilePath = GetContainedPath(namespaceDir, tempFileName);
+        var finalFilePath = GetContainedPath(namespaceDir, fileName);
 
         try
         {
@@ -327,6 +353,13 @@ public class LocalModuleService : ModuleService
             await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
         if (moduleStorage == null)
             return false;
+        if (!IsInsideStorageRoot(moduleStorage.FilePath))
+        {
+            _logger.LogWarning(
+                "Refusing to purge module with file path outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            return false;
+        }
 
         // Delete from database first (permanent delete)
         var dbResult = await _databaseService.RemoveModuleAsync(moduleStorage);
@@ -362,11 +395,11 @@ public class LocalModuleService : ModuleService
 
     public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
     {
-        if (!Directory.Exists(_moduleStoragePath))
+        if (!Directory.Exists(_moduleStorageRoot))
             return (false, "Storage directory does not exist");
         try
         {
-            var testFile = Path.Combine(_moduleStoragePath, $".health-{Guid.NewGuid():N}");
+            var testFile = Path.Combine(_moduleStorageRoot, $".health-{Guid.NewGuid():N}");
             await File.WriteAllTextAsync(testFile, "ok");
             File.Delete(testFile);
             return (true, null);
@@ -376,5 +409,34 @@ public class LocalModuleService : ModuleService
             return (false, $"Storage path not writable: {ex.Message}");
         }
     }
-}
 
+    private string GetNamespaceDirectory(string @namespace)
+    {
+        var path = Path.GetFullPath(Path.Combine(_moduleStorageRoot, @namespace));
+        if (!IsInsideStorageRoot(path))
+            throw new ArgumentException("Module namespace resolves outside the storage root.", nameof(@namespace));
+
+        return path;
+    }
+
+    private string GetContainedPath(string directory, string fileName)
+    {
+        var path = Path.GetFullPath(Path.Combine(directory, fileName));
+        if (!IsInsideStorageRoot(path))
+            throw new ArgumentException("Module file path resolves outside the storage root.", nameof(fileName));
+
+        return path;
+    }
+
+    private bool IsInsideStorageRoot(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        var fullPath = Path.GetFullPath(path);
+        var relativePath = Path.GetRelativePath(_moduleStorageRoot, fullPath);
+
+        return relativePath != "." &&
+               !relativePath.StartsWith("..", StringComparison.Ordinal) &&
+               !Path.IsPathRooted(relativePath);
+    }
+}

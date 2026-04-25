@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
+using TerraformRegistry.API;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
@@ -26,8 +27,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     [Fact]
     public async Task Analytics_Summary_ReturnsValidJson()
     {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+        var client = await CreateAnalyticsClientAsync("analytics-summary@example.com", "analytics-summary-id");
 
         var response = await client.GetAsync("/api/analytics/downloads/summary");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -43,8 +43,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     [Fact]
     public async Task Analytics_TopModules_ReturnsValidJson()
     {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+        var client = await CreateAnalyticsClientAsync("analytics-top@example.com", "analytics-top-id");
 
         var response = await client.GetAsync("/api/analytics/downloads/top?limit=5&period=30d");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -57,8 +56,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     [Fact]
     public async Task Analytics_Trends_ReturnsValidJson()
     {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+        var client = await CreateAnalyticsClientAsync("analytics-trends@example.com", "analytics-trends-id");
 
         var response = await client.GetAsync("/api/analytics/downloads/trends?period=30d&interval=day");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -72,8 +70,8 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     [Fact]
     public async Task Analytics_AfterDownload_ReflectsInSummary()
     {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+        var client = await CreateAnalyticsClientAsync("analytics-download@example.com", "analytics-download-id",
+            Permissions.ModulesRead, Permissions.ModulesUpload);
 
         // Upload a module
         await UploadTestModule(client, "1.0.0");
@@ -112,6 +110,12 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
 
         var uploadResponse = await client.PostAsync($"/v1/modules/test-ns/test-name/test-provider/{version}", content);
         Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
+    }
+
+    private Task<HttpClient> CreateAnalyticsClientAsync(string email, string providerId, params string[] extraPermissions)
+    {
+        var permissions = new[] { Permissions.AnalyticsView }.Concat(extraPermissions).ToArray();
+        return CreateClientWithPermissionsAsync(email, providerId, permissions);
     }
 
     private string GetProjectDirectory()

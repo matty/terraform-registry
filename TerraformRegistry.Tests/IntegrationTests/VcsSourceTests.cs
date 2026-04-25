@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 using Xunit.Abstractions;
@@ -228,14 +229,6 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string providerId)
     {
-        using var scope = _factory.Services.CreateScope();
-        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
-
-        var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
-        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "vcs-test-key");
-
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
-        return client;
+        return await CreateClientWithPermissionsAsync(email, providerId, [Permissions.VcsManage]);
     }
 }

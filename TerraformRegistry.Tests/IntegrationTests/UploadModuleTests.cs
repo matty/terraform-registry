@@ -56,6 +56,20 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Upload_InvalidModuleCoordinate_ReturnsBadRequest()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new ByteArrayContent(new byte[] { 1, 2, 3 }), "moduleFile", "module.zip");
+
+        var response = await client.PostAsync("/v1/modules/bad.namespace/test-name/test-provider/1.0.0", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     /// <summary>
     ///     Gets the test project directory path
     /// </summary>

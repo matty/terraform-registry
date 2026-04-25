@@ -36,6 +36,10 @@ public abstract class ModuleService : IModuleService
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,
         Stream moduleContent, string description, bool replace = false)
     {
+        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
+        if (coordinateError != null)
+            throw new ArgumentException(coordinateError);
+
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
             throw new ArgumentException(

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 
@@ -16,6 +17,16 @@ public class AuthenticationMiddleware(
     private const string BearerPrefix = "Bearer ";
     private const string SessionCookieName = "tf-session";
     private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/vcs/sources", "/api/admin"];
+    private static readonly string[] StaticTokenPathPrefixes = ["/v1/"];
+    private static readonly string[] StaticTokenPermissions =
+    [
+        Permissions.ModulesRead,
+        Permissions.ModulesUpload,
+        Permissions.ModulesDelete,
+        Permissions.ModulesRestore,
+        Permissions.ModulesPurge,
+        Permissions.ModulesDescription
+    ];
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -38,6 +49,15 @@ public class AuthenticationMiddleware(
             // Check 1: Static API token (Legacy/System)
             if (!string.IsNullOrEmpty(header) && header.Equals($"{BearerPrefix}{authToken}", StringComparison.Ordinal))
             {
+                if (!StaticTokenPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                {
+                    logger.LogWarning("Static token rejected for non-module path {Path} from {RemoteIp}", path,
+                        context.Connection.RemoteIpAddress);
+                    await WriteUnauthorizedResponseAsync(context, path);
+                    return;
+                }
+
+                context.User = GetStaticTokenPrincipal();
                 await next(context);
                 return;
             }
@@ -142,20 +162,7 @@ public class AuthenticationMiddleware(
                 return;
             }
 
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            context.Response.Headers["WWW-Authenticate"] = "Bearer";
-            var accept = context.Request.Headers["Accept"].ToString();
-            var prefersJson = accept.Contains("application/json", StringComparison.OrdinalIgnoreCase) ||
-                              accept.Contains("text/html", StringComparison.OrdinalIgnoreCase);
-
-            if (prefersJson)
-            {
-                await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", path });
-            }
-            else
-            {
-                await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
-            }
+            await WriteUnauthorizedResponseAsync(context, path);
 
             return;
         }
@@ -221,5 +228,38 @@ public class AuthenticationMiddleware(
 
         var identity = new ClaimsIdentity(claims, "DevBypass");
         return new ClaimsPrincipal(identity);
+    }
+
+    private static ClaimsPrincipal GetStaticTokenPrincipal()
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "static-token"),
+            new(ClaimTypes.AuthenticationMethod, "StaticToken")
+        };
+
+        foreach (var permission in StaticTokenPermissions)
+            claims.Add(new Claim("permission", permission));
+
+        var identity = new ClaimsIdentity(claims, "StaticToken");
+        return new ClaimsPrincipal(identity);
+    }
+
+    private static async Task WriteUnauthorizedResponseAsync(HttpContext context, string path)
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers["WWW-Authenticate"] = "Bearer";
+        var accept = context.Request.Headers["Accept"].ToString();
+        var prefersJson = accept.Contains("application/json", StringComparison.OrdinalIgnoreCase) ||
+                          accept.Contains("text/html", StringComparison.OrdinalIgnoreCase);
+
+        if (prefersJson)
+        {
+            await context.Response.WriteAsJsonAsync(new { error = "Unauthorized", path });
+        }
+        else
+        {
+            await context.Response.WriteAsync("Unauthorized: missing or invalid Authorization token.");
+        }
     }
 }

@@ -29,6 +29,8 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpGet("shared")]
     public async Task<IActionResult> ListSharedKeys()
     {
+        if (!User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
+
         var keys = await apiKeyService.ListSharedApiKeysAsync();
 
         // Preload owners to display ownership information
@@ -43,6 +45,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (request.IsShared && !User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
 
         var (rawToken, key) = await apiKeyService.CreateApiKeyAsync(userId, request.Description, request.IsShared);
 
@@ -62,6 +65,11 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var existing = await apiKeyService.GetApiKeyAsync(id);
+        if (existing == null) return NotFound();
+        if (existing.UserId != userId) return Forbid();
+        if ((existing.IsShared || request.IsShared) && !User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
 
         var result = await apiKeyService.UpdateApiKeyAsync(id, userId, request.Description, request.IsShared);
 
