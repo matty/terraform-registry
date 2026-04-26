@@ -11,6 +11,12 @@ public interface IApiKeyService
     Task<(string RawToken, ApiKey Key)> CreateApiKeyAsync(string userId, string description, bool isShared = false);
 
     /// <summary>
+    /// Creates a new expiring API key for the specified user.
+    /// </summary>
+    Task<(string RawToken, ApiKey Key)> CreateExpiringApiKeyAsync(string userId, string description, DateTime expiresAt,
+        bool isShared = false);
+
+    /// <summary>
     /// Validates a raw token and returns the key details if valid.
     /// Also updates the LastUsedAt timestamp.
     /// </summary>

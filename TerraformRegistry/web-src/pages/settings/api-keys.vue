@@ -12,6 +12,7 @@ interface ApiKey {
   description: string;
   prefix: string;
   createdAt: string;
+  expiresAt?: string;
   lastUsedAt?: string;
   isShared: boolean;
   ownerDisplay?: string;
@@ -354,6 +355,10 @@ onMounted(() => {
                         <UIcon name="i-lucide-calendar" class="text-[12px]" />
                         Created {{ new Date(key.createdAt).toLocaleDateString() }}
                       </span>
+                      <span v-if="key.expiresAt" class="flex items-center gap-1.5">
+                        <UIcon name="i-lucide-hourglass" class="text-[12px]" />
+                        Expires {{ new Date(key.expiresAt).toLocaleDateString() }}
+                      </span>
                       <span v-if="key.lastUsedAt" class="flex items-center gap-1.5">
                         <UIcon name="i-lucide-clock" class="text-[12px]" />
                         Last used {{ new Date(key.lastUsedAt).toLocaleDateString() }}
@@ -453,6 +458,10 @@ onMounted(() => {
                       <span class="flex items-center gap-1.5">
                         <UIcon name="i-lucide-calendar" class="text-[12px]" />
                         Created {{ new Date(key.createdAt).toLocaleDateString() }}
+                      </span>
+                      <span v-if="key.expiresAt" class="flex items-center gap-1.5">
+                        <UIcon name="i-lucide-hourglass" class="text-[12px]" />
+                        Expires {{ new Date(key.expiresAt).toLocaleDateString() }}
                       </span>
                     </div>
                   </div>

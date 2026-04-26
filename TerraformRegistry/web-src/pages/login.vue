@@ -101,6 +101,10 @@ const isLoadingProviders = ref(true);
 const isDevLoggingIn = ref(false);
 const selectedProvider = ref<string | null>(null);
 const errorMessage = ref("");
+const returnTo = computed(() => {
+  const value = route.query.returnTo;
+  return typeof value === "string" && value.startsWith("/") ? value : undefined;
+});
 
 // Handle error from OAuth callback
 const errorParam = route.query.error as string | undefined;
@@ -141,7 +145,7 @@ const handleOidcLogin = (provider: string) => {
   isLoading.value = true;
   selectedProvider.value = provider;
   errorMessage.value = "";
-  loginWithOidc(provider);
+  loginWithOidc(provider, returnTo.value);
 };
 
 const handleDevLogin = async () => {

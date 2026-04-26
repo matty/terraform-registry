@@ -11,7 +11,7 @@ A lightweight, feature-rich private Terraform module registry implementation.
 - Terraform module registry protocol support for private module discovery and downloads
 - Built-in web UI and OpenAPI (Swagger) documentation
 - OIDC Authentication for web portal (GitHub, Azure AD)
-- API Token authentication for Terraform CLI (currently set via env vars)
+- Terraform CLI authentication via `terraform login` and per-user API keys
 - Local filesystem and Azure Blob Storage support
 - PostgreSQL database
 - Docker-ready deployment
@@ -221,7 +221,15 @@ az container create \
 
 ### Configure Terraform CLI
 
-Create or update `~/.terraformrc`:
+Preferred interactive flow:
+
+```bash
+terraform login registry.company.com
+```
+
+This registry advertises Terraform's `login.v1` protocol and issues a new per-user API key on each successful login. CLI-issued keys expire after 90 days and can be revoked from the API Keys page in the web UI.
+
+Manual credentials fallback:
 
 ```hcl
 host "registry.company.com" {
@@ -230,7 +238,7 @@ host "registry.company.com" {
   }
 
   credentials {
-    token = "your-auth-token-here"
+    token = "your-user-api-token-here"
   }
 }
 ```

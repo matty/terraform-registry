@@ -113,6 +113,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
             Prefix = key.Prefix,
             IsShared = key.IsShared,
             CreatedAt = key.CreatedAt,
+            ExpiresAt = key.ExpiresAt,
             LastUsedAt = key.LastUsedAt,
             OwnerUserId = owner?.Id ?? key.UserId,
             OwnerUsername = owner?.ProviderId,
@@ -170,6 +171,7 @@ public class ApiKeyResponse
     public string Prefix { get; set; } = string.Empty;
     public bool IsShared { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
     public DateTime? LastUsedAt { get; set; }
     public string? OwnerUserId { get; set; }
     public string? OwnerUsername { get; set; }
