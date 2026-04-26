@@ -28,25 +28,7 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
-        // Get the project directory instead of the output directory
-        var projectDir = GetProjectDirectory();
-        var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
-        var fileName = Path.GetFileName(moduleFilePath);
-
-        _output.WriteLine($"Looking for test module at: {moduleFilePath}");
-
-        if (!File.Exists(moduleFilePath))
-        {
-            _output.WriteLine(
-                $"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
-            throw new FileNotFoundException("Test module file missing.", moduleFilePath);
-        }
-
-        await using var fileStream = File.OpenRead(moduleFilePath);
-        using var content = new MultipartFormDataContent();
-        using var streamContent = new StreamContent(fileStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
-        content.Add(streamContent, "moduleFile", fileName);
+        using var content = CreateModuleUploadContent();
 
         var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.1.0", content);
 
@@ -54,6 +36,22 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         _output.WriteLine($"Response content: {responseContent}");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Upload_DuplicateModuleWithoutReplace_ReturnsConflict()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var firstContent = CreateModuleUploadContent();
+        var firstResponse = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.2.0", firstContent);
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+        using var duplicateContent = CreateModuleUploadContent();
+        var duplicateResponse = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.2.0", duplicateContent);
+
+        Assert.Equal(HttpStatusCode.Conflict, duplicateResponse.StatusCode);
     }
 
     [Fact]
@@ -87,5 +85,28 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
             throw new DirectoryNotFoundException("Could not locate the test project directory.");
 
         return projectDir;
+    }
+
+    protected MultipartFormDataContent CreateModuleUploadContent()
+    {
+        var projectDir = GetProjectDirectory();
+        var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
+        var fileName = Path.GetFileName(moduleFilePath);
+
+        _output.WriteLine($"Looking for test module at: {moduleFilePath}");
+
+        if (!File.Exists(moduleFilePath))
+        {
+            _output.WriteLine(
+                $"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
+            throw new FileNotFoundException("Test module file missing.", moduleFilePath);
+        }
+
+        var fileStream = File.OpenRead(moduleFilePath);
+        var content = new MultipartFormDataContent();
+        var streamContent = new StreamContent(fileStream);
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
+        content.Add(streamContent, "moduleFile", fileName);
+        return content;
     }
 }

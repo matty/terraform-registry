@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 using TerraformRegistry.Migrations;
 
@@ -32,58 +33,22 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     /// </summary>
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
     {
-        var modules = new List<ModuleListItem>();
+        var rows = new List<ModuleRow>();
         var conditions = new List<string>();
         var parameters = new List<NpgsqlParameter>();
         var paramCounter = 0;
 
         var sql = @"
-            WITH latest_versions AS (
-                SELECT 
-                    namespace,
-                    name,
-                    provider,
-                    MAX(version) AS latest_version
-                FROM 
-                    modules
-                WHERE deleted_at IS NULL
-                GROUP BY 
-                    namespace, name, provider
-            )
             SELECT 
                 m.namespace,
                 m.name,
                 m.provider,
                 m.version,
                 m.description,
-                m.storage_path,
-                m.published_at,
-                ARRAY(
-                    SELECT version 
-                    FROM modules 
-                    WHERE 
-                        namespace = m.namespace AND 
-                        name = m.name AND 
-                        provider = m.provider AND
-                        deleted_at IS NULL
-                    ORDER BY version DESC
-                ) AS versions
+                m.published_at
             FROM 
                 modules m
-            INNER JOIN 
-                latest_versions lv ON 
-                    m.namespace = lv.namespace AND 
-                    m.name = lv.name AND 
-                    m.provider = lv.provider AND 
-                    m.version = lv.latest_version
             WHERE m.deleted_at IS NULL";
-
-        if (!string.IsNullOrWhiteSpace(request.Q))
-        {
-            conditions.Add($" AND (m.name ILIKE @p{paramCounter} OR m.description ILIKE @p{paramCounter})");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", $"%{request.Q}%"));
-            paramCounter++;
-        }
 
         if (!string.IsNullOrWhiteSpace(request.Namespace))
         {
@@ -100,9 +65,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
 
         sql += string.Join(" ", conditions);
-        sql += $" ORDER BY m.namespace, m.name, m.provider LIMIT @p{paramCounter} OFFSET @p{paramCounter + 1}";
-        parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Limit));
-        parameters.Add(new NpgsqlParameter($"@p{paramCounter + 1}", request.Offset));
+        sql += " ORDER BY m.namespace, m.name, m.provider";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -117,24 +80,54 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             var name = reader.GetString(1);
             var provider = reader.GetString(2);
             var version = reader.GetString(3);
-            var description = reader.GetString(4);
-            var publishedAt = reader.GetDateTime(6);
-            var versions = reader.GetFieldValue<string[]>(7);
+            var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+            var publishedAt = reader.GetDateTime(5);
 
-            modules.Add(new ModuleListItem
+            rows.Add(new ModuleRow
             {
-                Id = $"{namespace_}/{name}/{provider}",
-                Owner = namespace_,
                 Namespace = namespace_,
                 Name = name,
                 Version = version,
                 Provider = provider,
                 Description = description,
-                PublishedAt = publishedAt.ToString("o"),
-                Versions = versions.ToList(),
-                DownloadUrl = $"{_baseUrl}/v1/modules/{namespace_}/{name}/{provider}/{version}/download"
+                PublishedAt = publishedAt.ToString("o")
             });
         }
+
+        var modules = rows
+            .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
+            .Select(group =>
+            {
+                var versions = group
+                    .Select(row => row.Version)
+                    .OrderByDescending(version => version, SemVerVersionComparer.Instance)
+                    .ToList();
+                var latest = group.First(row => row.Version == versions[0]);
+                latest.Versions = versions;
+                return latest;
+            })
+            .Where(row => string.IsNullOrWhiteSpace(request.Q)
+                || row.Name.Contains(request.Q, StringComparison.OrdinalIgnoreCase)
+                || row.Description.Contains(request.Q, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(row => row.Namespace, StringComparer.Ordinal)
+            .ThenBy(row => row.Name, StringComparer.Ordinal)
+            .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .Skip(request.Offset)
+            .Take(request.Limit)
+            .Select(row => new ModuleListItem
+            {
+                Id = $"{row.Namespace}/{row.Name}/{row.Provider}",
+                Owner = row.Namespace,
+                Namespace = row.Namespace,
+                Name = row.Name,
+                Version = row.Version,
+                Provider = row.Provider,
+                Description = row.Description,
+                PublishedAt = row.PublishedAt,
+                Versions = row.Versions,
+                DownloadUrl = $"{_baseUrl}/v1/modules/{row.Namespace}/{row.Name}/{row.Provider}/{row.Version}/download"
+            })
+            .ToList();
 
         return new ModuleList
         {
@@ -161,26 +154,15 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies,
-                (
-                    SELECT 
-                        ARRAY(
-                            SELECT version 
-                            FROM modules 
-                            WHERE 
-                                namespace = m.namespace AND 
-                                name = m.name AND 
-                                provider = m.provider
-                            ORDER BY version DESC
-                        )
-                ) AS versions
+                dependencies
             FROM 
                 modules m
             WHERE 
                 namespace = @namespace AND
                 name = @name AND
                 provider = @provider AND
-                version = @version";
+                version = @version AND
+                deleted_at IS NULL";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -197,7 +179,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
-        var versions = reader.GetFieldValue<string[]>(8);
+        var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+        var publishedAt = reader.GetDateTime(6);
+        await reader.DisposeAsync();
+
+        var versions = await GetVersionsInternalAsync(connection, @namespace, name, provider);
 
         return new Module
         {
@@ -207,11 +193,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Name = name,
             Version = version,
             Provider = provider,
-            Description = reader.GetString(4),
+            Description = description,
             Source = $"{_baseUrl}/{@namespace}/{name}",
-            PublishedAt = reader.GetDateTime(6).ToString("o"),
+            PublishedAt = publishedAt.ToString("o"),
             DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
-            Versions = versions.ToList(),
+            Versions = versions,
             Root = "main",
             Submodules = new List<ModuleSubmodule>(),
             Providers = new Dictionary<string, string>
@@ -226,30 +212,10 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     /// </summary>
     public async Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
     {
-        var sql = @"
-            SELECT 
-                version
-            FROM 
-                modules
-            WHERE 
-                namespace = @namespace AND
-                name = @name AND
-                provider = @provider AND
-                deleted_at IS NULL
-            ORDER BY 
-                version DESC";
-
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
-        command.Parameters.AddWithValue("@name", name);
-        command.Parameters.AddWithValue("@provider", provider);
-
-        var versions = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
+        var versions = await GetVersionsInternalAsync(connection, @namespace, name, provider);
 
         return new ModuleVersions
         {
@@ -342,13 +308,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 @storagePath,
                 @publishedAt,
                 @dependencies
-            )
-            ON CONFLICT (namespace, name, provider, version) 
-            DO UPDATE SET
-                description = @description,
-                storage_path = @storagePath,
-                dependencies = @dependencies
-            RETURNING id";
+            )";
 
         try
         {
@@ -367,8 +327,14 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                     module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            var result = await command.ExecuteScalarAsync();
-            return result != null;
+            var rows = await command.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            _logger.LogInformation("Module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
         }
         catch (Exception ex)
         {
@@ -600,6 +566,40 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 @namespace, name, provider);
             return false;
         }
+    }
+
+    private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string @namespace,
+        string name, string provider)
+    {
+        const string sql = @"
+            SELECT version
+            FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND deleted_at IS NULL";
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+
+        var versions = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
+
+        return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
+    }
+
+    private sealed class ModuleRow
+    {
+        public required string Namespace { get; init; }
+        public required string Name { get; init; }
+        public required string Provider { get; init; }
+        public required string Version { get; init; }
+        public required string Description { get; init; }
+        public required string PublishedAt { get; init; }
+        public List<string> Versions { get; set; } = [];
     }
 
     // User Methods

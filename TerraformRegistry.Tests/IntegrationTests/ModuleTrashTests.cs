@@ -89,6 +89,20 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
+    public async Task SoftDeletedModule_DetailReturnsNotFound()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        await UploadTestModule(client, "2.6.0");
+        await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/2.6.0");
+
+        var detailResponse = await client.GetAsync("/v1/modules/test-ns/test-name/test-provider/2.6.0");
+
+        Assert.Equal(HttpStatusCode.NotFound, detailResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task SoftDeletedModule_VisibleInTrashList()
     {
         var client = _factory.CreateClient();

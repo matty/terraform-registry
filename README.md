@@ -1,6 +1,6 @@
 # Private Terraform Registry
 
-A lightweight, feature-rich private Terraform Registry implementation with full support for modules!
+A lightweight, feature-rich private Terraform module registry implementation.
 
 [![.NET](https://img.shields.io/badge/.NET-10-purple?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker)](https://docker.com/)
@@ -8,13 +8,19 @@ A lightweight, feature-rich private Terraform Registry implementation with full 
 
 ## Features
 
-- Full Terraform Registry Protocol v1 for modules
+- Terraform module registry protocol support for private module discovery and downloads
 - Built-in web UI and OpenAPI (Swagger) documentation
 - OIDC Authentication for web portal (GitHub, Azure AD)
 - API Token authentication for Terraform CLI (currently set via env vars)
 - Local filesystem and Azure Blob Storage support
 - PostgreSQL database
 - Docker-ready deployment
+
+## Current Scope
+
+This project is focused on private Terraform **modules**. It does not currently implement the Terraform provider registry protocol (`providers.v1`), provider package distribution, provider checksums, or signing-key endpoints. Provider registry support is a separate roadmap item.
+
+Module publishing is supported through the authenticated HTTP API and configured VCS automation. The web UI does not provide manual module upload support.
 
 ## Quick Start
 
@@ -54,7 +60,7 @@ Visit `http://localhost:5131` to access the web interface!
 - `GET /v1/modules/{namespace}/{name}/{provider}/versions` - Get all module versions
 - `GET /v1/modules/{namespace}/{name}/{provider}/{version}/download` - Download specific version
 - `GET /v1/modules/{namespace}/{name}/{provider}/download` - Download latest version
-- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module (auth required)
+- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module by API/CLI (auth required)
 
 ### Documentation
 

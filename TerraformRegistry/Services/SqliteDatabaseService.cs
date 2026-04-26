@@ -2,6 +2,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 
@@ -35,32 +36,18 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
     {
-        var modules = new List<ModuleListItem>();
+        var rows = new List<ModuleRow>();
 
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        // Get latest version per (namespace,name,provider), excluding soft-deleted
         var sql = @"
-            WITH latest AS (
-                SELECT namespace, name, provider, MAX(version) AS latest_version
-                FROM modules
-                WHERE deleted_at IS NULL
-                GROUP BY namespace, name, provider
-            )
             SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at
             FROM modules m
-            INNER JOIN latest l ON m.namespace = l.namespace AND m.name = l.name AND m.provider = l.provider AND m.version = l.latest_version
             WHERE m.deleted_at IS NULL";
 
         var conditions = new List<string>();
         var parameters = new List<SqliteParameter>();
-
-        if (!string.IsNullOrWhiteSpace(request.Q))
-        {
-            conditions.Add(" AND (lower(m.name) LIKE lower($q) OR lower(m.description) LIKE lower($q))");
-            parameters.Add(new SqliteParameter("$q", $"%{request.Q}%"));
-        }
 
         if (!string.IsNullOrWhiteSpace(request.Namespace))
         {
@@ -75,9 +62,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         }
 
         sql += string.Join("", conditions);
-        sql += " ORDER BY m.namespace, m.name, m.provider LIMIT $limit OFFSET $offset";
-        parameters.Add(new SqliteParameter("$limit", request.Limit));
-        parameters.Add(new SqliteParameter("$offset", request.Offset));
+        sql += " ORDER BY m.namespace, m.name, m.provider";
 
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -90,26 +75,54 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             var name = reader.GetString(1);
             var provider = reader.GetString(2);
             var version = reader.GetString(3);
-            var description = reader.GetString(4);
+            var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
             var publishedAtIso = reader.GetString(5);
 
-            // Fetch all versions for this module tuple
-            var versions = await GetVersionsInternal(connection, ns, name, provider);
-
-            modules.Add(new ModuleListItem
+            rows.Add(new ModuleRow
             {
-                Id = $"{ns}/{name}/{provider}",
-                Owner = ns,
                 Namespace = ns,
                 Name = name,
                 Version = version,
                 Provider = provider,
                 Description = description,
-                PublishedAt = publishedAtIso,
-                Versions = versions,
-                DownloadUrl = $"{_baseUrl}/v1/modules/{ns}/{name}/{provider}/{version}/download"
+                PublishedAt = publishedAtIso
             });
         }
+
+        var modules = rows
+            .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
+            .Select(group =>
+            {
+                var versions = group
+                    .Select(row => row.Version)
+                    .OrderByDescending(version => version, SemVerVersionComparer.Instance)
+                    .ToList();
+                var latest = group.First(row => row.Version == versions[0]);
+                latest.Versions = versions;
+                return latest;
+            })
+            .Where(row => string.IsNullOrWhiteSpace(request.Q)
+                || row.Name.Contains(request.Q, StringComparison.OrdinalIgnoreCase)
+                || row.Description.Contains(request.Q, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(row => row.Namespace, StringComparer.Ordinal)
+            .ThenBy(row => row.Name, StringComparer.Ordinal)
+            .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .Skip(request.Offset)
+            .Take(request.Limit)
+            .Select(row => new ModuleListItem
+            {
+                Id = $"{row.Namespace}/{row.Name}/{row.Provider}",
+                Owner = row.Namespace,
+                Namespace = row.Namespace,
+                Name = row.Name,
+                Version = row.Version,
+                Provider = row.Provider,
+                Description = row.Description,
+                PublishedAt = row.PublishedAt,
+                Versions = row.Versions,
+                DownloadUrl = $"{_baseUrl}/v1/modules/{row.Namespace}/{row.Name}/{row.Provider}/{row.Version}/download"
+            })
+            .ToList();
 
         return new ModuleList
         {
@@ -130,7 +143,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         var sql = @"
             SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
             FROM modules
-            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
@@ -153,7 +166,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Name = name,
             Version = version,
             Provider = provider,
-            Description = reader.GetString(4),
+            Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
             Source = $"{_baseUrl}/{@namespace}/{name}",
             PublishedAt = publishedAtIso,
             DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
@@ -228,11 +241,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
                 namespace, name, provider, version, description, storage_path, published_at, dependencies
             ) VALUES (
                 $ns, $name, $prov, $ver, $desc, $path, $published, $deps
-            )
-            ON CONFLICT(namespace, name, provider, version) DO UPDATE SET
-                description = excluded.description,
-                storage_path = excluded.storage_path,
-                dependencies = excluded.dependencies";
+            )";
 
         try
         {
@@ -253,6 +262,12 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
             var rows = await cmd.ExecuteNonQueryAsync();
             return rows > 0;
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
+        {
+            _logger.LogInformation("Module {Namespace}/{Name}/{Provider}/{Version} already exists in SQLite",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
         }
         catch (Exception ex)
         {
@@ -478,13 +493,24 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         var versions = new List<string>();
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
-            @"SELECT version FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND deleted_at IS NULL ORDER BY version DESC";
+            @"SELECT version FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND deleted_at IS NULL";
         cmd.Parameters.AddWithValue("$ns", @namespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync()) versions.Add(r.GetString(0));
-        return versions;
+        return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
+    }
+
+    private sealed class ModuleRow
+    {
+        public required string Namespace { get; init; }
+        public required string Name { get; init; }
+        public required string Provider { get; init; }
+        public required string Version { get; init; }
+        public required string Description { get; init; }
+        public required string PublishedAt { get; init; }
+        public List<string> Versions { get; set; } = [];
     }
 
     // User & API Key methods

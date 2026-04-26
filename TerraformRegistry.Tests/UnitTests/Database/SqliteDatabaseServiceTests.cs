@@ -97,7 +97,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AddModule_IsUpsertOnConflict_UpdatesDescriptionAndPath()
+    public async Task AddModule_ReturnsFalseOnDuplicate_AndKeepsOriginalMetadata()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -105,14 +105,13 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         var mod = MakeModule(desc: "desc1", filePath: "/path/one.zip");
         Assert.True(await svc.AddModuleAsync(mod));
 
-        // Update with same PK and new values
         var modUpdated = MakeModule(desc: "desc2", filePath: "/path/two.zip");
-        Assert.True(await svc.AddModuleAsync(modUpdated));
+        Assert.False(await svc.AddModuleAsync(modUpdated));
 
         var storage = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
         Assert.NotNull(storage);
-        Assert.Equal("desc2", storage!.Description);
-        Assert.Equal("/path/two.zip", storage.FilePath);
+        Assert.Equal("desc1", storage!.Description);
+        Assert.Equal("/path/one.zip", storage.FilePath);
     }
 
     [Fact]
@@ -145,20 +144,35 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetModuleVersions_ReturnsDescendingVersionList()
+    public async Task ListModules_UsesSemVerPrecedenceForLatestVersion()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(version: "1.9.0"));
+        await svc.AddModuleAsync(MakeModule(version: "1.10.0"));
+
+        var all = await svc.ListModulesAsync(new ModuleSearchRequest { Limit = 50, Offset = 0 });
+
+        var awsEntry = Assert.Single(all.Modules);
+        Assert.Equal("1.10.0", awsEntry.Version);
+    }
+
+    [Fact]
+    public async Task GetModuleVersions_ReturnsSemVerDescendingVersionList()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
 
         await svc.AddModuleAsync(MakeModule(version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(version: "1.10.0"));
         await svc.AddModuleAsync(MakeModule(version: "1.2.0"));
         await svc.AddModuleAsync(MakeModule(version: "1.1.1"));
 
         var versions = await svc.GetModuleVersionsAsync("hashicorp", "vpc", "aws");
         var list = versions.Modules.Single().Versions.Select(v => v.Version).ToList();
 
-        // Service orders DESC
-        Assert.Equal(new[] { "1.2.0", "1.1.1", "1.0.0" }, list);
+        Assert.Equal(new[] { "1.10.0", "1.2.0", "1.1.1", "1.0.0" }, list);
     }
 
     [Fact]
@@ -189,6 +203,21 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         Assert.True(removed);
 
         var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.Null(fetched);
+    }
+
+    [Fact]
+    public async Task GetModule_ReturnsNullAfterSoftDelete()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "4.0.0");
+        await svc.AddModuleAsync(mod);
+        Assert.True(await svc.SoftDeleteModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+
+        var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+
         Assert.Null(fetched);
     }
 
