@@ -204,7 +204,7 @@ public class LocalModuleServiceTests
         await using var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.UploadModuleAsync("../outside", "name", "provider", "1.0.0", content, "desc"));
+            service.UploadModuleAsync("../outside", "name", "provider", "1.0.0", "module.zip", content, "desc"));
 
         Assert.Contains("Invalid namespace", ex.Message, StringComparison.Ordinal);
         _mockDbService.Verify(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);

@@ -267,7 +267,7 @@ public static class ModuleHandlers
 
             await using var stream = moduleFile.OpenReadStream();
             var result =
-                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description,
+                await moduleService.UploadModuleAsync(@namespace, name, provider, version, moduleFile.FileName, stream, description,
                     replace);
 
             if (!result)

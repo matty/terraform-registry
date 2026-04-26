@@ -120,7 +120,7 @@ public class GitHubVcsService
             return ("skipped", $"Tag '{tag}' is not a valid SemVer version", null);
         }
 
-        // Download tarball from GitHub
+        // Download a zipball from GitHub so automated publishing follows the same contract as manual uploads.
         string? pat = null;
         if (!string.IsNullOrEmpty(vcsConnection.PatEncrypted))
         {
@@ -138,9 +138,9 @@ public class GitHubVcsService
         }
 
         var client = _httpClientFactory.CreateClient("GitHubVcs");
-        var tarballUrl = $"https://api.github.com/repos/{repoOwner}/{repoName}/tarball/{tag}";
+        var zipballUrl = $"https://api.github.com/repos/{repoOwner}/{repoName}/zipball/{tag}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, tarballUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Get, zipballUrl);
         request.Headers.Add("User-Agent", "TerraformRegistry");
         request.Headers.Add("Accept", "application/vnd.github+json");
         if (pat != null)
@@ -155,22 +155,23 @@ public class GitHubVcsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to download tarball from {Url}", tarballUrl);
-            return ("error", $"Failed to download tarball: {ex.Message}", null);
+            _logger.LogError(ex, "Failed to download zipball from {Url}", zipballUrl);
+            return ("error", $"Failed to download zipball: {ex.Message}", null);
         }
 
         if (!response.IsSuccessStatusCode)
         {
-            return ("error", $"GitHub API returned {(int)response.StatusCode} for tarball download", null);
+            return ("error", $"GitHub API returned {(int)response.StatusCode} for zipball download", null);
         }
 
-        await using var tarballStream = await response.Content.ReadAsStreamAsync();
+        await using var zipballStream = await response.Content.ReadAsStreamAsync();
         var uploaded = await _moduleService.UploadModuleAsync(
             vcsSource.Namespace,
             vcsSource.Name,
             vcsSource.Provider,
             version,
-            tarballStream,
+            $"{repoName}-{tag}.zip",
+            zipballStream,
             $"Auto-published from {repoOwner}/{repoName} tag {tag}",
             replace: false);
 

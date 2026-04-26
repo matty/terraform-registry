@@ -68,6 +68,34 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Upload_NonZipFilename_ReturnsBadRequest()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var content = CreateModuleUploadContent(fileName: "module.tar.gz");
+
+        var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/1.0.1", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Upload_InvalidZipContent_ReturnsBadRequest()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var content = CreateModuleUploadContent(
+            fileName: "broken-module.zip",
+            fileBytes: "not-a-zip"u8.ToArray());
+
+        var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/1.0.2", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     /// <summary>
     ///     Gets the test project directory path
     /// </summary>
@@ -87,11 +115,11 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         return projectDir;
     }
 
-    protected MultipartFormDataContent CreateModuleUploadContent()
+    protected MultipartFormDataContent CreateModuleUploadContent(string? fileName = null, byte[]? fileBytes = null)
     {
         var projectDir = GetProjectDirectory();
         var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
-        var fileName = Path.GetFileName(moduleFilePath);
+        var uploadFileName = fileName ?? Path.GetFileName(moduleFilePath);
 
         _output.WriteLine($"Looking for test module at: {moduleFilePath}");
 
@@ -102,11 +130,14 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
             throw new FileNotFoundException("Test module file missing.", moduleFilePath);
         }
 
-        var fileStream = File.OpenRead(moduleFilePath);
         var content = new MultipartFormDataContent();
-        var streamContent = new StreamContent(fileStream);
+        Stream stream = fileBytes == null
+            ? File.OpenRead(moduleFilePath)
+            : new MemoryStream(fileBytes);
+
+        var streamContent = new StreamContent(stream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/gzip");
-        content.Add(streamContent, "moduleFile", fileName);
+        content.Add(streamContent, "moduleFile", uploadFileName);
         return content;
     }
 }

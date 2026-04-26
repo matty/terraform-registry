@@ -30,8 +30,8 @@ public interface IModuleService
     /// <summary>
     ///     Uploads a new module
     /// </summary>
-    Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,
-        string description, bool replace = false);
+    Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, string packageFileName,
+        Stream moduleContent, string description, bool replace = false);
 
     /// <summary>
     ///     Soft deletes a module version

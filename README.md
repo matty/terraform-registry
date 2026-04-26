@@ -269,12 +269,12 @@ module "vpc" {
 
 ```bash
 # Create a module archive
-tar -czf vpc-aws-1.2.3.tar.gz -C ./vpc-module .
+zip -r vpc-aws-1.2.3.zip ./vpc-module
 
 # Upload using curl
 curl -X POST \
   -H "Authorization: Bearer your-auth-token" \
-  -F "moduleFile=@vpc-aws-1.2.3.tar.gz" \
+  -F "moduleFile=@vpc-aws-1.2.3.zip" \
   -F "description=VPC module for AWS" \
   "https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3"
 ```

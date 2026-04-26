@@ -34,7 +34,7 @@ public abstract class ModuleService : IModuleService
     ///     Uploads a new module with SemVer validation
     /// </summary>
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace = false)
+        string packageFileName, Stream moduleContent, string description, bool replace = false)
     {
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
         if (coordinateError != null)
@@ -46,8 +46,11 @@ public abstract class ModuleService : IModuleService
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]",
                 nameof(version));
 
+        await using var validatedArchive =
+            await ModuleArchiveValidator.ValidateAndNormalizeZipAsync(packageFileName, moduleContent);
+
         // Delegate to the implementation-specific upload method
-        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace);
+        return await UploadModuleAsyncImpl(@namespace, name, provider, version, validatedArchive, description, replace);
     }
 
     /// <summary>

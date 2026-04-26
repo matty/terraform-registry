@@ -1,6 +1,7 @@
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using System.IO.Compression;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -56,6 +57,20 @@ public class AzureBlobModuleServiceUploadTests
         return service;
     }
 
+    private static MemoryStream CreateValidModuleZipStream()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("main.tf");
+            using var writer = new StreamWriter(entry.Open());
+            writer.WriteLine("terraform {}");
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
     // Test: Should return false and log a warning if the blob already exists in storage
     [Fact]
     public async Task UploadModuleAsync_Returns_False_If_Blob_Already_Exists()
@@ -68,10 +83,10 @@ public class AzureBlobModuleServiceUploadTests
             .Returns(mockBlobClient.Object);
 
         var service = CreateService();
-        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var stream = CreateValidModuleZipStream();
 
         // Act
-        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc");
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", "module.zip", stream, "desc");
 
         // Assert
         Assert.False(result);
@@ -105,10 +120,10 @@ public class AzureBlobModuleServiceUploadTests
             .ReturnsAsync(true);
 
         var service = CreateService();
-        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var stream = CreateValidModuleZipStream();
 
         // Act
-        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc");
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", "module.zip", stream, "desc");
 
         // Assert
         Assert.True(result);
@@ -141,10 +156,10 @@ public class AzureBlobModuleServiceUploadTests
             .ReturnsAsync(false); // Simulate database add failure
 
         var service = CreateService();
-        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var stream = CreateValidModuleZipStream();
 
         // Act
-        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc");
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", "module.zip", stream, "desc");
 
         // Assert
         Assert.False(result);
@@ -186,10 +201,10 @@ public class AzureBlobModuleServiceUploadTests
             .Returns(mockBlobClient.Object);
 
         var service = CreateService();
-        using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
+        using var stream = CreateValidModuleZipStream();
 
         // Act
-        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc");
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", "module.zip", stream, "desc");
 
         // Assert
         Assert.False(result);
