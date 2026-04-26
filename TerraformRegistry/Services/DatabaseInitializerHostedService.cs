@@ -72,7 +72,16 @@ public class DatabaseInitializerHostedService : IHostedService
                 {
                     foreach (var email in adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        var user = await dbService.GetUserByEmailAsync(email);
+                        var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(email);
+                        if (matchingUsers.Count > 1)
+                        {
+                            _logger.LogError(
+                                "Skipping bootstrap admin assignment for {Email} because multiple legacy users match that email case-insensitively.",
+                                email);
+                            continue;
+                        }
+
+                        var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
                         if (user != null)
                         {
                             await permissionService.AssignRoleAsync(user.Id, adminRole.Id, "system-bootstrap");

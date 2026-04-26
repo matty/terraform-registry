@@ -64,6 +64,7 @@ public interface IDatabaseService
     Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
 
     // User & API Key Methods
+    Task<IReadOnlyList<User>> GetUsersByEmailCaseInsensitiveAsync(string email);
     Task<User?> GetUserByEmailAsync(string email);
     Task<User?> GetUserByIdAsync(string id);
     Task AddUserAsync(User user);

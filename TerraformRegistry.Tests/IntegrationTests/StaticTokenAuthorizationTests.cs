@@ -9,7 +9,7 @@ public class StaticTokenAuthorizationTests(ITestOutputHelper output) : Integrati
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task StaticToken_CanAccessModuleProtocolRoutes()
+    public async Task StaticToken_InTestEnvironment_CanStillAccessModuleProtocolRoutes()
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);

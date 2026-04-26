@@ -123,6 +123,47 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return new ApiKeyUpdateResult(ApiKeyUpdateStatus.Updated, key);
     }
 
+    public async Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("OIDC login requires a non-empty email address.");
+        }
+
+        var canonicalEmail = CanonicalizeEmail(email);
+        var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(canonicalEmail);
+        if (matchingUsers.Count > 1)
+        {
+            throw new InvalidOperationException(
+                $"The email '{canonicalEmail}' matches multiple legacy user records. Manual account linking is required.");
+        }
+
+        var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
+        if (user == null)
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid().ToString(),
+                Email = canonicalEmail,
+                Provider = provider,
+                ProviderId = providerId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await dbService.AddUserAsync(user);
+            return user;
+        }
+
+        if (!string.Equals(user.Provider, provider, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(user.ProviderId, providerId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The email '{canonicalEmail}' is already linked to a different identity. Manual account linking is required.");
+        }
+
+        return user;
+    }
+
     public async Task<User> GetOrCreateUserAsync(string email, string provider, string providerId)
     {
         var user = await dbService.GetUserByEmailAsync(email);
@@ -145,6 +186,11 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
     public async Task<User?> GetUserByIdAsync(string id)
     {
         return await dbService.GetUserByIdAsync(id);
+    }
+
+    private static string CanonicalizeEmail(string email)
+    {
+        return email.Trim().ToLowerInvariant();
     }
 
     private string HashToken(string password)

@@ -22,6 +22,10 @@ builder.Configuration
 
 // Register database retry options
 builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
+builder.Services.Configure<WebhookSecurityOptions>(builder.Configuration.GetSection("WebhookSecurity"));
+builder.Services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
+builder.Services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
+builder.Services.AddSingleton<WebhookPinnedConnectionHelper>();
 
 // Register DbUpMigrator and IInitializableDb for database initialization
 builder.Services.AddSingleton<DbUpMigrator>();
@@ -92,7 +96,12 @@ builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 // Register HttpClientFactory for OAuth flows
 builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("WebhookDelivery", c => c.Timeout = TimeSpan.FromSeconds(5));
+builder.Services.AddHttpClient("WebhookDelivery", c => c.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ConnectCallback = services.GetRequiredService<WebhookPinnedConnectionHelper>().ConnectAsync
+    });
 
 // Register Controllers (for ApiKeyController)
 builder.Services.AddControllers();
@@ -146,6 +155,7 @@ builder.Services.AddSingleton<IWebhookService>(provider =>
         _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
     };
 });
+builder.Services.AddSingleton<WebhookUrlValidator>();
 builder.Services.AddSingleton<WebhookDispatcher>();
 
 // Register VCS Source Service
@@ -277,9 +287,11 @@ var authToken = app.Configuration["AuthorizationToken"];
 if (string.IsNullOrEmpty(authToken))
     throw new InvalidOperationException(
         "AuthorizationToken is missing or empty. Please set a secure token in your configuration.");
-if (authToken == "default-auth-token")
-    logger.LogWarning(
-        "WARNING: The default AuthorizationToken is in use. This is not secure. Please set a secure token in your configuration.");
+if (authToken == "default-auth-token"
+    && !app.Environment.IsDevelopment()
+    && !app.Environment.IsEnvironment("Test"))
+    throw new InvalidOperationException(
+        "AuthorizationToken is set to the default placeholder value. Configure a unique secret before running outside Development/Test.");
 
 app.UseHttpsRedirection();
 

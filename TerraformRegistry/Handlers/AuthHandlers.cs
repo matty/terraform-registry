@@ -98,7 +98,16 @@ public static class AuthHandlers
         logger.LogInformation("User {Email} logged in via {Provider}", userInfo.Email, provider);
 
         // Ensure user exists; userInfo.Id is the provider's ID (e.g. GitHub numeric ID).
-        var user = await apiKeyService.GetOrCreateUserAsync(userInfo.Email, provider, userInfo.Id);
+        User user;
+        try
+        {
+            user = await apiKeyService.GetOrCreateOidcUserAsync(userInfo.Email, provider, userInfo.Id);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "OIDC login rejected for provider {Provider}", provider);
+            return Results.Redirect("/login?error=account_link_required");
+        }
 
         // Assign default role (or admin if email matches AdminEmails config)
         var permService = context.RequestServices.GetRequiredService<IPermissionService>();
@@ -332,4 +341,3 @@ public static class AuthHandlers
         });
     }
 }
-

@@ -11,6 +11,15 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBase(output, AuthToken)
 {
     protected const string AuthToken = "default-auth-token";
+    private const string SafeWebhookUrl = "https://1.1.1.1/hook";
+    private const string SafeListWebhookUrl = "https://1.1.1.1/list-hook";
+    private const string SafeUpdateWebhookUrl = "https://1.1.1.1/update-hook";
+    private const string SafeDeleteWebhookUrl = "https://1.1.1.1/delete-hook";
+    private const string SafeDiscordWebhookUrl = "https://1.1.1.1/api/webhooks/123";
+    private const string SafeCustomWebhookUrl = "https://1.1.1.1/custom-hook";
+    private const string SafeCustomWebhookUrl2 = "https://1.1.1.1/custom-hook2";
+    private const string SafeInvalidFormatWebhookUrl = "https://1.1.1.1/invalid-hook";
+    private const string SafeFormatUpdateWebhookUrl = "https://1.1.1.1/fmt-update-hook";
 
     [Fact]
     public async Task Webhooks_Unauthenticated_Returns401()
@@ -29,7 +38,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/hook",
+            url = SafeWebhookUrl,
             events = new[] { "module.published" }
         });
 
@@ -37,7 +46,24 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(json.TryGetProperty("id", out _));
-        Assert.Equal("https://example.com/hook", json.GetProperty("url").GetString());
+        Assert.Equal(SafeWebhookUrl, json.GetProperty("url").GetString());
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1/hook")]
+    [InlineData("http://localhost/hook")]
+    [InlineData("ftp://example.com/hook")]
+    public async Task Webhooks_Create_WithUnsafeUrl_ReturnsBadRequest(string url)
+    {
+        var client = await CreateAuthenticatedClientAsync("unsafe-webhook@example.com", "unsafe-webhook-id");
+
+        var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
+        {
+            url,
+            events = new[] { "module.published" }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -48,7 +74,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         // Create a webhook first
         await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/list-hook",
+            url = SafeListWebhookUrl,
             events = new[] { "module.published" }
         });
 
@@ -57,7 +83,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("https://example.com/list-hook", body);
+        Assert.Contains(SafeListWebhookUrl, body);
     }
 
     [Fact]
@@ -68,7 +94,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         // Create a webhook
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/update-hook",
+            url = SafeUpdateWebhookUrl,
             events = new[] { "module.published" }
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -87,6 +113,70 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
+    public async Task Webhooks_Update_WithUnsafeUrl_ReturnsBadRequest()
+    {
+        var client = await CreateAuthenticatedClientAsync("update-unsafe@example.com", "update-unsafe-id");
+
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
+        {
+            url = "https://1.1.1.1/update-hook",
+            events = new[] { "module.published" }
+        });
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        var response = await client.PutAsJsonAsync($"/api/admin/webhooks/{id}", new
+        {
+            url = "http://127.0.0.1/hook"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Webhooks_Update_WithInvalidFormat_ReturnsBadRequest()
+    {
+        var client = await CreateAuthenticatedClientAsync("update-invalid-format@example.com", "update-invalid-format-id");
+
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
+        {
+            url = SafeFormatUpdateWebhookUrl,
+            events = new[] { "module.published" }
+        });
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        var response = await client.PutAsJsonAsync($"/api/admin/webhooks/{id}", new
+        {
+            format = "invalid"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Webhooks_Update_ToCustomWithoutTemplate_ReturnsBadRequest()
+    {
+        var client = await CreateAuthenticatedClientAsync("update-custom-template@example.com", "update-custom-template-id");
+
+        var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
+        {
+            url = SafeFormatUpdateWebhookUrl,
+            events = new[] { "module.published" },
+            format = "generic"
+        });
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        var response = await client.PutAsJsonAsync($"/api/admin/webhooks/{id}", new
+        {
+            format = "custom"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Webhooks_Delete_ReturnsNoContent()
     {
         var client = await CreateAuthenticatedClientAsync("delete-test@example.com", "delete-test-id");
@@ -94,7 +184,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         // Create a webhook
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/delete-hook",
+            url = SafeDeleteWebhookUrl,
             events = new[] { "module.published" }
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -112,7 +202,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://discord.com/api/webhooks/123",
+            url = SafeDiscordWebhookUrl,
             events = new[] { "module.published" },
             format = "discord"
         });
@@ -130,7 +220,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/custom-hook",
+            url = SafeCustomWebhookUrl,
             events = new[] { "module.published" },
             format = "custom"
         });
@@ -145,7 +235,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/custom-hook2",
+            url = SafeCustomWebhookUrl2,
             events = new[] { "module.published" },
             format = "custom",
             template = "{\"text\":\"{{event}}\"}"
@@ -164,7 +254,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/invalid-hook",
+            url = SafeInvalidFormatWebhookUrl,
             events = new[] { "module.published" },
             format = "invalid"
         });
@@ -180,7 +270,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         // Create with generic format
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
-            url = "https://example.com/fmt-update-hook",
+            url = SafeFormatUpdateWebhookUrl,
             events = new[] { "module.published" },
             format = "generic"
         });

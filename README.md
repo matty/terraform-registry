@@ -27,6 +27,7 @@ docker run -p 5131:80 \
   -e TF_REG_PORT=80 \
   -e TF_REG_BASEURL=http://localhost:5131 \
   -e TF_REG_AUTHORIZATIONTOKEN=your-secure-token \
+  -e TF_REG_OIDC__JWTSECRETKEY=replace-with-a-32-character-minimum-secret \
   terraform-registry
 ```
 
@@ -72,7 +73,7 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | **Core Settings**                                        |                                                     |                                                                  |                     |
 | `TF_REG_PORT`                                            | Application port                                    | `5131`                                                           | No                  | `80`                                                                  |
 | `TF_REG_BASEURL`                                         | Registry base URL                                   | `http://localhost:5131`                                          | Yes                 | `https://registry.company.com`                                        |
-| `TF_REG_AUTHORIZATIONTOKEN`                              | API authentication token                            | -                                                                | Recommended         | `your-secure-token-here`                                              |
+| `TF_REG_AUTHORIZATIONTOKEN`                              | API authentication token                            | -                                                                | Yes                 | `your-secure-token-here`                                              |
 | **Database Settings**                                    |                                                     |                                                                  |                     |                                                                       |
 | `TF_REG_DATABASEPROVIDER`                                | Database type (`sqlite`/`postgres`)                 | `sqlite`                                                         | No                  | `postgres`                                                            |
 | `TF_REG_SQLITE__CONNECTIONSTRING`                        | SQLite connection string                            | `Data Source=terraform.db`                                       | If using SQLite     | `Data Source=/data/terraform.db`                                      |
@@ -89,7 +90,7 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_AZURESTORAGE__CONTAINERNAME`                     | Blob container name                                 | `modules`                                                        | If using Azure      | `terraform-modules`                                                   |
 | `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES`             | SAS token expiry                                    | `5`                                                              | No                  | `10`                                                                  |
 | **OIDC Authentication Settings**                         |                                                     |                                                                  |                     |
-| `TF_REG_OIDC__JWTSECRETKEY`                              | JWT signing key (min 32 chars)                      | -                                                                | Yes (for OIDC)      | `your-256-bit-secret-key-here...`                                     |
+| `TF_REG_OIDC__JWTSECRETKEY`                              | JWT signing key for portal sessions (min 32 chars)  | -                                                                | Yes                 | `<unique-generated-secret-32-chars-min>`                              |
 | `TF_REG_OIDC__JWTEXPIRYHOURS`                            | JWT token expiration time (hours)                   | `24`                                                             | No                  | `48`                                                                  |
 | `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID`               | GitHub OAuth App Client ID                          | -                                                                | If using GitHub     | `Iv1.xxxxxxxxxxxx`                                                    |
 | `TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET`           | GitHub OAuth App Client Secret                      | -                                                                | If using GitHub     | `xxxxxxxxxxxx`                                                        |
@@ -111,6 +112,13 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_DEVAUTHBYPASS__USERID`                           | Dev user ID when bypassing auth                     | `dev-user-001`                                                   | No                  |                                                                       |
 | `TF_REG_DEVAUTHBYPASS__EMAIL`                            | Dev user email when bypassing auth                  | `dev@localhost`                                                  | No                  |                                                                       |
 | `TF_REG_DEVAUTHBYPASS__NAME`                             | Dev user display name when bypassing auth           | `Dev User`                                                       | No                  |                                                                       |
+
+## Security Notes
+
+- `AuthorizationToken` / `TF_REG_AUTHORIZATIONTOKEN` must be set to a unique secret outside `Development` and `Test`.
+- `Oidc:JwtSecretKey` / `TF_REG_OIDC__JWTSECRETKEY` must be set to a secret that is at least 32 characters long. Outside `Development`, the placeholder value is rejected.
+- OIDC login requires a non-empty provider email and rejects same-email logins when they resolve to a different provider or provider ID.
+- Outbound admin webhooks only support `http` and `https` targets. Private and local network destinations are blocked unless `WebhookSecurity:AllowPrivateNetworks` / `TF_REG_WEBHOOKSECURITY__ALLOWPRIVATENETWORKS` is explicitly enabled.
 
 ### Architecture Options
 
@@ -160,11 +168,12 @@ services:
     environment:
       - TF_REG_PORT=80
       - TF_REG_BASEURL=https://registry.company.com
+      - TF_REG_AUTHORIZATIONTOKEN=super-secure-token
+      - TF_REG_OIDC__JWTSECRETKEY=replace-with-a-32-character-minimum-secret
       - TF_REG_DATABASEPROVIDER=postgres
       - TF_REG_POSTGRESQL__CONNECTIONSTRING=Host=postgres;Database=registry;Username=user;Password=pass
       - TF_REG_STORAGEPROVIDER=azure
       - TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount
-      - TF_REG_AUTHORIZATIONTOKEN=super-secure-token
     depends_on:
       - postgres
 
@@ -193,6 +202,8 @@ az container create \
   --environment-variables \
     TF_REG_PORT=80 \
     TF_REG_BASEURL=https://terraform-registry.eastus.azurecontainer.io \
+    TF_REG_AUTHORIZATIONTOKEN=super-secure-token \
+    TF_REG_OIDC__JWTSECRETKEY=replace-with-a-32-character-minimum-secret \
     TF_REG_STORAGEPROVIDER=azure \
     TF_REG_AZURESTORAGE__CONNECTIONSTRING="DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net" \
     TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount \

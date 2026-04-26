@@ -9,6 +9,7 @@ public class WebhookDispatcher(
     IWebhookService webhookService,
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
+    WebhookUrlValidator webhookUrlValidator,
     ILogger<WebhookDispatcher> logger)
 {
     public void FireEvent(string eventType, string @namespace, string name, string provider, string version, string? description)
@@ -105,12 +106,15 @@ public class WebhookDispatcher(
     private static IWebhookFormatter GetFormatter(string format) =>
         Formatters.GetValueOrDefault(format, Formatters["generic"]);
 
-    private static async Task DeliverAsync(HttpClient client, string url, string? secret, string payload, string webhookId, string eventType)
+    private async Task DeliverAsync(HttpClient client, string url, string? secret, string payload, string webhookId, string eventType)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        var validatedEndpoint = await webhookUrlValidator.ValidateOutboundWebhookUrlAsync(url, CancellationToken.None);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, validatedEndpoint.Uri)
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
+        WebhookPinnedConnectionHelper.AttachValidatedAddresses(request, validatedEndpoint.Addresses);
 
         request.Headers.Add("X-Webhook-Id", webhookId);
         request.Headers.Add("X-Webhook-Event", eventType);
@@ -121,7 +125,8 @@ public class WebhookDispatcher(
             request.Headers.Add("X-Signature-256", $"sha256={signature}");
         }
 
-        await client.SendAsync(request);
+        using var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
     }
 
     private static string ComputeHmacSha256(string payload, string secret)

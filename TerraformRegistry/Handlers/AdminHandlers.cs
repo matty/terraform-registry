@@ -138,9 +138,12 @@ public static class AdminHandlers
             if (adminEmails.Length > 0)
             {
                 var dbService = context.RequestServices.GetRequiredService<IDatabaseService>();
-                var targetUser = await dbService.GetUserByIdAsync(userId);
-                if (targetUser != null && adminEmails.Contains(targetUser.Email, StringComparer.OrdinalIgnoreCase))
-                    return Results.BadRequest(new { error = "Cannot remove the admin role from a bootstrap admin (configured via TF_REG_AdminEmails)" });
+                foreach (var adminEmail in adminEmails)
+                {
+                    var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(adminEmail);
+                    if (matchingUsers.Count == 1 && matchingUsers[0].Id == userId)
+                        return Results.BadRequest(new { error = "Cannot remove the admin role from a bootstrap admin (configured via TF_REG_AdminEmails)" });
+                }
             }
 
             // Prevent removing the last admin assignment

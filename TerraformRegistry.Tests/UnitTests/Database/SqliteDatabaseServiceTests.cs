@@ -191,4 +191,65 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
         Assert.Null(fetched);
     }
+
+    [Fact]
+    public async Task GetUserByEmail_IsCaseInsensitiveForLegacyMixedCaseRows()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var legacyUser = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "Admin@Example.com",
+            Provider = "github",
+            ProviderId = "gh-legacy",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await svc.AddUserAsync(legacyUser);
+
+        var fetched = await svc.GetUserByEmailAsync("admin@example.com");
+
+        Assert.NotNull(fetched);
+        Assert.Equal(legacyUser.Id, fetched!.Id);
+        Assert.Equal("Admin@Example.com", fetched.Email);
+    }
+
+    [Fact]
+    public async Task GetUsersByEmailCaseInsensitive_ReturnsAllLegacyCaseVariants()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var firstUser = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "Admin@Example.com",
+            Provider = "github",
+            ProviderId = "gh-legacy-1",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-2),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-2)
+        };
+
+        var secondUser = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "admin@example.com",
+            Provider = "azuread",
+            ProviderId = "aad-legacy-2",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        await svc.AddUserAsync(firstUser);
+        await svc.AddUserAsync(secondUser);
+
+        var fetched = await svc.GetUsersByEmailCaseInsensitiveAsync("ADMIN@example.com");
+
+        Assert.Equal(2, fetched.Count);
+        Assert.Contains(fetched, user => user.Id == firstUser.Id);
+        Assert.Contains(fetched, user => user.Id == secondUser.Id);
+    }
 }

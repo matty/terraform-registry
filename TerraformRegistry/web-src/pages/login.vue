@@ -110,6 +110,7 @@ if (errorParam) {
     invalid_state: "Invalid authentication state. Please try again.",
     no_code: "No authorization code received",
     exchange_failed: "Failed to complete authentication. Please try again.",
+    account_link_required: "This email is already linked to a different sign-in method. Contact an administrator to link your account.",
   };
   errorMessage.value = errorMessages[errorParam] || "Authentication failed";
 }

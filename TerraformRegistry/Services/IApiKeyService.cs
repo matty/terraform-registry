@@ -43,6 +43,11 @@ public interface IApiKeyService
     Task<ApiKeyUpdateResult> UpdateApiKeyAsync(Guid keyId, string requestingUserId, string description, bool isShared);
 
     /// <summary>
+    /// Ensures an OIDC login only binds to a matching provider identity.
+    /// </summary>
+    Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId);
+
+    /// <summary>
     /// Ensures a User record exists for the given external details.
     /// </summary>
     Task<User> GetOrCreateUserAsync(string email, string provider, string providerId);

@@ -603,27 +603,34 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     }
 
     // User Methods
-    public async Task<User?> GetUserByEmailAsync(string email)
+    public async Task<IReadOnlyList<User>> GetUsersByEmailCaseInsensitiveAsync(string email)
     {
         const string sql =
-            "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = @email";
+            """
+            SELECT id, email, provider, provider_id, created_at, updated_at
+            FROM users
+            WHERE lower(email) = lower(@email)
+            ORDER BY CASE WHEN email = @email THEN 0 ELSE 1 END, created_at ASC
+            """;
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@email", email);
 
         await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
-
-        return new User
+        var users = new List<User>();
+        while (await reader.ReadAsync())
         {
-            Id = reader.GetString(0),
-            Email = reader.GetString(1),
-            Provider = reader.GetString(2),
-            ProviderId = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            UpdatedAt = reader.GetDateTime(5)
-        };
+            users.Add(MapUser(reader));
+        }
+
+        return users;
+    }
+
+    public async Task<User?> GetUserByEmailAsync(string email)
+    {
+        var users = await GetUsersByEmailCaseInsensitiveAsync(email);
+        return users.Count == 0 ? null : users[0];
     }
 
     public async Task<User?> GetUserByIdAsync(string id)
@@ -637,15 +644,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
 
-        return new User
-        {
-            Id = reader.GetString(0),
-            Email = reader.GetString(1),
-            Provider = reader.GetString(2),
-            ProviderId = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            UpdatedAt = reader.GetDateTime(5)
-        };
+        return MapUser(reader);
     }
 
     public async Task AddUserAsync(User user)
@@ -876,15 +875,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            users.Add(new User
-            {
-                Id = reader.GetString(0),
-                Email = reader.GetString(1),
-                Provider = reader.GetString(2),
-                ProviderId = reader.GetString(3),
-                CreatedAt = reader.GetDateTime(4),
-                UpdatedAt = reader.GetDateTime(5)
-            });
+            users.Add(MapUser(reader));
         }
 
         return users;
@@ -910,5 +901,18 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     {
         _dbUpMigrator.Migrate("postgres", _connectionString);
         return Task.CompletedTask;
+    }
+
+    private static User MapUser(NpgsqlDataReader reader)
+    {
+        return new User
+        {
+            Id = reader.GetString(0),
+            Email = reader.GetString(1),
+            Provider = reader.GetString(2),
+            ProviderId = reader.GetString(3),
+            CreatedAt = reader.GetDateTime(4),
+            UpdatedAt = reader.GetDateTime(5)
+        };
     }
 }
