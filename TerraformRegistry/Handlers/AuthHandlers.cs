@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -13,6 +16,7 @@ public static class AuthHandlers
 {
     private const string SessionCookieName = "tf-session";
     private const string StateCookieName = "oauth-state";
+    private const string ReturnToCookieName = "oauth-return-to";
 
     /// <summary>
     /// Returns list of enabled OIDC providers.
@@ -26,10 +30,21 @@ public static class AuthHandlers
     /// <summary>
     /// Initiates OIDC login flow for the specified provider.
     /// </summary>
-    public static IResult Login(string provider, OAuthService oauthService, HttpContext context)
+    public static IResult Login(string provider, string? returnTo, OAuthService oauthService, HttpContext context)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(returnTo) && IsSafeReturnPath(returnTo))
+            {
+                context.Response.Cookies.Append(ReturnToCookieName, returnTo, new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = context.Request.IsHttps,
+                    SameSite = SameSiteMode.Lax,
+                    MaxAge = TimeSpan.FromMinutes(10)
+                });
+            }
+
             // Generate and store state for CSRF protection
             var state = Guid.NewGuid().ToString("N");
             context.Response.Cookies.Append(StateCookieName, state, new CookieOptions
@@ -149,7 +164,123 @@ public static class AuthHandlers
 
         context.FireAuditLog(auditService, "user.login", "user", user.Id, new { email = userInfo.Email, provider });
 
+        var returnTo = context.Request.Cookies[ReturnToCookieName];
+        if (!string.IsNullOrWhiteSpace(returnTo) && IsSafeReturnPath(returnTo))
+        {
+            context.Response.Cookies.Delete(ReturnToCookieName);
+            return Results.Redirect(returnTo);
+        }
+
         return Results.Redirect("/");
+    }
+
+    public static IResult BeginTerraformAuthorization(HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            var returnTo = $"{context.Request.Path}{context.Request.QueryString}";
+            return Results.Redirect($"/login?returnTo={Uri.EscapeDataString(returnTo)}");
+        }
+
+        var clientId = context.Request.Query["client_id"].ToString();
+        var redirectUri = context.Request.Query["redirect_uri"].ToString();
+        var responseType = context.Request.Query["response_type"].ToString();
+        var state = context.Request.Query["state"].ToString();
+        var codeChallenge = context.Request.Query["code_challenge"].ToString();
+        var codeChallengeMethod = context.Request.Query["code_challenge_method"].ToString();
+
+        if (!IsValidTerraformAuthorizeRequest(clientId, redirectUri, responseType, codeChallenge, codeChallengeMethod))
+        {
+            return Results.BadRequest(new { error = "Invalid Terraform authorization request." });
+        }
+
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? context.User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var codeStore = context.RequestServices.GetRequiredService<ITerraformAuthorizationCodeStore>();
+        var issued = codeStore.Create(new TerraformAuthorizationCodeCreateRequest(
+            userId,
+            clientId,
+            redirectUri,
+            state,
+            codeChallenge,
+            codeChallengeMethod));
+        var auditService = context.RequestServices.GetRequiredService<IAuditService>();
+        context.FireAuditLog(auditService, "terraform_cli.login.started", "user", userId, new
+        {
+            clientId,
+            redirectUri
+        });
+
+        var redirect = QueryHelpers.AddQueryString(redirectUri, new Dictionary<string, string?>
+        {
+            ["code"] = issued.Code,
+            ["state"] = state
+        });
+
+        return Results.Redirect(redirect);
+    }
+
+    public static async Task<IResult> ExchangeTerraformToken(
+        HttpContext context,
+        ITerraformAuthorizationCodeStore codeStore,
+        IApiKeyService apiKeyService,
+        IAuditService auditService)
+    {
+        if (!context.Request.HasFormContentType)
+        {
+            return Results.BadRequest(new { error = "Expected form-encoded token request." });
+        }
+
+        var form = await context.Request.ReadFormAsync();
+        var grantType = form["grant_type"].ToString();
+        var clientId = form["client_id"].ToString();
+        var code = form["code"].ToString();
+        var redirectUri = form["redirect_uri"].ToString();
+        var codeVerifier = form["code_verifier"].ToString();
+
+        if (!string.Equals(grantType, "authorization_code", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(clientId) ||
+            string.IsNullOrWhiteSpace(code) ||
+            string.IsNullOrWhiteSpace(redirectUri) ||
+            string.IsNullOrWhiteSpace(codeVerifier))
+        {
+            return Results.BadRequest(new { error = "Invalid OAuth token request." });
+        }
+
+        var issued = codeStore.Consume(code, clientId, redirectUri);
+        if (issued == null)
+        {
+            return Results.BadRequest(new { error = "Invalid or expired authorization code." });
+        }
+
+        if (!string.Equals(issued.CodeChallengeMethod, "S256", StringComparison.Ordinal) ||
+            !string.Equals(issued.CodeChallenge, ComputePkceChallenge(codeVerifier), StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { error = "Invalid PKCE code verifier." });
+        }
+
+        var host = new Uri(redirectUri).Host;
+        var description = $"Terraform CLI ({host}) {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC";
+        var (rawToken, _) = await apiKeyService.CreateExpiringApiKeyAsync(
+            issued.UserId,
+            description,
+            DateTime.UtcNow.AddDays(90));
+        context.FireAuditLog(auditService, "terraform_cli.key.created", "user", issued.UserId, new
+        {
+            clientId,
+            redirectUri
+        });
+
+        return Results.Ok(new
+        {
+            access_token = rawToken,
+            token_type = "Bearer"
+        });
     }
 
     /// <summary>
@@ -339,5 +470,47 @@ public static class AuthHandlers
             message = "Dev session created",
             user = new { id = devUserId, email = devEmail, name = devName, provider = "DevBypass" }
         });
+    }
+
+    private static bool IsSafeReturnPath(string path)
+    {
+        return path.StartsWith("/", StringComparison.Ordinal) &&
+               !path.StartsWith("//", StringComparison.Ordinal);
+    }
+
+    private static bool IsValidTerraformAuthorizeRequest(string clientId, string redirectUri, string responseType,
+        string codeChallenge, string codeChallengeMethod)
+    {
+        return string.Equals(clientId, "terraform-cli", StringComparison.Ordinal) &&
+               string.Equals(responseType, "code", StringComparison.Ordinal) &&
+               !string.IsNullOrWhiteSpace(codeChallenge) &&
+               string.Equals(codeChallengeMethod, "S256", StringComparison.Ordinal) &&
+               IsValidLoopbackRedirectUri(redirectUri);
+    }
+
+    private static bool IsValidLoopbackRedirectUri(string redirectUri)
+    {
+        if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal) ||
+               string.Equals(uri.Host, "::1", StringComparison.Ordinal);
+    }
+
+    private static string ComputePkceChallenge(string verifier)
+    {
+        var hash = SHA256.HashData(Encoding.ASCII.GetBytes(verifier));
+        return Convert.ToBase64String(hash)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 }

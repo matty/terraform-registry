@@ -122,6 +122,8 @@ builder.Services.AddSingleton(oidcOptions);
 builder.Services.AddSingleton<JwtService>();
 
 builder.Services.AddSingleton<OAuthService>();
+builder.Services.AddSingleton(new TerraformLoginOptions());
+builder.Services.AddSingleton<ITerraformAuthorizationCodeStore, InMemoryTerraformAuthorizationCodeStore>();
 
 // Register API Key Service
 builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
@@ -348,8 +350,8 @@ app.MapGet("/api/auth/providers", () => AuthHandlers.GetProviders(oauthService))
     .WithTags("Authentication")
     .WithDescription("Returns list of enabled OIDC providers");
 
-app.MapGet("/api/auth/login/{provider}", (string provider, HttpContext context) =>
-        AuthHandlers.Login(provider, oauthService, context))
+app.MapGet("/api/auth/login/{provider}", (string provider, string? returnTo, HttpContext context) =>
+        AuthHandlers.Login(provider, returnTo, oauthService, context))
     .WithTags("Authentication")
     .WithDescription("Initiates OIDC login flow for the specified provider");
 
@@ -380,6 +382,16 @@ app.MapDelete("/api/auth/me", (HttpContext context, IApiKeyService apiKeyService
 app.MapGet("/api/auth/session", (HttpContext context) => AuthHandlers.CheckSession(jwtService, context))
     .WithTags("Authentication")
     .WithDescription("Checks if user has a valid session");
+
+app.MapGet("/api/auth/terraform/authorize", (HttpContext context) =>
+        AuthHandlers.BeginTerraformAuthorization(context))
+    .WithTags("Authentication")
+    .WithDescription("Begins Terraform CLI OAuth authorization flow");
+
+app.MapPost("/api/auth/terraform/token", (HttpContext context, ITerraformAuthorizationCodeStore codeStore, IApiKeyService apiKeyService, IAuditService auditService) =>
+        AuthHandlers.ExchangeTerraformToken(context, codeStore, apiKeyService, auditService))
+    .WithTags("Authentication")
+    .WithDescription("Exchanges a Terraform CLI OAuth authorization code for an API token");
 
 // Dev-only login endpoint — not registered in production (route doesn't exist)
 if (app.Environment.IsDevelopment())

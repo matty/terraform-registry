@@ -112,8 +112,11 @@ export const useAuth = () => {
   };
 
   // Initiate OIDC login flow
-  const loginWithOidc = (provider: string) => {
-    window.location.href = `/api/auth/login/${provider}`;
+  const loginWithOidc = (provider: string, returnTo?: string) => {
+    const query = returnTo
+      ? `?returnTo=${encodeURIComponent(returnTo)}`
+      : "";
+    window.location.href = `/api/auth/login/${provider}${query}`;
   };
 
   // Legacy API token login (for admin/fallback)
@@ -170,4 +173,3 @@ export const useAuth = () => {
     getAuthHeaders,
   };
 };
-

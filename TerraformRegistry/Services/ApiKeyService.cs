@@ -13,6 +13,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
     public async Task<(string RawToken, ApiKey Key)> CreateApiKeyAsync(string userId, string description, bool isShared = false)
     {
+        return await CreateApiKeyInternalAsync(userId, description, isShared, null);
+    }
+
+    public async Task<(string RawToken, ApiKey Key)> CreateExpiringApiKeyAsync(string userId, string description,
+        DateTime expiresAt, bool isShared = false)
+    {
+        return await CreateApiKeyInternalAsync(userId, description, isShared, expiresAt);
+    }
+
+    private async Task<(string RawToken, ApiKey Key)> CreateApiKeyInternalAsync(string userId, string description,
+        bool isShared, DateTime? expiresAt)
+    {
         // Generate random token
         var randomBytes = RandomNumberGenerator.GetBytes(TokenLength);
         var tokenCore = Convert.ToBase64String(randomBytes)
@@ -30,7 +42,8 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             TokenHash = tokenHash,
             Prefix = rawToken.Substring(0, 8),
             IsShared = isShared,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = expiresAt
         };
 
         await dbService.AddApiKeyAsync(apiKey);
