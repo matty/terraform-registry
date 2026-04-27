@@ -194,7 +194,7 @@ public class AzureBlobModuleService : ModuleService
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         // Create a consistent blob path format for easy retrieval
         var blobPath = $"{@namespace}/{name}-{provider}-{version}.zip";

@@ -34,7 +34,7 @@ public abstract class ModuleService : IModuleService
     ///     Uploads a new module with SemVer validation
     /// </summary>
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace = false)
+        Stream moduleContent, string description, bool replace = false, ModuleArtifactMetadata? metadata = null)
     {
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
         if (coordinateError != null)
@@ -47,14 +47,15 @@ public abstract class ModuleService : IModuleService
                 nameof(version));
 
         // Delegate to the implementation-specific upload method
-        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace);
+        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace,
+            metadata);
     }
 
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace);
+        Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata);
 
     /// <summary>
     ///     Soft deletes a module version

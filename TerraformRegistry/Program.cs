@@ -12,6 +12,8 @@ using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Services;
+using TerraformRegistry.Services.ModuleExtraction;
+using TerraformRegistry.Services.Publishing;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -190,6 +192,8 @@ builder.Services.AddSingleton<IVcsConnectionService>(provider =>
     };
 });
 
+builder.Services.AddSingleton<IModuleExtractionService, NoOpModuleExtractionService>();
+builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 builder.Services.AddSingleton<GitHubVcsService>();
 builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
 
@@ -565,8 +569,8 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
-            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
-        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher, auditService, context))
+            string provider, string version, HttpRequest request, IModulePublishCoordinator publishCoordinator, HttpContext context) =>
+        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, publishCoordinator, context))
     .WithTags("Modules")
     .WithDescription("Uploads a new module version")
     .Accepts<IFormFile>("multipart/form-data")

@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
+using TerraformRegistry.Models;
+using TerraformRegistry.Services.Publishing;
 
 namespace TerraformRegistry.Services;
 
@@ -10,30 +12,24 @@ public class GitHubVcsService
 {
     private readonly IVcsSourceService _vcsSourceService;
     private readonly IVcsConnectionService _vcsConnectionService;
-    private readonly IModuleService _moduleService;
+    private readonly IModulePublishCoordinator _publishCoordinator;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
-    private readonly WebhookDispatcher _webhookDispatcher;
-    private readonly IAuditService _auditService;
     private readonly ILogger<GitHubVcsService> _logger;
 
     public GitHubVcsService(
         IVcsSourceService vcsSourceService,
         IVcsConnectionService vcsConnectionService,
-        IModuleService moduleService,
+        IModulePublishCoordinator publishCoordinator,
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        WebhookDispatcher webhookDispatcher,
-        IAuditService auditService,
         ILogger<GitHubVcsService> logger)
     {
         _vcsSourceService = vcsSourceService;
         _vcsConnectionService = vcsConnectionService;
-        _moduleService = moduleService;
+        _publishCoordinator = publishCoordinator;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
-        _webhookDispatcher = webhookDispatcher;
-        _auditService = auditService;
         _logger = logger;
     }
 
@@ -165,32 +161,34 @@ public class GitHubVcsService
         }
 
         await using var tarballStream = await response.Content.ReadAsStreamAsync();
-        var uploaded = await _moduleService.UploadModuleAsync(
-            vcsSource.Namespace,
-            vcsSource.Name,
-            vcsSource.Provider,
-            version,
-            tarballStream,
-            $"Auto-published from {repoOwner}/{repoName} tag {tag}",
-            replace: false);
+        var uploaded = await _publishCoordinator.PublishAsync(new ModulePublishRequest
+        {
+            Namespace = vcsSource.Namespace,
+            Name = vcsSource.Name,
+            Provider = vcsSource.Provider,
+            Version = version,
+            Description = $"Auto-published from {repoOwner}/{repoName} tag {tag}",
+            ModuleContent = tarballStream,
+            Replace = false,
+            ActorUserId = null,
+            AuditAction = "vcs.auto_published",
+            Metadata = new ModuleArtifactMetadata
+            {
+                Source = new ModuleSourceInfo
+                {
+                    Kind = "vcs-tag",
+                    RepoOwner = repoOwner,
+                    RepoName = repoName,
+                    RepoUrl = $"https://github.com/{repoOwner}/{repoName}",
+                    Ref = $"refs/tags/{tag}"
+                }
+            }
+        }, CancellationToken.None);
 
         if (!uploaded)
         {
             return ("error", $"Module upload failed for version {version}", null);
         }
-
-        _webhookDispatcher.FireEvent(
-            "module.published",
-            vcsSource.Namespace,
-            vcsSource.Name,
-            vcsSource.Provider,
-            version,
-            $"Auto-published from {repoOwner}/{repoName} tag {tag}");
-
-        _ = _auditService.LogAsync(null, "vcs.auto_published", "module",
-            $"{vcsSource.Namespace}/{vcsSource.Name}/{vcsSource.Provider}/{version}",
-            new { @namespace = vcsSource.Namespace, name = vcsSource.Name, provider = vcsSource.Provider, version, repoOwner, repoName, tag },
-            null);
 
         return ("published", null, version);
     }
