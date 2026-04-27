@@ -1,9 +1,7 @@
 <script setup lang="ts">
+import PublishModuleModal from "~/components/modules/PublishModuleModal.vue";
 import { useDashboard } from "~/composables/useDashboard";
 import type { Module, ModulesResponse } from "~/composables/useModules";
-import { useVcsSources } from "~/composables/useVcsSources";
-import { useVcsConnections } from "~/composables/useVcsConnections";
-import type { VcsConnectionSummary } from "~/composables/useVcsConnections";
 
 definePageMeta({
   middleware: "auth",
@@ -12,11 +10,12 @@ definePageMeta({
 const { getAuthHeaders } = useAuth();
 const { hasPermission } = usePermissions();
 const { isSidebarOpen } = useDashboard();
-const { createVcsSource } = useVcsSources();
-const { listConnectionSummaries } = useVcsConnections();
 const { featureCreateModule } = useRuntimeConfig().public;
+const canUploadModule = computed(() => hasPermission("modules.upload"));
 const canManageVcs = computed(() => hasPermission("vcs.manage"));
-const canCreateVcsModule = computed(() => featureCreateModule && canManageVcs.value);
+const canOpenPublishModal = computed(() =>
+  featureCreateModule && (canUploadModule.value || canManageVcs.value)
+);
 
 const modules = ref<Module[]>([]);
 const isLoading = ref(false);
@@ -25,91 +24,11 @@ const error = ref("");
 const searchQuery = ref("");
 const currentOffset = ref(0);
 const limit = 10;
+const publishModalOpen = ref(false);
 
-// VCS connection summaries for the Add Module dropdown
-const connectionSummaries = ref<VcsConnectionSummary[]>([]);
-
-// Add Module modal state
-const isAddModuleOpen = ref(false);
-const newNamespace = ref("");
-const newName = ref("");
-const newProvider = ref("");
-const newDescription = ref("");
-const linkToGitHub = ref(false);
-const repoOwner = ref("");
-const repoName = ref("");
-const selectedConnectionId = ref("");
-const isSubmitting = ref(false);
-const addModuleError = ref<string | null>(null);
-
-const connectionOptions = computed(() =>
-  connectionSummaries.value.map(c => ({ label: c.label, value: c.id }))
-);
-
-const canSubmit = computed(() => {
-  if (!newNamespace.value || !newName.value || !newProvider.value) return false;
-  if (linkToGitHub.value && (!repoOwner.value || !repoName.value || !selectedConnectionId.value)) return false;
-  return true;
-});
-
-const resetAddModuleForm = () => {
-  newNamespace.value = "";
-  newName.value = "";
-  newProvider.value = "";
-  newDescription.value = "";
-  linkToGitHub.value = false;
-  repoOwner.value = "";
-  repoName.value = "";
-  selectedConnectionId.value = "";
-  addModuleError.value = null;
-};
-
-const openAddModule = () => {
-  if (!canCreateVcsModule.value) return;
-  resetAddModuleForm();
-  isAddModuleOpen.value = true;
-};
-
-// Pre-fill repo owner when a connection with defaultOrg is selected
-watch(selectedConnectionId, (connId) => {
-  if (!connId) return;
-  const conn = connectionSummaries.value.find(c => c.id === connId);
-  if (conn?.defaultOrg && !repoOwner.value) {
-    repoOwner.value = conn.defaultOrg;
-  }
-});
-
-const handleAddModule = async () => {
-  if (!canSubmit.value) return;
-  isSubmitting.value = true;
-  addModuleError.value = null;
-
-  if (!linkToGitHub.value) {
-    isAddModuleOpen.value = false;
-    resetAddModuleForm();
-    refreshModules();
-    return;
-  }
-
-  try {
-    await createVcsSource({
-      namespace: newNamespace.value,
-      name: newName.value,
-      provider: newProvider.value,
-      repoOwner: repoOwner.value,
-      repoName: repoName.value,
-      connectionId: selectedConnectionId.value,
-    });
-
-    isAddModuleOpen.value = false;
-    resetAddModuleForm();
-    refreshModules();
-  } catch (e: any) {
-    const msg = e?.data?.message || e?.data?.error || e?.message || "Failed to create module";
-    addModuleError.value = msg;
-  } finally {
-    isSubmitting.value = false;
-  }
+const openPublishModal = () => {
+  if (!canOpenPublishModal.value) return;
+  publishModalOpen.value = true;
 };
 
 const filteredModules = computed(() => {
@@ -178,16 +97,9 @@ const loadMoreModules = () => {
 const route = useRoute();
 onMounted(async () => {
   fetchModules();
-  if (canCreateVcsModule.value) {
-    try {
-      connectionSummaries.value = await listConnectionSummaries();
-    } catch (e) {
-      console.error('Failed to load VCS connection summaries', e);
-    }
-  }
   // Auto-open Add Module modal if ?addModule=1 query param is present
-  if (canCreateVcsModule.value && route.query.addModule === '1') {
-    openAddModule();
+  if (canOpenPublishModal.value && route.query.addModule === '1') {
+    openPublishModal();
   }
 });
 </script>
@@ -233,12 +145,12 @@ onMounted(async () => {
           size="sm"
         />
         <UButton
-          v-if="canCreateVcsModule"
+          v-if="canOpenPublishModal"
           label="Add Module"
           icon="i-lucide-plus"
           color="primary"
           size="sm"
-          @click="openAddModule"
+          @click="openPublishModal"
         />
       </div>
     </div>
@@ -371,115 +283,12 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-    <!-- Add Module Modal -->
-    <UModal v-if="canCreateVcsModule" v-model:open="isAddModuleOpen">
-      <template #content>
-        <div class="p-6 max-h-[80vh] overflow-y-auto">
-          <!-- Header -->
-          <div class="flex items-center gap-3 mb-5">
-            <div class="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
-              <UIcon name="i-lucide-package-plus" class="text-2xl text-primary-400" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-neutral-100">Add Module</h3>
-              <p class="text-sm text-neutral-400">Register a new module, optionally linked to GitHub</p>
-            </div>
-          </div>
-
-          <!-- Error -->
-          <div
-            v-if="addModuleError"
-            class="mb-4 p-3 bg-red-900/20 border border-red-800/50 rounded-lg flex items-center gap-2"
-          >
-            <UIcon name="i-lucide-alert-circle" class="text-red-500" />
-            <p class="text-sm text-red-300 flex-1">{{ addModuleError }}</p>
-            <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" @click="addModuleError = null" />
-          </div>
-
-          <!-- Form -->
-          <div class="space-y-5">
-            <!-- Module Details -->
-            <div class="space-y-3">
-              <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Module Details</h4>
-              <div class="grid grid-cols-3 gap-3">
-                <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Namespace <span class="text-red-400">*</span></label>
-                  <UInput v-model="newNamespace" placeholder="myorg" size="sm" />
-                </div>
-                <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Name <span class="text-red-400">*</span></label>
-                  <UInput v-model="newName" placeholder="vpc" size="sm" />
-                </div>
-                <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Provider <span class="text-red-400">*</span></label>
-                  <UInput v-model="newProvider" placeholder="aws" size="sm" />
-                </div>
-              </div>
-              <div>
-                <label class="block text-xs text-neutral-400 mb-1">Description</label>
-                <UTextarea v-model="newDescription" placeholder="Optional module description" :rows="2" size="sm" class="w-full" />
-              </div>
-            </div>
-
-            <!-- GitHub Integration -->
-            <div class="border-t border-neutral-800 pt-4">
-              <div class="flex items-center justify-between mb-3">
-                <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide flex items-center gap-1.5">
-                  <UIcon name="i-lucide-github" />
-                  GitHub Integration
-                </h4>
-                <label class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
-                  <span>Link to GitHub</span>
-                  <input v-model="linkToGitHub" type="checkbox" class="accent-primary-500 rounded" />
-                </label>
-              </div>
-
-              <div v-if="linkToGitHub" class="space-y-3">
-                <div v-if="connectionOptions.length === 0" class="p-3 bg-amber-900/20 border border-amber-800/50 rounded-lg">
-                  <p class="text-xs text-amber-300">No VCS connections configured. Ask an admin to set one up in Admin → VCS Connections.</p>
-                </div>
-                <template v-else>
-                  <div>
-                    <label class="block text-xs text-neutral-400 mb-1">VCS Connection <span class="text-red-400">*</span></label>
-                    <USelect
-                      v-model="selectedConnectionId"
-                      :items="connectionOptions"
-                      value-key="value"
-                      label-key="label"
-                      placeholder="Select a connection..."
-                      size="sm"
-                    />
-                  </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-xs text-neutral-400 mb-1">Owner <span class="text-red-400">*</span></label>
-                      <UInput v-model="repoOwner" placeholder="acme" size="sm" />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-neutral-400 mb-1">Repository <span class="text-red-400">*</span></label>
-                      <UInput v-model="repoName" placeholder="terraform-vpc" size="sm" />
-                    </div>
-                  </div>
-                </template>
-              </div>
-              <p v-else class="text-xs text-neutral-500">Enable to auto-publish versions on Git tag push.</p>
-            </div>
-
-            <!-- Actions -->
-            <div class="flex justify-end gap-2 border-t border-neutral-800 pt-4">
-              <UButton label="Cancel" color="neutral" variant="ghost" size="sm" @click="isAddModuleOpen = false" />
-              <UButton
-                :label="linkToGitHub ? 'Create & Link' : 'Create Module'"
-                color="primary"
-                size="sm"
-                :loading="isSubmitting"
-                :disabled="!canSubmit"
-                @click="handleAddModule"
-              />
-            </div>
-          </div>
-        </div>
-      </template>
-    </UModal>
+    <PublishModuleModal
+      v-model:open="publishModalOpen"
+      :allow-manual-upload="canUploadModule"
+      :allow-vcs-link="canManageVcs"
+      @published="refreshModules"
+      @linked="refreshModules"
+    />
   </div>
 </template>
