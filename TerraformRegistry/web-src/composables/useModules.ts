@@ -23,6 +23,20 @@ export interface ModulesResponse {
   };
 }
 
+export interface UploadModuleInput {
+  namespace: string;
+  name: string;
+  provider: string;
+  version: string;
+  moduleFile: File;
+  description?: string;
+  replace?: boolean;
+}
+
+export interface UploadModuleResponse {
+  filename: string;
+}
+
 export function useModules() {
   const { getAuthHeaders } = useAuth();
 
@@ -151,6 +165,38 @@ export function useModules() {
     }
   };
 
+  const uploadModule = async ({
+    namespace,
+    name,
+    provider,
+    version,
+    moduleFile,
+    description,
+    replace = false,
+  }: UploadModuleInput): Promise<UploadModuleResponse> => {
+    const formData = new FormData()
+    formData.append('moduleFile', moduleFile)
+
+    if (description?.trim()) {
+      formData.append('description', description.trim())
+    }
+
+    if (replace) {
+      formData.append('replace', 'true')
+    }
+
+    try {
+      return await $fetch<UploadModuleResponse>(`/v1/modules/${namespace}/${name}/${provider}/${version}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      })
+    } catch (err) {
+      console.error('Error uploading module:', err)
+      throw err
+    }
+  }
+
   return {
     deleteModuleVersion,
     restoreModuleVersion,
@@ -159,5 +205,6 @@ export function useModules() {
     listModules,
     getModuleVersions,
     updateModuleDescription,
+    uploadModule,
   };
 }

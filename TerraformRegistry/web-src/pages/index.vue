@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
 import type { Module, ModulesResponse } from "~/composables/useModules";
+import { useModules } from "~/composables/useModules";
 import { useVcsSources } from "~/composables/useVcsSources";
 import { useVcsConnections } from "~/composables/useVcsConnections";
 import type { VcsConnectionSummary } from "~/composables/useVcsConnections";
@@ -12,11 +13,15 @@ definePageMeta({
 const { getAuthHeaders } = useAuth();
 const { hasPermission } = usePermissions();
 const { isSidebarOpen } = useDashboard();
+const { uploadModule } = useModules();
 const { createVcsSource } = useVcsSources();
 const { listConnectionSummaries } = useVcsConnections();
 const { featureCreateModule } = useRuntimeConfig().public;
+const canUploadModules = computed(() => hasPermission("modules.upload"));
 const canManageVcs = computed(() => hasPermission("vcs.manage"));
-const canCreateVcsModule = computed(() => featureCreateModule && canManageVcs.value);
+const canAddModule = computed(() => featureCreateModule && (canUploadModules.value || canManageVcs.value));
+const canCreateVcsModule = computed(() => canAddModule.value && canManageVcs.value);
+const addModuleMode = ref<"upload" | "github">("upload");
 
 const modules = ref<Module[]>([]);
 const isLoading = ref(false);
@@ -34,7 +39,9 @@ const isAddModuleOpen = ref(false);
 const newNamespace = ref("");
 const newName = ref("");
 const newProvider = ref("");
+const newVersion = ref("");
 const newDescription = ref("");
+const selectedModuleFile = ref<File | null>(null);
 const linkToGitHub = ref(false);
 const repoOwner = ref("");
 const repoName = ref("");
@@ -48,16 +55,22 @@ const connectionOptions = computed(() =>
 
 const canSubmit = computed(() => {
   if (!newNamespace.value || !newName.value || !newProvider.value) return false;
-  if (linkToGitHub.value && (!repoOwner.value || !repoName.value || !selectedConnectionId.value)) return false;
-  return true;
+  if (linkToGitHub.value) {
+    return !!repoOwner.value && !!repoName.value && !!selectedConnectionId.value;
+  }
+
+  return !!newVersion.value && !!selectedModuleFile.value;
 });
 
 const resetAddModuleForm = () => {
   newNamespace.value = "";
   newName.value = "";
   newProvider.value = "";
+  newVersion.value = "";
   newDescription.value = "";
-  linkToGitHub.value = false;
+  selectedModuleFile.value = null;
+  addModuleMode.value = canUploadModules.value ? "upload" : "github";
+  linkToGitHub.value = !canUploadModules.value && canManageVcs.value;
   repoOwner.value = "";
   repoName.value = "";
   selectedConnectionId.value = "";
@@ -65,10 +78,15 @@ const resetAddModuleForm = () => {
 };
 
 const openAddModule = () => {
-  if (!canCreateVcsModule.value) return;
+  if (!canAddModule.value) return;
   resetAddModuleForm();
   isAddModuleOpen.value = true;
 };
+
+watch(addModuleMode, (mode) => {
+  linkToGitHub.value = mode === "github";
+  addModuleError.value = null;
+});
 
 // Pre-fill repo owner when a connection with defaultOrg is selected
 watch(selectedConnectionId, (connId) => {
@@ -83,33 +101,52 @@ const handleAddModule = async () => {
   if (!canSubmit.value) return;
   isSubmitting.value = true;
   addModuleError.value = null;
-
-  if (!linkToGitHub.value) {
-    isAddModuleOpen.value = false;
-    resetAddModuleForm();
-    refreshModules();
-    return;
-  }
+  const namespace = newNamespace.value;
+  const name = newName.value;
+  const provider = newProvider.value;
+  const version = newVersion.value;
+  const isGitHubMode = linkToGitHub.value;
 
   try {
-    await createVcsSource({
-      namespace: newNamespace.value,
-      name: newName.value,
-      provider: newProvider.value,
-      repoOwner: repoOwner.value,
-      repoName: repoName.value,
-      connectionId: selectedConnectionId.value,
-    });
+    if (isGitHubMode) {
+      await createVcsSource({
+        namespace,
+        name,
+        provider,
+        repoOwner: repoOwner.value,
+        repoName: repoName.value,
+        connectionId: selectedConnectionId.value,
+      });
+    } else {
+      await uploadModule({
+        namespace,
+        name,
+        provider,
+        version,
+        description: newDescription.value,
+        moduleFile: selectedModuleFile.value!,
+      });
+    }
 
     isAddModuleOpen.value = false;
     resetAddModuleForm();
-    refreshModules();
+    if (isGitHubMode) {
+      refreshModules();
+    } else {
+      await navigateTo(`/modules/${namespace}/${name}/${provider}`);
+    }
   } catch (e: any) {
     const msg = e?.data?.message || e?.data?.error || e?.message || "Failed to create module";
     addModuleError.value = msg;
   } finally {
     isSubmitting.value = false;
   }
+};
+
+const onModuleFileSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  selectedModuleFile.value = target.files?.[0] ?? null;
+  addModuleError.value = null;
 };
 
 const filteredModules = computed(() => {
@@ -186,7 +223,7 @@ onMounted(async () => {
     }
   }
   // Auto-open Add Module modal if ?addModule=1 query param is present
-  if (canCreateVcsModule.value && route.query.addModule === '1') {
+  if (canAddModule.value && route.query.addModule === '1') {
     openAddModule();
   }
 });
@@ -233,7 +270,7 @@ onMounted(async () => {
           size="sm"
         />
         <UButton
-          v-if="canCreateVcsModule"
+          v-if="canAddModule"
           label="Add Module"
           icon="i-lucide-plus"
           color="primary"
@@ -372,7 +409,7 @@ onMounted(async () => {
       </div>
     </div>
     <!-- Add Module Modal -->
-    <UModal v-if="canCreateVcsModule" v-model:open="isAddModuleOpen">
+    <UModal v-if="canAddModule" v-model:open="isAddModuleOpen">
       <template #content>
         <div class="p-6 max-h-[80vh] overflow-y-auto">
           <!-- Header -->
@@ -421,20 +458,61 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- GitHub Integration -->
-            <div class="border-t border-neutral-800 pt-4">
-              <div class="flex items-center justify-between mb-3">
+            <div class="border-t border-neutral-800 pt-4 space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide">Publish Method</h4>
+                <div class="flex gap-2">
+                  <UButton
+                    v-if="canUploadModules"
+                    label="Upload Zip"
+                    size="xs"
+                    :color="addModuleMode === 'upload' ? 'primary' : 'neutral'"
+                    :variant="addModuleMode === 'upload' ? 'solid' : 'soft'"
+                    @click="addModuleMode = 'upload'"
+                  />
+                  <UButton
+                    v-if="canManageVcs"
+                    label="Link GitHub"
+                    size="xs"
+                    icon="i-lucide-github"
+                    :color="addModuleMode === 'github' ? 'primary' : 'neutral'"
+                    :variant="addModuleMode === 'github' ? 'solid' : 'soft'"
+                    @click="addModuleMode = 'github'"
+                  />
+                </div>
+              </div>
+
+              <div v-if="!linkToGitHub" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs text-neutral-400 mb-1">Version <span class="text-red-400">*</span></label>
+                    <UInput v-model="newVersion" placeholder="1.0.0" size="sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-neutral-400 mb-1">Module Archive <span class="text-red-400">*</span></label>
+                    <input
+                      type="file"
+                      accept=".zip,application/zip"
+                      class="block w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 file:mr-3 file:rounded-md file:border-0 file:bg-primary-500/20 file:px-3 file:py-1.5 file:text-primary-200"
+                      @change="onModuleFileSelected"
+                    />
+                  </div>
+                </div>
+                <div class="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 text-xs text-neutral-400">
+                  Upload a `.zip` archive containing your Terraform module. The archive must be readable and include at least one `.tf` file.
+                </div>
+                <p v-if="selectedModuleFile" class="text-xs text-neutral-500">
+                  Selected file: <span class="text-neutral-300">{{ selectedModuleFile.name }}</span>
+                </p>
+              </div>
+
+              <!-- GitHub Integration -->
+              <div v-else class="space-y-3">
                 <h4 class="text-xs font-semibold text-neutral-400 uppercase tracking-wide flex items-center gap-1.5">
                   <UIcon name="i-lucide-github" />
                   GitHub Integration
                 </h4>
-                <label class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer">
-                  <span>Link to GitHub</span>
-                  <input v-model="linkToGitHub" type="checkbox" class="accent-primary-500 rounded" />
-                </label>
-              </div>
-
-              <div v-if="linkToGitHub" class="space-y-3">
+                <p class="text-xs text-neutral-500">Link a repository to auto-publish versions on Git tag push.</p>
                 <div v-if="connectionOptions.length === 0" class="p-3 bg-amber-900/20 border border-amber-800/50 rounded-lg">
                   <p class="text-xs text-amber-300">No VCS connections configured. Ask an admin to set one up in Admin → VCS Connections.</p>
                 </div>
@@ -462,14 +540,13 @@ onMounted(async () => {
                   </div>
                 </template>
               </div>
-              <p v-else class="text-xs text-neutral-500">Enable to auto-publish versions on Git tag push.</p>
             </div>
 
             <!-- Actions -->
             <div class="flex justify-end gap-2 border-t border-neutral-800 pt-4">
               <UButton label="Cancel" color="neutral" variant="ghost" size="sm" @click="isAddModuleOpen = false" />
               <UButton
-                :label="linkToGitHub ? 'Create & Link' : 'Create Module'"
+                :label="linkToGitHub ? 'Create & Link' : 'Upload Module'"
                 color="primary"
                 size="sm"
                 :loading="isSubmitting"
