@@ -194,7 +194,7 @@ public class AzureBlobModuleService : ModuleService
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, ModuleMetadata metadata, bool replace)
     {
         // Create a consistent blob path format for easy retrieval
         var blobPath = $"{@namespace}/{name}-{provider}-{version}.zip";
@@ -248,7 +248,8 @@ public class AzureBlobModuleService : ModuleService
                 Description = description,
                 FilePath = blobPath, // This is the crucial link between database and blob storage
                 PublishedAt = DateTime.UtcNow,
-                Dependencies = new List<string>() // Simplified, no dependencies
+                Dependencies = new List<string>(), // Simplified, no dependencies
+                Metadata = metadata
             };
 
             if (replace)
@@ -343,7 +344,8 @@ public class AzureBlobModuleService : ModuleService
                                 Description = description,
                                 FilePath = blobItem.Name, // Store reference to blob location
                                 PublishedAt = properties.Value.LastModified.DateTime,
-                                Dependencies = new List<string>() // Simplified, no dependencies
+                                Dependencies = new List<string>(), // Simplified, no dependencies
+                                Metadata = null
                             };
                     }
 
@@ -379,7 +381,8 @@ public class AzureBlobModuleService : ModuleService
                             Description = $"Module {name} for {provider} (auto-recovered)",
                             FilePath = blobItem.Name, // Store reference to blob location
                             PublishedAt = properties.Value.LastModified.DateTime,
-                            Dependencies = new List<string>() // Simplified, no dependencies
+                            Dependencies = new List<string>(), // Simplified, no dependencies
+                            Metadata = null
                         };
                     }
 

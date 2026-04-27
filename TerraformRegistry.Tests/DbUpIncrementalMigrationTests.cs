@@ -239,7 +239,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
-        MigrateUpTo(10, _connectionString);
+        MigrateUpTo(11, _connectionString);
 
         using var cmd = _connection.CreateCommand();
 
@@ -315,6 +315,15 @@ public class DbUpIncrementalMigrationTests : IDisposable
         {
             Assert.True(count >= 1, $"Expected at least 1 row in {table}, got {count}");
         }
+    }
+
+    [Fact]
+    public void Migration011_AddsModuleMetadataColumn()
+    {
+        MigrateUpTo(11, _connectionString);
+
+        var columns = GetColumns(_connection, "modules");
+        Assert.Contains("metadata", columns);
     }
 
     private static void MigrateUpTo(int scriptNumber, string connectionString)

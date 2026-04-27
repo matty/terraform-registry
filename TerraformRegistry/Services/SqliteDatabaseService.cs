@@ -141,7 +141,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
 
         var sql = @"
-            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
@@ -157,6 +157,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
         var publishedAtIso = reader.GetString(6);
         var versions = await GetVersionsInternal(connection, @namespace, name, provider);
+        var metadata = DeserializeMetadata(reader, 8);
+        var effectiveMetadata = NormalizeMetadata(metadata, provider, reader.IsDBNull(4) ? string.Empty : reader.GetString(4));
 
         return new Module
         {
@@ -171,9 +173,9 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             PublishedAt = publishedAtIso,
             DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
             Versions = versions,
-            Root = "main",
-            Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string> { { provider, "*" } }
+            Root = effectiveMetadata.Root ?? "main",
+            Submodules = effectiveMetadata.Submodules ?? [],
+            Providers = effectiveMetadata.Providers ?? new Dictionary<string, string> { { provider, "*" } }
         };
     }
 
@@ -202,7 +204,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
 
         var sql = @"
-            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
@@ -220,6 +222,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         var deps = string.IsNullOrWhiteSpace(depsJson)
             ? new List<string>()
             : (JsonSerializer.Deserialize<List<string>>(depsJson) ?? new List<string>());
+        var metadata = DeserializeMetadata(reader, 8);
 
         return new ModuleStorage
         {
@@ -230,7 +233,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = DateTime.Parse(reader.GetString(6)),
-            Dependencies = deps
+            Dependencies = deps,
+            Metadata = metadata
         };
     }
 
@@ -238,9 +242,9 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
     {
         var sql = @"
             INSERT INTO modules (
-                namespace, name, provider, version, description, storage_path, published_at, dependencies
+                namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             ) VALUES (
-                $ns, $name, $prov, $ver, $desc, $path, $published, $deps
+                $ns, $name, $prov, $ver, $desc, $path, $published, $deps, $metadata
             )";
 
         try
@@ -259,6 +263,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             cmd.Parameters.AddWithValue("$published", module.PublishedAt.ToString("o"));
             cmd.Parameters.AddWithValue("$deps",
                 module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies));
+            cmd.Parameters.AddWithValue("$metadata", SerializeMetadata(module.Metadata));
 
             var rows = await cmd.ExecuteNonQueryAsync();
             return rows > 0;
@@ -430,7 +435,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
 
         await using var cmd = connection.CreateCommand();
@@ -447,6 +452,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         var deps = string.IsNullOrWhiteSpace(depsJson)
             ? new List<string>()
             : (JsonSerializer.Deserialize<List<string>>(depsJson) ?? new List<string>());
+        var metadata = DeserializeMetadata(reader, 8);
 
         return new ModuleStorage
         {
@@ -457,7 +463,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = DateTime.Parse(reader.GetString(6)),
-            Dependencies = deps
+            Dependencies = deps,
+            Metadata = metadata
         };
     }
 
@@ -500,6 +507,28 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync()) versions.Add(r.GetString(0));
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
+    }
+
+    private static string SerializeMetadata(ModuleMetadata? metadata)
+    {
+        return metadata == null ? "{}" : JsonSerializer.Serialize(metadata);
+    }
+
+    private static ModuleMetadata? DeserializeMetadata(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+
+        var json = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json) || json == "{}")
+            return null;
+
+        return JsonSerializer.Deserialize<ModuleMetadata>(json);
+    }
+
+    private static ModuleMetadata NormalizeMetadata(ModuleMetadata? metadata, string provider, string description)
+    {
+        return TerraformRegistry.API.Utilities.ModulePackageMetadataExtractor.Normalize(metadata, provider, description);
     }
 
     private sealed class ModuleRow

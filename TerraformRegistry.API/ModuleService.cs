@@ -48,16 +48,20 @@ public abstract class ModuleService : IModuleService
 
         await using var validatedArchive =
             await ModuleArchiveValidator.ValidateAndNormalizeZipAsync(packageFileName, moduleContent);
+        var extractedMetadata = await ModulePackageMetadataExtractor.ExtractAsync(validatedArchive);
+        var normalizedMetadata = ModulePackageMetadataExtractor.Normalize(extractedMetadata, provider, description);
+        var effectiveDescription = normalizedMetadata.Description ?? string.Empty;
 
         // Delegate to the implementation-specific upload method
-        return await UploadModuleAsyncImpl(@namespace, name, provider, version, validatedArchive, description, replace);
+        return await UploadModuleAsyncImpl(@namespace, name, provider, version, validatedArchive, effectiveDescription,
+            normalizedMetadata, replace);
     }
 
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace);
+        Stream moduleContent, string description, ModuleMetadata metadata, bool replace);
 
     /// <summary>
     ///     Soft deletes a module version

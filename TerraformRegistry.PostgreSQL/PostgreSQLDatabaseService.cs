@@ -154,7 +154,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies,
+                metadata
             FROM 
                 modules m
             WHERE 
@@ -181,6 +182,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
         var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
         var publishedAt = reader.GetDateTime(6);
+        var metadata = DeserializeMetadata(reader, 8);
+        var effectiveMetadata = NormalizeMetadata(metadata, provider, description);
         await reader.DisposeAsync();
 
         var versions = await GetVersionsInternalAsync(connection, @namespace, name, provider);
@@ -198,12 +201,9 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             PublishedAt = publishedAt.ToString("o"),
             DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
             Versions = versions,
-            Root = "main",
-            Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string>
-            {
-                { provider, "*" }
-            }
+            Root = effectiveMetadata.Root ?? "main",
+            Submodules = effectiveMetadata.Submodules ?? [],
+            Providers = effectiveMetadata.Providers ?? new Dictionary<string, string> { { provider, "*" } }
         };
     }
 
@@ -244,7 +244,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies,
+                metadata
             FROM
                 modules
             WHERE
@@ -269,6 +270,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
+        var metadata = DeserializeMetadata(reader, 8);
 
         return new ModuleStorage
         {
@@ -279,7 +281,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = reader.GetDateTime(6),
-            Dependencies = dependencies
+            Dependencies = dependencies,
+            Metadata = metadata
         };
     }
 
@@ -297,7 +300,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies,
+                metadata
             )
             VALUES (
                 @namespace,
@@ -307,7 +311,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 @description,
                 @storagePath,
                 @publishedAt,
-                @dependencies
+                @dependencies,
+                @metadata
             )";
 
         try
@@ -325,6 +330,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
                     module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@metadata", SerializeMetadata(module.Metadata)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
             var rows = await command.ExecuteNonQueryAsync();
@@ -512,7 +519,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name,
         string provider, string version)
     {
-        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version";
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -529,6 +536,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
+        var metadata = DeserializeMetadata(reader, 8);
 
         return new ModuleStorage
         {
@@ -539,8 +547,31 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = reader.GetDateTime(6),
-            Dependencies = dependencies
+            Dependencies = dependencies,
+            Metadata = metadata
         };
+    }
+
+    private static string SerializeMetadata(ModuleMetadata? metadata)
+    {
+        return metadata == null ? "{}" : JsonSerializer.Serialize(metadata);
+    }
+
+    private static ModuleMetadata? DeserializeMetadata(NpgsqlDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+
+        var json = reader.GetString(ordinal);
+        if (string.IsNullOrWhiteSpace(json) || json == "{}")
+            return null;
+
+        return JsonSerializer.Deserialize<ModuleMetadata>(json);
+    }
+
+    private static ModuleMetadata NormalizeMetadata(ModuleMetadata? metadata, string provider, string description)
+    {
+        return TerraformRegistry.API.Utilities.ModulePackageMetadataExtractor.Normalize(metadata, provider, description);
     }
 
     public async Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,

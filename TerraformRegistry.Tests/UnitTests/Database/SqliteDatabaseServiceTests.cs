@@ -72,7 +72,8 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
             Description = desc ?? string.Empty,
             FilePath = filePath ?? string.Empty,
             PublishedAt = publishedAt ?? DateTime.UtcNow,
-            Dependencies = deps.ToList()
+            Dependencies = deps.ToList(),
+            Metadata = null
         };
     }
 
@@ -188,6 +189,45 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         Assert.NotNull(storage);
         Assert.Equal(["a", "b"], storage!.Dependencies);
         Assert.Equal(published, storage.PublishedAt);
+    }
+
+    [Fact]
+    public async Task GetModule_UsesStoredMetadataForRootProvidersAndSubmodules()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "5.0.0", desc: "metadata-backed module");
+        mod.Metadata = new ModuleMetadata
+        {
+            Description = "metadata-backed module",
+            Root = "modules/network",
+            Providers = new Dictionary<string, string>
+            {
+                ["aws"] = "~> 5.0",
+                ["random"] = ">= 3.0"
+            },
+            Submodules =
+            [
+                new ModuleSubmodule
+                {
+                    Path = "modules/network",
+                    Providers = new Dictionary<string, string> { ["aws"] = "~> 5.0" }
+                }
+            ]
+        };
+
+        await svc.AddModuleAsync(mod);
+
+        var fetched = await svc.GetModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+
+        Assert.NotNull(fetched);
+        Assert.Equal("modules/network", fetched!.Root);
+        Assert.Equal("~> 5.0", fetched.Providers["aws"]);
+        Assert.Equal(">= 3.0", fetched.Providers["random"]);
+        var submodule = Assert.Single(fetched.Submodules);
+        Assert.Equal("modules/network", submodule.Path);
+        Assert.Equal("~> 5.0", submodule.Providers["aws"]);
     }
 
     [Fact]

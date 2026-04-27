@@ -124,34 +124,21 @@ public class LocalModuleService : ModuleService
             return;
         }
 
-        // Try to extract the description from the zip file
+        // Try to extract metadata from the zip file
+        ModuleMetadata? metadata = null;
         var description = "";
         try
         {
-            using (var archive = ZipFile.OpenRead(zipFilePath))
-            {
-                // Look for module metadata in various common files
-                var metadataFile = archive.Entries.FirstOrDefault(e =>
-                    e.Name.Equals("module.json", StringComparison.OrdinalIgnoreCase) ||
-                    e.Name.Equals("metadata.json", StringComparison.OrdinalIgnoreCase));
-
-                if (metadataFile != null)
-                {
-                    using var stream = metadataFile.Open();
-                    using var reader = new StreamReader(stream);
-                    var content = reader.ReadToEnd();
-
-                    var metadata = JsonSerializer.Deserialize<ModuleMetadata>(content);
-
-                    if (metadata != null && !string.IsNullOrEmpty(metadata.Description))
-                        description = metadata.Description;
-                }
-            }
+            using var archiveStream = File.OpenRead(zipFilePath);
+            metadata = ModulePackageMetadataExtractor.ExtractAsync(archiveStream).GetAwaiter().GetResult();
+            metadata = ModulePackageMetadataExtractor.Normalize(metadata, provider, description);
+            description = metadata.Description ?? string.Empty;
         }
         catch
         {
             // If we can't extract the description, use a default
             description = $"Module {name} for {provider}";
+            metadata = ModulePackageMetadataExtractor.Normalize(null, provider, description);
         }
 
         // Create module storage object
@@ -164,7 +151,8 @@ public class LocalModuleService : ModuleService
             Description = description,
             FilePath = zipFilePath,
             PublishedAt = File.GetCreationTimeUtc(zipFilePath),
-            Dependencies = []
+            Dependencies = [],
+            Metadata = metadata
         };
 
         _databaseService.AddModuleAsync(module).Wait();
@@ -241,7 +229,7 @@ public class LocalModuleService : ModuleService
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, ModuleMetadata metadata, bool replace)
     {
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
         if (coordinateError != null)
@@ -271,7 +259,8 @@ public class LocalModuleService : ModuleService
                 Description = description,
                 FilePath = finalFilePath,
                 PublishedAt = DateTime.UtcNow,
-                Dependencies = []
+                Dependencies = [],
+                Metadata = metadata
             };
 
             if (replace)
