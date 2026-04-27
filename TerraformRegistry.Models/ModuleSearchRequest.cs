@@ -13,6 +13,8 @@ public class ModuleSearchRequest
 
     [JsonPropertyName("provider")] public string? Provider { get; set; }
 
+    [JsonPropertyName("required_provider")] public string? RequiredProvider { get; set; }
+
     [JsonPropertyName("offset")] public int Offset { get; set; } = 0;
 
     [JsonPropertyName("limit")] public int Limit { get; set; } = 10;

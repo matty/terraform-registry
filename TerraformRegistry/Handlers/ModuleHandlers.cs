@@ -53,20 +53,22 @@ public static class ModuleHandlers
         string? q = null,
         string? @namespace = null,
         string? provider = null,
+        string? required_provider = null,
         int offset = 0,
         int limit = 10)
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
 
-        _logger.LogInformation("Listing modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
-            q, @namespace, provider);
+        _logger.LogInformation("Listing modules with query: {Query}, namespace: {Namespace}, provider: {Provider}, required provider: {RequiredProvider}",
+            q, @namespace, provider, required_provider);
 
         var request = new ModuleSearchRequest
         {
             Q = q,
             Namespace = @namespace,
             Provider = provider,
+            RequiredProvider = required_provider,
             Offset = offset,
             Limit = limit
         };

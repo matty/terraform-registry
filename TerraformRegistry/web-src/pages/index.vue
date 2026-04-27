@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useDashboard } from "~/composables/useDashboard";
-import type { Module, ModulesResponse } from "~/composables/useModules";
+import type { Module } from "~/composables/useModules";
 import { useModules } from "~/composables/useModules";
 import { useVcsSources } from "~/composables/useVcsSources";
 import { useVcsConnections } from "~/composables/useVcsConnections";
@@ -10,10 +10,9 @@ definePageMeta({
   middleware: "auth",
 });
 
-const { getAuthHeaders } = useAuth();
 const { hasPermission } = usePermissions();
 const { isSidebarOpen } = useDashboard();
-const { uploadModule } = useModules();
+const { listModules, uploadModule } = useModules();
 const { createVcsSource } = useVcsSources();
 const { listConnectionSummaries } = useVcsConnections();
 const { featureCreateModule } = useRuntimeConfig().public;
@@ -28,8 +27,12 @@ const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref("");
 const searchQuery = ref("");
+const requiredProviderFilter = ref("");
 const currentOffset = ref(0);
 const limit = 10;
+const totalCount = ref(0);
+const hasMore = ref(false);
+let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
 // VCS connection summaries for the Add Module dropdown
 const connectionSummaries = ref<VcsConnectionSummary[]>([]);
@@ -149,19 +152,6 @@ const onModuleFileSelected = (event: Event) => {
   addModuleError.value = null;
 };
 
-const filteredModules = computed(() => {
-  if (!searchQuery.value) return modules.value;
-
-  const query = searchQuery.value.toLowerCase();
-  return modules.value.filter(
-    (module) =>
-      module.name.toLowerCase().includes(query) ||
-      module.namespace.toLowerCase().includes(query) ||
-      module.provider.toLowerCase().includes(query) ||
-      module.description.toLowerCase().includes(query)
-  );
-});
-
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString("en-US", {
     year: "numeric",
@@ -179,12 +169,12 @@ const fetchModules = async (offset = 0, append = false) => {
     }
     error.value = "";
 
-    const response = await $fetch<ModulesResponse>(
-      `/v1/modules?offset=${offset}&limit=${limit}`,
-      {
-        headers: getAuthHeaders(),
-      }
-    );
+    const response = await listModules({
+      q: searchQuery.value,
+      requiredProvider: requiredProviderFilter.value,
+      offset,
+      limit,
+    });
 
     if (append) {
       modules.value.push(...response.modules);
@@ -192,7 +182,9 @@ const fetchModules = async (offset = 0, append = false) => {
       modules.value = response.modules;
     }
 
-    currentOffset.value = offset + limit;
+    totalCount.value = Number.parseInt(response.meta?.total_count ?? String(modules.value.length), 10);
+    hasMore.value = response.meta?.has_more === "true";
+    currentOffset.value = Number.parseInt(response.meta?.next_offset ?? String(offset + response.modules.length), 10);
   } catch (err: any) {
     error.value = err.message || "Failed to fetch modules";
     console.error("Error fetching modules:", err);
@@ -204,12 +196,31 @@ const fetchModules = async (offset = 0, append = false) => {
 
 const refreshModules = () => {
   currentOffset.value = 0;
+  totalCount.value = 0;
+  hasMore.value = false;
   fetchModules(0, false);
 };
 
 const loadMoreModules = () => {
+  if (!hasMore.value) return;
   fetchModules(currentOffset.value, true);
 };
+
+watch([searchQuery, requiredProviderFilter], () => {
+  if (searchDebounce) {
+    clearTimeout(searchDebounce);
+  }
+
+  searchDebounce = setTimeout(() => {
+    refreshModules();
+  }, 250);
+});
+
+onBeforeUnmount(() => {
+  if (searchDebounce) {
+    clearTimeout(searchDebounce);
+  }
+});
 
 // Load modules on component mount
 const route = useRoute();
@@ -261,6 +272,13 @@ onMounted(async () => {
           class="w-64"
           size="sm"
         />
+        <UInput
+          v-model="requiredProviderFilter"
+          placeholder="Required provider..."
+          icon="i-lucide-filter"
+          class="w-48"
+          size="sm"
+        />
         <UButton
           @click="refreshModules"
           :loading="isLoading"
@@ -308,7 +326,7 @@ onMounted(async () => {
 
         <!-- Empty State -->
         <div
-          v-else-if="!filteredModules.length && !isLoading"
+          v-else-if="!modules.length && !isLoading"
           class="text-center py-20 px-6"
         >
           <div
@@ -321,7 +339,7 @@ onMounted(async () => {
           </h3>
           <p class="text-neutral-400 max-w-sm mx-auto">
             {{
-              searchQuery
+              searchQuery || requiredProviderFilter
                 ? "Try adjusting your search terms"
                 : "Get started by uploading your first module"
             }}
@@ -332,7 +350,7 @@ onMounted(async () => {
         <div v-else>
           <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
-              v-for="module in filteredModules"
+              v-for="module in modules"
               :key="module.id"
               class="group relative overflow-hidden rounded-2xl bg-neutral-900/50 border border-neutral-800 p-5 hover:border-primary-500/30 hover:ring-1 hover:ring-primary-500/10 hover:bg-neutral-800/50 transition-all cursor-pointer"
               @click="navigateTo(`/modules/${module.namespace}/${module.name}/${module.provider}`)"
@@ -394,9 +412,10 @@ onMounted(async () => {
             class="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-neutral-800"
           >
             <p class="text-sm text-neutral-500">
-              Showing {{ filteredModules.length }} of {{ modules.length }} modules
+              Showing {{ modules.length }} of {{ totalCount }} modules
             </p>
             <UButton
+              v-if="hasMore"
               @click="loadMoreModules"
               :loading="isLoadingMore"
               variant="soft"

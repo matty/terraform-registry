@@ -145,6 +145,70 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListModules_FiltersByRequiredProvider_AndReturnsAccuratePagingMetadata()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var awsModule = MakeModule(name: "network", provider: "aws", version: "1.0.0", desc: "AWS network");
+        awsModule.Metadata = new ModuleMetadata
+        {
+            Providers = new Dictionary<string, string>
+            {
+                ["aws"] = "~> 5.0",
+                ["random"] = ">= 3.0"
+            }
+        };
+
+        var azureModule = MakeModule(name: "identity", provider: "azurerm", version: "1.0.0", desc: "Azure identity");
+        azureModule.Metadata = new ModuleMetadata
+        {
+            Providers = new Dictionary<string, string>
+            {
+                ["azurerm"] = "~> 4.0"
+            }
+        };
+
+        var hybridModule = MakeModule(name: "platform", provider: "aws", version: "2.0.0", desc: "Hybrid platform");
+        hybridModule.Metadata = new ModuleMetadata
+        {
+            Providers = new Dictionary<string, string>
+            {
+                ["aws"] = "~> 5.0",
+                ["kubernetes"] = ">= 2.0"
+            }
+        };
+
+        await svc.AddModuleAsync(awsModule);
+        await svc.AddModuleAsync(azureModule);
+        await svc.AddModuleAsync(hybridModule);
+
+        var firstPage = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            RequiredProvider = "aws",
+            Offset = 0,
+            Limit = 1
+        });
+
+        Assert.Single(firstPage.Modules);
+        Assert.Equal("2", firstPage.Meta["total_count"]);
+        Assert.Equal("true", firstPage.Meta["has_more"]);
+        Assert.Equal("1", firstPage.Meta["next_offset"]);
+
+        var secondPage = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            RequiredProvider = "aws",
+            Offset = 1,
+            Limit = 1
+        });
+
+        Assert.Single(secondPage.Modules);
+        Assert.Equal("2", secondPage.Meta["total_count"]);
+        Assert.Equal("false", secondPage.Meta["has_more"]);
+        Assert.Equal("2", secondPage.Meta["next_offset"]);
+    }
+
+    [Fact]
     public async Task ListModules_UsesSemVerPrecedenceForLatestVersion()
     {
         var svc = CreateService(_connectionString);

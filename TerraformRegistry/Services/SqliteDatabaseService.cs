@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
@@ -42,7 +43,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
 
         var sql = @"
-            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at
+            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at, m.metadata
             FROM modules m
             WHERE m.deleted_at IS NULL";
 
@@ -77,6 +78,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             var version = reader.GetString(3);
             var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
             var publishedAtIso = reader.GetString(5);
+            var metadata = DeserializeMetadata(reader, 6);
 
             rows.Add(new ModuleRow
             {
@@ -85,11 +87,12 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
                 Version = version,
                 Provider = provider,
                 Description = description,
-                PublishedAt = publishedAtIso
+                PublishedAt = publishedAtIso,
+                Metadata = metadata
             });
         }
 
-        var modules = rows
+        var filteredRows = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
             {
@@ -104,9 +107,15 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             .Where(row => string.IsNullOrWhiteSpace(request.Q)
                 || row.Name.Contains(request.Q, StringComparison.OrdinalIgnoreCase)
                 || row.Description.Contains(request.Q, StringComparison.OrdinalIgnoreCase))
+            .Where(row => MatchesRequiredProvider(row, request.RequiredProvider))
             .OrderBy(row => row.Namespace, StringComparer.Ordinal)
             .ThenBy(row => row.Name, StringComparer.Ordinal)
             .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .ToList();
+
+        var totalCount = filteredRows.Count;
+
+        var modules = filteredRows
             .Skip(request.Offset)
             .Take(request.Limit)
             .Select(row => new ModuleListItem
@@ -127,11 +136,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         return new ModuleList
         {
             Modules = modules,
-            Meta = new Dictionary<string, string>
-            {
-                { "limit", request.Limit.ToString() },
-                { "current_offset", request.Offset.ToString() }
-            }
+            Meta = BuildModuleListMeta(request.Offset, request.Limit, totalCount, modules.Count)
         };
     }
 
@@ -531,6 +536,30 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         return TerraformRegistry.API.Utilities.ModulePackageMetadataExtractor.Normalize(metadata, provider, description);
     }
 
+    private static bool MatchesRequiredProvider(ModuleRow row, string? requiredProvider)
+    {
+        if (string.IsNullOrWhiteSpace(requiredProvider))
+            return true;
+
+        var metadata = NormalizeMetadata(row.Metadata, row.Provider, row.Description);
+        return metadata.Providers?.ContainsKey(requiredProvider) == true;
+    }
+
+    private static Dictionary<string, string> BuildModuleListMeta(int offset, int limit, int totalCount, int currentCount)
+    {
+        var nextOffset = offset + currentCount;
+        var hasMore = nextOffset < totalCount;
+
+        return new Dictionary<string, string>
+        {
+            { "limit", limit.ToString(CultureInfo.InvariantCulture) },
+            { "current_offset", offset.ToString(CultureInfo.InvariantCulture) },
+            { "total_count", totalCount.ToString(CultureInfo.InvariantCulture) },
+            { "has_more", hasMore ? "true" : "false" },
+            { "next_offset", nextOffset.ToString(CultureInfo.InvariantCulture) }
+        };
+    }
+
     private sealed class ModuleRow
     {
         public required string Namespace { get; init; }
@@ -540,6 +569,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         public required string Description { get; init; }
         public required string PublishedAt { get; init; }
         public List<string> Versions { get; set; } = [];
+        public ModuleMetadata? Metadata { get; init; }
     }
 
     // User & API Key methods

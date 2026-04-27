@@ -20,7 +20,19 @@ export interface ModulesResponse {
   meta?: {
     limit: string;
     current_offset: string;
+    total_count?: string;
+    has_more?: string;
+    next_offset?: string;
   };
+}
+
+export interface ListModulesInput {
+  q?: string;
+  namespace?: string;
+  provider?: string;
+  requiredProvider?: string;
+  offset?: number;
+  limit?: number;
 }
 
 export interface UploadModuleInput {
@@ -111,13 +123,38 @@ export function useModules() {
     }
   };
 
-  const listModules = async (
+  const listModules = async ({
+    q,
+    namespace,
+    provider,
+    requiredProvider,
     offset = 0,
-    limit = 10
-  ): Promise<ModulesResponse> => {
+    limit = 10,
+  }: ListModulesInput = {}): Promise<ModulesResponse> => {
     try {
+      const params = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+      })
+
+      if (q?.trim()) {
+        params.set('q', q.trim())
+      }
+
+      if (namespace?.trim()) {
+        params.set('namespace', namespace.trim())
+      }
+
+      if (provider?.trim()) {
+        params.set('provider', provider.trim())
+      }
+
+      if (requiredProvider?.trim()) {
+        params.set('required_provider', requiredProvider.trim())
+      }
+
       return await $fetch<ModulesResponse>(
-        `/v1/modules?offset=${offset}&limit=${limit}`,
+        `/v1/modules?${params.toString()}`,
         {
           headers: getAuthHeaders(),
         }

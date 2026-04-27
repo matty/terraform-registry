@@ -526,9 +526,9 @@ app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpCont
     .WithTags("VCS");
 
 app.MapGet("/v1/modules",
-        (IModuleService moduleService, HttpContext context, string? q, string? @namespace, string? provider, int offset = 0,
+        (IModuleService moduleService, HttpContext context, string? q, string? @namespace, string? provider, string? required_provider, int offset = 0,
                 int limit = 10) =>
-            ModuleHandlers.ListModules(moduleService, context, q, @namespace, provider, offset, limit))
+            ModuleHandlers.ListModules(moduleService, context, q, @namespace, provider, required_provider, offset, limit))
     .WithTags("Modules")
     .WithDescription("Lists or searches modules")
     .Produces<ModuleList>();

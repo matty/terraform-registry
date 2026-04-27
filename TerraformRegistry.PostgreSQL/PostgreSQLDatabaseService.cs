@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -45,7 +46,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 m.provider,
                 m.version,
                 m.description,
-                m.published_at
+                m.published_at,
+                m.metadata
             FROM 
                 modules m
             WHERE m.deleted_at IS NULL";
@@ -82,6 +84,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             var version = reader.GetString(3);
             var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
             var publishedAt = reader.GetDateTime(5);
+            var metadata = DeserializeMetadata(reader, 6);
 
             rows.Add(new ModuleRow
             {
@@ -90,11 +93,12 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 Version = version,
                 Provider = provider,
                 Description = description,
-                PublishedAt = publishedAt.ToString("o")
+                PublishedAt = publishedAt.ToString("o"),
+                Metadata = metadata
             });
         }
 
-        var modules = rows
+        var filteredRows = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
             {
@@ -109,9 +113,15 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             .Where(row => string.IsNullOrWhiteSpace(request.Q)
                 || row.Name.Contains(request.Q, StringComparison.OrdinalIgnoreCase)
                 || row.Description.Contains(request.Q, StringComparison.OrdinalIgnoreCase))
+            .Where(row => MatchesRequiredProvider(row, request.RequiredProvider))
             .OrderBy(row => row.Namespace, StringComparer.Ordinal)
             .ThenBy(row => row.Name, StringComparer.Ordinal)
             .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .ToList();
+
+        var totalCount = filteredRows.Count;
+
+        var modules = filteredRows
             .Skip(request.Offset)
             .Take(request.Limit)
             .Select(row => new ModuleListItem
@@ -132,11 +142,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         return new ModuleList
         {
             Modules = modules,
-            Meta = new Dictionary<string, string>
-            {
-                { "limit", request.Limit.ToString() },
-                { "current_offset", request.Offset.ToString() }
-            }
+            Meta = BuildModuleListMeta(request.Offset, request.Limit, totalCount, modules.Count)
         };
     }
 
@@ -574,6 +580,30 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         return TerraformRegistry.API.Utilities.ModulePackageMetadataExtractor.Normalize(metadata, provider, description);
     }
 
+    private static bool MatchesRequiredProvider(ModuleRow row, string? requiredProvider)
+    {
+        if (string.IsNullOrWhiteSpace(requiredProvider))
+            return true;
+
+        var metadata = NormalizeMetadata(row.Metadata, row.Provider, row.Description);
+        return metadata.Providers?.ContainsKey(requiredProvider) == true;
+    }
+
+    private static Dictionary<string, string> BuildModuleListMeta(int offset, int limit, int totalCount, int currentCount)
+    {
+        var nextOffset = offset + currentCount;
+        var hasMore = nextOffset < totalCount;
+
+        return new Dictionary<string, string>
+        {
+            { "limit", limit.ToString(CultureInfo.InvariantCulture) },
+            { "current_offset", offset.ToString(CultureInfo.InvariantCulture) },
+            { "total_count", totalCount.ToString(CultureInfo.InvariantCulture) },
+            { "has_more", hasMore ? "true" : "false" },
+            { "next_offset", nextOffset.ToString(CultureInfo.InvariantCulture) }
+        };
+    }
+
     public async Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
         string description)
     {
@@ -631,6 +661,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         public required string Description { get; init; }
         public required string PublishedAt { get; init; }
         public List<string> Versions { get; set; } = [];
+        public ModuleMetadata? Metadata { get; init; }
     }
 
     // User Methods
