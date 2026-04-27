@@ -5,8 +5,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using Xunit.Abstractions;
 
@@ -225,6 +227,60 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
+    public async Task VcsSource_ByModule_ReturnsLinkedSourceAndSyncState()
+    {
+        var client = await CreateAuthenticatedClientAsync("vcs-module@example.com", "vcs-module-id");
+
+        var connectionId = await CreateTestConnectionAsync();
+
+        var createResponse = await client.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "module-ns",
+            name = "module-name",
+            provider = "aws",
+            repoOwner = "module-owner",
+            repoName = "module-repo",
+            connectionId
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var response = await client.GetAsync("/api/vcs/sources/module/module-ns/module-name/aws");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("never", json.GetProperty("lastSyncStatus").GetString());
+        Assert.Equal("v*", json.GetProperty("tagPattern").GetString());
+    }
+
+    [Fact]
+    public async Task VcsSources_Create_WithSyncExistingTags_ReturnsSyncSummary()
+    {
+        var client = await CreateClientWithFakeGitHubSyncAsync(
+            "vcs-sync-create@example.com",
+            "vcs-sync-create-id",
+            new SyncVcsSourceResult("succeeded", 2, 1, "1.2.0", null));
+        var connectionId = await CreateTestConnectionAsync();
+
+        var response = await client.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "sync-create-ns",
+            name = "sync-create-mod",
+            provider = "aws",
+            repoOwner = "sync-create-owner",
+            repoName = "sync-create-repo",
+            connectionId,
+            syncExistingTags = true
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("sync", out var sync));
+        Assert.Equal("succeeded", sync.GetProperty("status").GetString());
+        Assert.Equal(2, sync.GetProperty("publishedCount").GetInt32());
+    }
+
+    [Fact]
     public async Task GitHubWebhook_InvalidSignature_ReturnsError()
     {
         // Create a VCS connection and source directly via DI so webhook lookup works
@@ -358,5 +414,40 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string providerId)
     {
         return await CreateClientWithPermissionsAsync(email, providerId, [Permissions.VcsManage]);
+    }
+
+    private async Task<HttpClient> CreateClientWithFakeGitHubSyncAsync(string email, string providerId, SyncVcsSourceResult result)
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGitHubVcsService>();
+                services.AddSingleton<IGitHubVcsService>(new FakeGitHubVcsService(result));
+            });
+        });
+
+        using var scope = factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+        var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
+
+        var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
+        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "test-key");
+        var role = await roleService.CreateRoleAsync($"test-role-{Guid.NewGuid():N}", null, [Permissions.VcsManage]);
+        await permissionService.AssignRoleAsync(user.Id, role.Id, null);
+
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
+        return client;
+    }
+
+    private sealed class FakeGitHubVcsService(SyncVcsSourceResult result) : IGitHubVcsService
+    {
+        public Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(string? signatureHeader, string? eventHeader, string body) =>
+            Task.FromResult<(string Status, string? Reason, string? Version)>(("skipped", null, null));
+
+        public Task<SyncVcsSourceResult> SyncSourceAsync(Guid sourceId, string? requestedTag, bool replace, string? actorUserId, CancellationToken cancellationToken) =>
+            Task.FromResult(result);
     }
 }

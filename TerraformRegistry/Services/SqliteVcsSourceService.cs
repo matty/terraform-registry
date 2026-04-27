@@ -20,7 +20,12 @@ public class SqliteVcsSourceService : IVcsSourceService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = $userId ORDER BY created_at DESC";
+        cmd.CommandText = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                   tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                   created_at, updated_at
+                            FROM vcs_sources
+                            WHERE user_id = $userId
+                            ORDER BY created_at DESC";
         cmd.Parameters.AddWithValue("$userId", userId);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -125,7 +130,11 @@ public class SqliteVcsSourceService : IVcsSourceService
 
         // Fetch the updated record
         await using var fetchCmd = connection.CreateCommand();
-        fetchCmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE id = $id";
+        fetchCmd.CommandText = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                        tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                        created_at, updated_at
+                                 FROM vcs_sources
+                                 WHERE id = $id";
         fetchCmd.Parameters.AddWithValue("$id", id.ToString());
 
         await using var reader = await fetchCmd.ExecuteReaderAsync();
@@ -153,13 +162,84 @@ public class SqliteVcsSourceService : IVcsSourceService
         await connection.OpenAsync();
 
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = $repoOwner AND repo_name = $repoName AND is_active = 1 LIMIT 1";
+        cmd.CommandText = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                   tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                   created_at, updated_at
+                            FROM vcs_sources
+                            WHERE repo_owner = $repoOwner AND repo_name = $repoName AND is_active = 1
+                            LIMIT 1";
         cmd.Parameters.AddWithValue("$repoOwner", repoOwner);
         cmd.Parameters.AddWithValue("$repoName", repoName);
 
         await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
         return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> GetAsync(Guid id)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                   tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                   created_at, updated_at
+                            FROM vcs_sources
+                            WHERE id = $id
+                            LIMIT 1";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> GetByModuleAsync(string @namespace, string name, string provider)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                   tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                   created_at, updated_at
+                            FROM vcs_sources
+                            WHERE namespace = $namespace AND name = $name AND provider = $provider AND is_active = 1
+                            LIMIT 1";
+        cmd.Parameters.AddWithValue("$namespace", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$provider", provider);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? error)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"UPDATE vcs_sources
+                            SET last_sync_status = $status,
+                                last_published_version = $lastPublishedVersion,
+                                last_sync_error = $error,
+                                last_sync_at = $lastSyncAt,
+                                updated_at = $updatedAt
+                            WHERE id = $id";
+        cmd.Parameters.AddWithValue("$id", id.ToString());
+        cmd.Parameters.AddWithValue("$status", status);
+        cmd.Parameters.AddWithValue("$lastPublishedVersion", (object?)lastPublishedVersion ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastSyncAt", DateTime.UtcNow.ToString("o"));
+        cmd.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("o"));
+
+        var rows = await cmd.ExecuteNonQueryAsync();
+        if (rows == 0) return null;
+
+        return await GetAsync(id);
     }
 
     private static VcsSource MapVcsSource(SqliteDataReader reader)
@@ -175,8 +255,13 @@ public class SqliteVcsSourceService : IVcsSourceService
             RepoName = reader.GetString(6),
             ConnectionId = Guid.Parse(reader.GetString(7)),
             IsActive = reader.GetInt32(8) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(9)),
-            UpdatedAt = DateTime.Parse(reader.GetString(10))
+            TagPattern = reader.GetString(9),
+            LastPublishedVersion = reader.IsDBNull(10) ? null : reader.GetString(10),
+            LastSyncStatus = reader.GetString(11),
+            LastSyncAt = reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12)),
+            LastSyncError = reader.IsDBNull(13) ? null : reader.GetString(13),
+            CreatedAt = DateTime.Parse(reader.GetString(14)),
+            UpdatedAt = DateTime.Parse(reader.GetString(15))
         };
     }
 }

@@ -195,6 +195,7 @@ builder.Services.AddSingleton<IVcsConnectionService>(provider =>
 builder.Services.AddSingleton<IModuleExtractionService, NoOpModuleExtractionService>();
 builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 builder.Services.AddSingleton<GitHubVcsService>();
+builder.Services.AddSingleton<IGitHubVcsService>(provider => provider.GetRequiredService<GitHubVcsService>());
 builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
 
 // Register Role Service
@@ -490,8 +491,12 @@ app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext contex
         VcsHandlers.ListVcsSources(vcsService, context))
     .WithTags("VCS");
 
-app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.CreateVcsSource(vcsService, connectionService, auditService, context, request))
+app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionService connectionService, IGitHubVcsService githubService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateVcsSource(vcsService, connectionService, githubService, auditService, context, request))
+    .WithTags("VCS");
+
+app.MapGet("/api/vcs/sources/module/{namespace}/{name}/{provider}", (string @namespace, string name, string provider, IVcsSourceService vcsService, HttpContext context) =>
+        VcsHandlers.GetVcsSourceByModule(vcsService, context, @namespace, name, provider))
     .WithTags("VCS");
 
 app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
@@ -500,6 +505,10 @@ app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IVcs
 
 app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context) =>
         VcsHandlers.DeleteVcsSource(id, vcsService, auditService, context))
+    .WithTags("VCS");
+
+app.MapPost("/api/vcs/sources/{id}/sync", (Guid id, IGitHubVcsService githubService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.SyncVcsSource(id, githubService, context, request))
     .WithTags("VCS");
 
 // VCS Connection admin endpoints
@@ -525,7 +534,7 @@ app.MapGet("/api/vcs/connections", (IVcsConnectionService connectionService, Htt
     .WithTags("VCS");
 
 // GitHub webhook endpoint (public, no auth required)
-app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpContext context) =>
+app.MapPost("/api/vcs/github/webhook", (IGitHubVcsService githubService, HttpContext context) =>
         VcsHandlers.HandleGitHubWebhook(githubService, context))
     .WithTags("VCS");
 
