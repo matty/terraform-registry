@@ -34,11 +34,13 @@ const props = withDefaults(defineProps<{
   existingKeys?: ProviderGpgKey[]
   allowCreateProvider?: boolean
   allowManageKeys?: boolean
+  allowDeletePlatforms?: boolean
 }>(), {
   provider: null,
   existingKeys: () => [],
   allowCreateProvider: false,
   allowManageKeys: false,
+  allowDeletePlatforms: false,
 })
 
 const emit = defineEmits<{
@@ -188,11 +190,9 @@ function nextStepAfter(step: StepKey) {
 const providerLocked = computed(() => isStepComplete("provider"))
 const keyLocked = computed(() => isStepComplete("key"))
 const versionLocked = computed(() => isStepComplete("version"))
-const checksumsLocked = computed(() => isStepComplete("checksums"))
-const signatureLocked = computed(() => isStepComplete("signature"))
 
 const activeStepCanSubmit = computed(() => {
-  if (isStepComplete(activeStep.value)) {
+  if (isStepComplete(activeStep.value) && activeStep.value !== "checksums" && activeStep.value !== "signature") {
     return Boolean(nextStepAfter(activeStep.value))
   }
 
@@ -205,6 +205,10 @@ const activeStepCanSubmit = computed(() => {
 })
 
 const submitLabel = computed(() => {
+  if (isStepComplete(activeStep.value) && (activeStep.value === "checksums" || activeStep.value === "signature")) {
+    return "Replace And Continue"
+  }
+
   if (isStepComplete(activeStep.value)) return "Continue"
   return activeStep.value === "platforms" ? "Publish Release" : "Save And Continue"
 })
@@ -317,10 +321,6 @@ function removePlatform(id: string) {
 }
 
 function updateFile(target: "shasums" | "signature", event: Event) {
-  if ((target === "shasums" && checksumsLocked.value) || (target === "signature" && signatureLocked.value)) {
-    return
-  }
-
   const input = event.target as HTMLInputElement | null
   const file = input?.files?.[0] ?? null
 
@@ -405,6 +405,7 @@ async function submitChecksumsStep() {
   }
 
   await uploadShasums(effectiveNamespace.value, effectiveType.value, releaseVersion.value, shasumsFile.value)
+  clearCompletedFrom("signature")
   markComplete("checksums")
   moveTo("signature")
 }
@@ -420,6 +421,7 @@ async function submitSignatureStep() {
     releaseVersion.value,
     signatureFile.value
   )
+  clearCompletedFrom("platforms")
   markComplete("signature")
   moveTo("platforms")
 }
@@ -452,6 +454,10 @@ async function deleteCreatedPlatformIfChanged(platform: PlatformDraft) {
   if (!platform.createdOs || !platform.createdArch) {
     clearPlatformCreatedState(platform)
     return
+  }
+
+  if (!props.allowDeletePlatforms) {
+    throw new Error("Saved platform metadata cannot be changed without provider delete permission.")
   }
 
   await deletePlatform(
@@ -520,7 +526,7 @@ async function submitPlatformsStep() {
 async function submitActiveStep() {
   formError.value = ""
 
-  if (isStepComplete(activeStep.value)) {
+  if (isStepComplete(activeStep.value) && activeStep.value !== "checksums" && activeStep.value !== "signature") {
     const nextStep = nextStepAfter(activeStep.value)
     if (nextStep) {
       moveTo(nextStep)
@@ -792,13 +798,13 @@ watch(() => props.existingKeys, () => {
               <h4 class="text-sm font-semibold text-neutral-200">SHA256SUMS</h4>
               <label
                 class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 transition-colors"
-                :class="checksumsLocked || submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
+                :class="submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
               >
                 <span class="text-sm text-neutral-300 truncate">
                   {{ shasumsFile?.name || "Choose SHA256SUMS file" }}
                 </span>
                 <span class="text-xs text-neutral-500 uppercase tracking-wide">Browse</span>
-                <input class="hidden" type="file" :disabled="checksumsLocked || submitting" @change="updateFile('shasums', $event)">
+                <input class="hidden" type="file" :disabled="submitting" @change="updateFile('shasums', $event)">
               </label>
             </div>
 
@@ -806,13 +812,13 @@ watch(() => props.existingKeys, () => {
               <h4 class="text-sm font-semibold text-neutral-200">Detached Signature</h4>
               <label
                 class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 transition-colors"
-                :class="signatureLocked || submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
+                :class="submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
               >
                 <span class="text-sm text-neutral-300 truncate">
                   {{ signatureFile?.name || "Choose signature file" }}
                 </span>
                 <span class="text-xs text-neutral-500 uppercase tracking-wide">Browse</span>
-                <input class="hidden" type="file" :disabled="signatureLocked || submitting" @change="updateFile('signature', $event)">
+                <input class="hidden" type="file" :disabled="submitting" @change="updateFile('signature', $event)">
               </label>
             </div>
 
