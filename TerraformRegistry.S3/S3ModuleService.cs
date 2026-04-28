@@ -227,6 +227,7 @@ public class S3ModuleService : ModuleService
     {
         var objectKey = $"{@namespace}/{name}-{provider}-{version}.zip";
         var objectExists = false;
+        var uploaded = false;
 
         try
         {
@@ -296,6 +297,7 @@ public class S3ModuleService : ModuleService
                 InputStream = moduleContent,
                 AutoCloseStream = false
             });
+            uploaded = true;
 
             var module = new ModuleStorage
             {
@@ -334,6 +336,7 @@ public class S3ModuleService : ModuleService
                     BucketName = _bucketName,
                     Key = objectKey
                 });
+                uploaded = false;
             }
             catch
             {
@@ -350,6 +353,22 @@ public class S3ModuleService : ModuleService
         }
         catch (Exception ex)
         {
+            if (uploaded)
+            {
+                try
+                {
+                    await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+                    {
+                        BucketName = _bucketName,
+                        Key = objectKey
+                    });
+                }
+                catch
+                {
+                    // Best-effort cleanup only.
+                }
+            }
+
             _logger.LogError(
                 ex,
                 "Error uploading module {Namespace}/{Name}/{Provider}/{Version} to S3.",
