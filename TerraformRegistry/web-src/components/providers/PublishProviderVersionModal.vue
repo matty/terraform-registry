@@ -18,6 +18,7 @@ interface PlatformDraft {
   filename: string
   shasum: string
   file: File | null
+  created: boolean
   uploaded: boolean
   error: string
 }
@@ -81,6 +82,7 @@ const createdProvider = ref<TerraformProvider | null>(null)
 
 const keyMode = ref<"existing" | "new">("existing")
 const selectedKeyId = ref("")
+const effectiveKeyId = ref("")
 const keyId = ref("")
 const asciiArmor = ref("")
 const trustSignature = ref("")
@@ -98,9 +100,6 @@ const effectiveNamespace = computed(() => providerContext.value?.namespace || na
 const effectiveType = computed(() => providerContext.value?.type || type.value.trim())
 const availableKeys = computed(() => props.existingKeys.filter(key => !key.revoked_at))
 const canUseExistingKey = computed(() => props.mode === "existing" && availableKeys.value.length > 0)
-const selectedOrNewKeyId = computed(() =>
-  keyMode.value === "new" ? keyId.value.trim() : selectedKeyId.value
-)
 const parsedProtocols = computed(() =>
   protocols.value
     .split(",")
@@ -136,7 +135,7 @@ const canSubmitKey = computed(() => {
 })
 
 const canSubmitVersion = computed(() =>
-  Boolean(version.value.trim() && selectedOrNewKeyId.value && parsedProtocols.value.length)
+  Boolean(version.value.trim() && effectiveKeyId.value && parsedProtocols.value.length)
 )
 const canSubmitChecksums = computed(() => Boolean(shasumsFile.value))
 const canSubmitSignature = computed(() => Boolean(signatureFile.value))
@@ -181,6 +180,7 @@ function newPlatformDraft(): PlatformDraft {
     filename: "",
     shasum: "",
     file: null,
+    created: false,
     uploaded: false,
     error: "",
   }
@@ -233,6 +233,7 @@ function resetForm() {
   createdProvider.value = null
   keyMode.value = canUseExistingKey.value ? "existing" : "new"
   selectedKeyId.value = availableKeys.value[0]?.key_id ?? ""
+  effectiveKeyId.value = ""
   keyId.value = ""
   asciiArmor.value = ""
   trustSignature.value = ""
@@ -315,6 +316,9 @@ async function submitKeyStep() {
     }
     const key = await addGpgKey(effectiveNamespace.value, effectiveType.value, request)
     selectedKeyId.value = key.key_id
+    effectiveKeyId.value = key.key_id
+  } else {
+    effectiveKeyId.value = selectedKeyId.value
   }
 
   markComplete("key")
@@ -325,7 +329,7 @@ async function submitVersionStep() {
   await createVersion(effectiveNamespace.value, effectiveType.value, {
     version: version.value.trim(),
     protocols: parsedProtocols.value,
-    key_id: selectedOrNewKeyId.value,
+    key_id: effectiveKeyId.value,
   })
 
   markComplete("version")
@@ -370,12 +374,16 @@ async function submitPlatformsStep() {
     platform.error = ""
 
     try {
-      await createPlatform(effectiveNamespace.value, effectiveType.value, version.value.trim(), {
-        os: platform.os.trim(),
-        arch: platform.arch.trim(),
-        filename: platform.filename.trim(),
-        shasum: platform.shasum.trim(),
-      })
+      if (!platform.created) {
+        await createPlatform(effectiveNamespace.value, effectiveType.value, version.value.trim(), {
+          os: platform.os.trim(),
+          arch: platform.arch.trim(),
+          filename: platform.filename.trim(),
+          shasum: platform.shasum.trim(),
+        })
+        platform.created = true
+      }
+
       await uploadPlatformPackage(
         effectiveNamespace.value,
         effectiveType.value,
@@ -641,7 +649,7 @@ watch(() => props.existingKeys, () => {
                   <UInput v-model="protocols" :disabled="submitting" placeholder="5.0, 6.0" size="sm" />
                 </div>
               </div>
-              <p class="text-xs text-neutral-500">Signing key: {{ selectedOrNewKeyId || "not selected" }}</p>
+              <p class="text-xs text-neutral-500">Signing key: {{ effectiveKeyId || "not selected" }}</p>
             </div>
 
             <div v-else-if="activeStep === 'checksums'" class="p-5 space-y-4">
@@ -688,24 +696,24 @@ watch(() => props.existingKeys, () => {
                   <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">OS</label>
-                      <UInput v-model="platform.os" :disabled="platform.uploaded || submitting" placeholder="linux" size="sm" />
+                      <UInput v-model="platform.os" :disabled="platform.created || platform.uploaded || submitting" placeholder="linux" size="sm" />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">Arch</label>
-                      <UInput v-model="platform.arch" :disabled="platform.uploaded || submitting" placeholder="amd64" size="sm" />
+                      <UInput v-model="platform.arch" :disabled="platform.created || platform.uploaded || submitting" placeholder="amd64" size="sm" />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">Filename</label>
                       <UInput
                         v-model="platform.filename"
-                        :disabled="platform.uploaded || submitting"
+                        :disabled="platform.created || platform.uploaded || submitting"
                         placeholder="terraform-provider-example_1.0.0_linux_amd64.zip"
                         size="sm"
                       />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">SHA256</label>
-                      <UInput v-model="platform.shasum" :disabled="platform.uploaded || submitting" placeholder="SHA256" size="sm" />
+                      <UInput v-model="platform.shasum" :disabled="platform.created || platform.uploaded || submitting" placeholder="SHA256" size="sm" />
                     </div>
                   </div>
 
