@@ -28,10 +28,19 @@ public class S3ModuleService : ModuleService
         _databaseService = databaseService;
         _logger = logger;
 
-        _bucketName = configuration["S3:BucketName"]
-            ?? throw new ArgumentNullException("S3:BucketName", "S3 bucket name is required.");
-        var region = configuration["S3:Region"]
-            ?? throw new ArgumentNullException("S3:Region", "S3 region is required.");
+        var bucketName = configuration["S3:BucketName"];
+        if (string.IsNullOrWhiteSpace(bucketName))
+        {
+            throw new ArgumentNullException("S3:BucketName", "S3 bucket name is required.");
+        }
+
+        _bucketName = bucketName;
+
+        var region = configuration["S3:Region"];
+        if (string.IsNullOrWhiteSpace(region))
+        {
+            throw new ArgumentNullException("S3:Region", "S3 region is required.");
+        }
 
         var configuredPresignedUrlExpiry = configuration["S3:PresignedUrlExpiryMinutes"] ?? "5";
         if (!int.TryParse(configuredPresignedUrlExpiry, CultureInfo.InvariantCulture, out _presignedUrlExpiryMinutes)

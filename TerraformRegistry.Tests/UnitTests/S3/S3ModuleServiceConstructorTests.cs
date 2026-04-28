@@ -48,11 +48,49 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
+    public void Constructor_ThrowsArgumentNullException_When_BucketName_Is_Blank()
+    {
+        var config = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["S3:BucketName"] = "   ",
+            ["S3:Region"] = "eu-west-2"
+        });
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new S3ModuleService(
+                config,
+                _mockDatabaseService.Object,
+                _mockLogger.Object,
+                _mockS3Client.Object));
+
+        Assert.Equal("S3:BucketName", ex.ParamName);
+    }
+
+    [Fact]
     public void Constructor_ThrowsArgumentNullException_When_Region_Is_Missing()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
         {
             ["S3:BucketName"] = "modules"
+        });
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            new S3ModuleService(
+                config,
+                _mockDatabaseService.Object,
+                _mockLogger.Object,
+                _mockS3Client.Object));
+
+        Assert.Equal("S3:Region", ex.ParamName);
+    }
+
+    [Fact]
+    public void Constructor_ThrowsArgumentNullException_When_Region_Is_Blank()
+    {
+        var config = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["S3:BucketName"] = "modules",
+            ["S3:Region"] = "\t"
         });
 
         var ex = Assert.Throws<ArgumentNullException>(() =>
