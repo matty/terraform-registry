@@ -67,7 +67,8 @@ public static class ModuleDocsHandlers
         HttpContext context)
     {
         if (!Has(context, Permissions.ModuleDocsManage)) return Forbidden();
-        if (!await configService.IsEnabledAsync(context.RequestAborted))
+        var enabled = await configService.IsEnabledAsync(context.RequestAborted);
+        if (!enabled)
             return Conflict("Module extraction is disabled.");
 
         var detail = await databaseService.GetModuleExtractionAdminDetailAsync(@namespace, name, provider, version);
@@ -78,7 +79,6 @@ public static class ModuleDocsHandlers
             metadata.Extraction ??= new ModuleExtractionState();
             metadata.Extraction.Status = "pending";
             metadata.Extraction.LastUpdatedAt = DateTime.UtcNow;
-            metadata.Extraction.Error = null;
         });
 
         var queued = await extractionService.QueueAsync(
@@ -86,7 +86,15 @@ public static class ModuleDocsHandlers
             context.RequestAborted);
 
         context.FireAuditLog(auditService, "module_docs.requeued", "module",
-            $"{@namespace}/{name}/{provider}/{version}", new { queued });
+            $"{@namespace}/{name}/{provider}/{version}", new
+            {
+                Namespace = @namespace,
+                Name = name,
+                Provider = provider,
+                Version = version,
+                Queued = queued,
+                Enabled = enabled
+            });
 
         return Results.Accepted($"/api/admin/module-docs/modules/{@namespace}/{name}/{provider}/{version}",
             new { queued });
@@ -100,7 +108,8 @@ public static class ModuleDocsHandlers
         HttpRequest request)
     {
         if (!Has(context, Permissions.ModuleDocsManage)) return Forbidden();
-        if (!await configService.IsEnabledAsync(context.RequestAborted))
+        var enabled = await configService.IsEnabledAsync(context.RequestAborted);
+        if (!enabled)
             return Conflict("Module extraction is disabled.");
 
         var body = request.ContentLength is > 0
@@ -110,7 +119,12 @@ public static class ModuleDocsHandlers
         var queued = await extractionService.QueueBackfillAsync(limit, context.RequestAborted);
 
         context.FireAuditLog(auditService, "module_docs.backfill_queued", "module_docs",
-            null, new { requestedLimit = limit, queued = queued.Count });
+            null, new
+            {
+                RequestedLimit = limit,
+                Queued = queued.Count,
+                Enabled = enabled
+            });
 
         return Results.Accepted("/api/admin/module-docs", new { queued = queued.Count, modules = queued });
     }
@@ -138,7 +152,14 @@ public static class ModuleDocsHandlers
         var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var config = await configService.SetEnabledAsync(body.Enabled, actor, context.RequestAborted);
         context.FireAuditLog(auditService, "module_docs.config_updated", "module_docs",
-            "module_extraction", new { body.Enabled });
+            "module_extraction", new
+            {
+                RequestedEnabled = body.Enabled,
+                Enabled = config.Enabled,
+                StartupEnabled = config.StartupEnabled,
+                PersistedEnabled = config.PersistedEnabled,
+                HasRuntimeOverride = config.HasRuntimeOverride
+            });
 
         return Results.Ok(config);
     }

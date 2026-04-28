@@ -5,6 +5,7 @@ import { useModuleDocsAdmin } from '~/composables/useModuleDocsAdmin'
 import type {
   ModuleExtractionAdminDetail,
   ModuleExtractionAdminListItem,
+  ModuleExtractionDocument,
   ModuleExtractionAdminSummary,
   ModuleExtractionRuntimeConfig,
   ModuleInputDefinition,
@@ -126,6 +127,10 @@ function inputMeta(input: ModuleInputDefinition): string {
 
 function outputMeta(output: ModuleOutputDefinition): string {
   return output.sensitive ? 'sensitive' : 'output'
+}
+
+function formatDocumentJson(document: ModuleExtractionDocument): string {
+  return JSON.stringify(document, null, 2)
 }
 
 const fetchSummary = async () => {
@@ -877,6 +882,13 @@ onMounted(() => {
                     </div>
                   </div>
                 </section>
+
+                <section class="space-y-3">
+                  <h3 class="text-sm font-semibold text-neutral-100">
+                    Document JSON
+                  </h3>
+                  <pre class="docs-json max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 text-xs text-neutral-300">{{ formatDocumentJson(selectedDetail.document) }}</pre>
+                </section>
               </div>
             </div>
           </div>
@@ -916,5 +928,11 @@ onMounted(() => {
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.docs-json {
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
 }
 </style>

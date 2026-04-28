@@ -75,7 +75,10 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 module.Version);
 
             if (_queue.Writer.TryWrite(request))
+            {
+                await MarkPendingAsync(request);
                 queued.Add(request);
+            }
         }
 
         return queued;
@@ -139,6 +142,22 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 metadata.Extraction.LastAttemptedAt = now;
                 metadata.Extraction.LastUpdatedAt = now;
                 metadata.Extraction.Error = null;
+            });
+    }
+
+    private Task MarkPendingAsync(ModuleExtractionRequest request)
+    {
+        var now = DateTime.UtcNow;
+        return _databaseService.UpdateModuleMetadataAsync(
+            request.Namespace,
+            request.Name,
+            request.Provider,
+            request.Version,
+            metadata =>
+            {
+                metadata.Extraction ??= new ModuleExtractionState();
+                metadata.Extraction.Status = "pending";
+                metadata.Extraction.LastUpdatedAt = now;
             });
     }
 

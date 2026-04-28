@@ -60,6 +60,49 @@ public class ModuleExtractionQueueRuntimeTests
         Assert.Equal(2, queued.Count);
     }
 
+    [Fact]
+    public async Task QueueBackfillAsync_MarksQueuedModulesPendingWithoutClearingErrors()
+    {
+        var config = new Mock<IModuleExtractionConfigService>();
+        config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var metadata = new ModuleArtifactMetadata
+        {
+            Extraction = new ModuleExtractionState { Status = "failed", Error = "tool missing" }
+        };
+
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.ListModulesForExtractionBackfillAsync(1)).ReturnsAsync([
+            new ModuleStorage
+            {
+                Namespace = "acme",
+                Name = "network",
+                Provider = "aws",
+                Version = "1.0.0",
+                Description = "",
+                FilePath = "network.zip",
+                Dependencies = [],
+                Metadata = metadata
+            }
+        ]);
+        database.Setup(x => x.UpdateModuleMetadataAsync(
+                "acme",
+                "network",
+                "aws",
+                "1.0.0",
+                It.IsAny<Action<ModuleArtifactMetadata>>()))
+            .Callback<string, string, string, string, Action<ModuleArtifactMetadata>>((_, _, _, _, mutate) => mutate(metadata))
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(config.Object, database.Object);
+
+        var queued = await service.QueueBackfillAsync(1, CancellationToken.None);
+
+        Assert.Single(queued);
+        Assert.Equal("pending", metadata.Extraction.Status);
+        Assert.Equal("tool missing", metadata.Extraction.Error);
+    }
+
     private static ModuleExtractionService CreateService(
         IModuleExtractionConfigService config,
         IDatabaseService? database = null)
