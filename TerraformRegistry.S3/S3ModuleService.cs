@@ -188,7 +188,7 @@ public class S3ModuleService : ModuleService
 
     public override Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version)
     {
-        return Task.FromResult(false);
+        return PurgeModuleVersionAsyncInternal(@namespace, name, provider, version);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
@@ -204,7 +204,7 @@ public class S3ModuleService : ModuleService
 
     public override Task<(bool Healthy, string? Reason)> CheckStorageAsync()
     {
-        return Task.FromResult((true, (string?)null));
+        return CheckStorageAsyncInternal();
     }
 
     private void TryPrimeStorage()
@@ -220,6 +220,61 @@ public class S3ModuleService : ModuleService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to reach S3 bucket '{BucketName}' during startup.", _bucketName);
+        }
+    }
+
+    private async Task<bool> PurgeModuleVersionAsyncInternal(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage = await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider,
+            version);
+        if (moduleStorage == null)
+        {
+            return false;
+        }
+
+        var removed = await _databaseService.RemoveModuleAsync(moduleStorage);
+        if (!removed)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = _bucketName,
+                Key = moduleStorage.FilePath
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to delete S3 object for purged module {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace,
+                name,
+                provider,
+                version);
+        }
+
+        return true;
+    }
+
+    private async Task<(bool Healthy, string? Reason)> CheckStorageAsyncInternal()
+    {
+        try
+        {
+            await _s3Client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                MaxKeys = 1
+            });
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"S3 storage unreachable: {ex.Message}");
         }
     }
 
