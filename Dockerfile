@@ -8,6 +8,7 @@ COPY TerraformRegistry/TerraformRegistry.csproj TerraformRegistry/
 COPY TerraformRegistry.API/TerraformRegistry.API.csproj TerraformRegistry.API/
 COPY TerraformRegistry.AzureBlob/TerraformRegistry.AzureBlob.csproj TerraformRegistry.AzureBlob/
 COPY TerraformRegistry.Models/TerraformRegistry.Models.csproj TerraformRegistry.Models/
+COPY TerraformRegistry.Migrations/TerraformRegistry.Migrations.csproj TerraformRegistry.Migrations/
 COPY TerraformRegistry.PostgreSQL/TerraformRegistry.PostgreSQL.csproj TerraformRegistry.PostgreSQL/
 COPY TerraformRegistry.Tests/TerraformRegistry.Tests.csproj TerraformRegistry.Tests/
 

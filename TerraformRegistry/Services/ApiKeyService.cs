@@ -13,6 +13,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
     public async Task<(string RawToken, ApiKey Key)> CreateApiKeyAsync(string userId, string description, bool isShared = false)
     {
+        return await CreateApiKeyInternalAsync(userId, description, isShared, null);
+    }
+
+    public async Task<(string RawToken, ApiKey Key)> CreateExpiringApiKeyAsync(string userId, string description,
+        DateTime expiresAt, bool isShared = false)
+    {
+        return await CreateApiKeyInternalAsync(userId, description, isShared, expiresAt);
+    }
+
+    private async Task<(string RawToken, ApiKey Key)> CreateApiKeyInternalAsync(string userId, string description,
+        bool isShared, DateTime? expiresAt)
+    {
         // Generate random token
         var randomBytes = RandomNumberGenerator.GetBytes(TokenLength);
         var tokenCore = Convert.ToBase64String(randomBytes)
@@ -30,7 +42,8 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             TokenHash = tokenHash,
             Prefix = rawToken.Substring(0, 8),
             IsShared = isShared,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = expiresAt
         };
 
         await dbService.AddApiKeyAsync(apiKey);
@@ -40,11 +53,11 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return (rawToken, apiKey);
     }
 
-    public async Task<ApiKey?> ValidateApiKeyAsync(string rawToken)
+    public async Task<ApiKeyValidationResult> ValidateApiKeyAsync(string rawToken)
     {
         if (string.IsNullOrWhiteSpace(rawToken))
         {
-            return null;
+            return new ApiKeyValidationResult(null, false);
         }
 
         var prefix = rawToken.Length >= 8 ? rawToken.Substring(0, 8) : rawToken;
@@ -56,13 +69,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         {
             if (VerifyHash(rawToken, key.TokenHash))
             {
+                if (key.ExpiresAt.HasValue && key.ExpiresAt.Value < DateTime.UtcNow)
+                {
+                    return new ApiKeyValidationResult(null, true);
+                }
+
                 key.LastUsedAt = DateTime.UtcNow;
                 await dbService.UpdateApiKeyAsync(key);
-                return key;
+                return new ApiKeyValidationResult(key, false);
             }
         }
 
-        return null;
+        return new ApiKeyValidationResult(null, false);
     }
 
     public async Task<ApiKey?> GetApiKeyAsync(Guid id)
@@ -118,6 +136,47 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return new ApiKeyUpdateResult(ApiKeyUpdateStatus.Updated, key);
     }
 
+    public async Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("OIDC login requires a non-empty email address.");
+        }
+
+        var canonicalEmail = CanonicalizeEmail(email);
+        var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(canonicalEmail);
+        if (matchingUsers.Count > 1)
+        {
+            throw new InvalidOperationException(
+                $"The email '{canonicalEmail}' matches multiple legacy user records. Manual account linking is required.");
+        }
+
+        var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
+        if (user == null)
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid().ToString(),
+                Email = canonicalEmail,
+                Provider = provider,
+                ProviderId = providerId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await dbService.AddUserAsync(user);
+            return user;
+        }
+
+        if (!string.Equals(user.Provider, provider, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(user.ProviderId, providerId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The email '{canonicalEmail}' is already linked to a different identity. Manual account linking is required.");
+        }
+
+        return user;
+    }
+
     public async Task<User> GetOrCreateUserAsync(string email, string provider, string providerId)
     {
         var user = await dbService.GetUserByEmailAsync(email);
@@ -140,6 +199,11 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
     public async Task<User?> GetUserByIdAsync(string id)
     {
         return await dbService.GetUserByIdAsync(id);
+    }
+
+    private static string CanonicalizeEmail(string email)
+    {
+        return email.Trim().ToLowerInvariant();
     }
 
     private string HashToken(string password)
@@ -196,3 +260,5 @@ public enum ApiKeyUpdateStatus
 }
 
 public record ApiKeyUpdateResult(ApiKeyUpdateStatus Status, ApiKey? Key);
+
+public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired);

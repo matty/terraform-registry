@@ -194,7 +194,7 @@ public class AzureBlobModuleService : ModuleService
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         // Create a consistent blob path format for easy retrieval
         var blobPath = $"{@namespace}/{name}-{provider}-{version}.zip";
@@ -415,6 +415,70 @@ public class AzureBlobModuleService : ModuleService
         {
             // Log any errors during initialization
             _logger.LogError(ex, "Error during blob storage/database synchronization");
+        }
+    }
+
+    public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version)
+    {
+        return _databaseService.SoftDeleteModuleAsync(@namespace, name, provider, version);
+    }
+
+    public override Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        return _databaseService.RestoreModuleAsync(@namespace, name, provider, version);
+    }
+
+    public override async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage =
+            await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+        if (moduleStorage == null)
+            return false;
+
+        // Delete from database first (permanent delete)
+        var dbResult = await _databaseService.RemoveModuleAsync(moduleStorage);
+        if (!dbResult)
+            return false;
+
+        // Delete the blob from Azure Storage
+        try
+        {
+            var blobClient = _containerClient.GetBlobClient(moduleStorage.FilePath);
+            await blobClient.DeleteIfExistsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete blob for purged module {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            // DB deletion succeeded, blob deletion may have failed - still return true
+        }
+
+        return true;
+    }
+
+    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    {
+        return _databaseService.ListDeletedModulesAsync(request);
+    }
+
+    public override Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description)
+    {
+        return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+    }
+
+    public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
+    {
+        try
+        {
+            await _containerClient.GetPropertiesAsync();
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Azure Blob Storage unreachable: {ex.Message}");
         }
     }
 }

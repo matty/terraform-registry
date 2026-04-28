@@ -17,7 +17,8 @@ services:
       - TF_REG_BaseUrl=http://localhost:5131
       - TF_REG_StorageProvider=local
       - TF_REG_EnableSwagger=true
-      - TF_REG_OIDC__JWTSECRETKEY=
+      # Example only: set this to a unique 32+ character value if overriding the dev default.
+      # - TF_REG_OIDC__JWTSECRETKEY=replace-with-a-unique-32-character-secret
       - TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTID=
       - TF_REG_OIDC__PROVIDERS__GITHUB__CLIENTSECRET=
       - TF_REG_OIDC__PROVIDERS__GITHUB__ENABLED=true

@@ -34,8 +34,12 @@ public abstract class ModuleService : IModuleService
     ///     Uploads a new module with SemVer validation
     /// </summary>
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace = false)
+        Stream moduleContent, string description, bool replace = false, ModuleArtifactMetadata? metadata = null)
     {
+        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
+        if (coordinateError != null)
+            throw new ArgumentException(coordinateError);
+
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
             throw new ArgumentException(
@@ -43,12 +47,46 @@ public abstract class ModuleService : IModuleService
                 nameof(version));
 
         // Delegate to the implementation-specific upload method
-        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace);
+        return await UploadModuleAsyncImpl(@namespace, name, provider, version, moduleContent, description, replace,
+            metadata);
     }
 
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected abstract Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider, string version,
-        Stream moduleContent, string description, bool replace);
+        Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata);
+
+    /// <summary>
+    ///     Soft deletes a module version
+    /// </summary>
+    public abstract Task<bool>
+        DeleteModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Restores a soft-deleted module version
+    /// </summary>
+    public abstract Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+        string version);
+
+    /// <summary>
+    ///     Permanently deletes a module version (purge)
+    /// </summary>
+    public abstract Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Lists all soft-deleted modules
+    /// </summary>
+    public abstract Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+
+    /// <summary>
+    ///     Updates the description for all active versions of a module
+    /// </summary>
+    public abstract Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+        string description);
+
+    /// <summary>
+    ///     Checks that the storage backend is healthy and writable
+    /// </summary>
+    public abstract Task<(bool Healthy, string? Reason)> CheckStorageAsync();
 }
