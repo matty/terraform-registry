@@ -87,9 +87,9 @@ export interface CreateProviderRequest {
 }
 
 export interface UpdateProviderRequest {
-  display_name?: string;
-  description?: string;
-  source_repository_url?: string;
+  display_name: string | null;
+  description: string | null;
+  source_repository_url: string | null;
 }
 
 export interface CreateProviderVersionRequest {
