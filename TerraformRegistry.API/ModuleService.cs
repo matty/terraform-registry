@@ -31,6 +31,12 @@ public abstract class ModuleService : IModuleService
         string version);
 
     /// <summary>
+    ///     Opens the stored module package for internal processing
+    /// </summary>
+    public abstract Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+        string version);
+
+    /// <summary>
     ///     Uploads a new module with SemVer validation
     /// </summary>
     public async Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version,

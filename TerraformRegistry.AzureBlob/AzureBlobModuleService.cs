@@ -183,6 +183,20 @@ public class AzureBlobModuleService : ModuleService
         }
     }
 
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        if (moduleStorage == null)
+            return null;
+
+        var blobClient = _containerClient.GetBlobClient(moduleStorage.FilePath);
+        if (!await blobClient.ExistsAsync())
+            return null;
+
+        return await blobClient.OpenReadAsync();
+    }
+
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>

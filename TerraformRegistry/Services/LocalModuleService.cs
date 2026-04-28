@@ -220,6 +220,24 @@ public class LocalModuleService : ModuleService
         return $"/module/download?token={token}";
     }
 
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        if (moduleStorage == null || !File.Exists(moduleStorage.FilePath))
+            return null;
+
+        if (!IsInsideStorageRoot(moduleStorage.FilePath))
+        {
+            _logger.LogWarning(
+                "Refusing to open module package outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
+                @namespace, name, provider, version);
+            return null;
+        }
+
+        return File.OpenRead(Path.GetFullPath(moduleStorage.FilePath));
+    }
+
     // Helper for endpoint to validate and retrieve the file path
     public static bool TryGetFilePathFromToken(string token, out string filePath)
     {

@@ -220,4 +220,38 @@ public class AzureBlobModuleServiceDownloadTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_ReturnsBlobReadStream()
+    {
+        var moduleStorage = new ModuleStorage
+        {
+            FilePath = "path/to/blob.zip",
+            Namespace = "testns",
+            Name = "testname",
+            Provider = "testprov",
+            Version = "1.0.0",
+            Description = "Test Description",
+            Dependencies = []
+        };
+        _mockDatabaseService.Setup(db =>
+                db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+
+        var expectedStream = new MemoryStream([0x50, 0x4B, 0x03, 0x04]);
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        mockBlobClient
+            .Setup(bc => bc.OpenReadAsync(0, null, default))
+            .ReturnsAsync(expectedStream);
+
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
+            .Returns(mockBlobClient.Object);
+
+        var service = CreateService();
+
+        await using var stream = await service.OpenModulePackageStreamAsync("ns", "name", "prov", "1.0.0");
+
+        Assert.Same(expectedStream, stream);
+    }
 }
