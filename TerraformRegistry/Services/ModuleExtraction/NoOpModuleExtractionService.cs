@@ -4,8 +4,14 @@ namespace TerraformRegistry.Services.ModuleExtraction;
 
 public sealed class NoOpModuleExtractionService : IModuleExtractionService
 {
-    public void Queue(ModuleExtractionRequest request)
+    public Task<bool> QueueAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
     {
+        return Task.FromResult(false);
+    }
+
+    public Task<IReadOnlyList<ModuleExtractionRequest>> QueueBackfillAsync(int limit, CancellationToken cancellationToken)
+    {
+        return Task.FromResult<IReadOnlyList<ModuleExtractionRequest>>([]);
     }
 
     public async IAsyncEnumerable<ModuleExtractionRequest> ReadQueuedAsync(

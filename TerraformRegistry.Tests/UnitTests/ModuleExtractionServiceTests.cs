@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -84,7 +83,7 @@ public class ModuleExtractionServiceTests
             database.Object,
             workspaceFactory.Object,
             inspector.Object,
-            Options.Create(new ModuleExtractionOptions()),
+            Mock.Of<IModuleExtractionConfigService>(),
             NullLogger<ModuleExtractionService>.Instance);
 
         await service.ExtractAsync(new ModuleExtractionRequest("acme", "network", "aws", "1.2.3"),
@@ -158,7 +157,7 @@ public class ModuleExtractionServiceTests
             database.Object,
             workspaceFactory.Object,
             inspector.Object,
-            Options.Create(new ModuleExtractionOptions()),
+            Mock.Of<IModuleExtractionConfigService>(),
             NullLogger<ModuleExtractionService>.Instance);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>

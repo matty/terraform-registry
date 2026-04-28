@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using Microsoft.Extensions.Options;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -15,10 +14,10 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         });
 
     private readonly IDatabaseService _databaseService;
+    private readonly IModuleExtractionConfigService _configService;
     private readonly ITerraformModuleInspector _inspector;
     private readonly ILogger<ModuleExtractionService> _logger;
     private readonly IModuleService _moduleService;
-    private readonly ModuleExtractionOptions _options;
     private readonly IArchiveWorkspaceFactory _workspaceFactory;
 
     public ModuleExtractionService(
@@ -26,21 +25,21 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         IDatabaseService databaseService,
         IArchiveWorkspaceFactory workspaceFactory,
         ITerraformModuleInspector inspector,
-        IOptions<ModuleExtractionOptions> options,
+        IModuleExtractionConfigService configService,
         ILogger<ModuleExtractionService> logger)
     {
         _moduleService = moduleService;
         _databaseService = databaseService;
         _workspaceFactory = workspaceFactory;
         _inspector = inspector;
-        _options = options.Value;
+        _configService = configService;
         _logger = logger;
     }
 
-    public void Queue(ModuleExtractionRequest request)
+    public async Task<bool> QueueAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
     {
-        if (!_options.Enabled)
-            return;
+        if (!await _configService.IsEnabledAsync(cancellationToken))
+            return false;
 
         if (!_queue.Writer.TryWrite(request))
         {
@@ -50,7 +49,36 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 request.Name,
                 request.Provider,
                 request.Version);
+            return false;
         }
+
+        return true;
+    }
+
+    public async Task<IReadOnlyList<ModuleExtractionRequest>> QueueBackfillAsync(int limit,
+        CancellationToken cancellationToken)
+    {
+        if (!await _configService.IsEnabledAsync(cancellationToken))
+            return [];
+
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+        var modules = await _databaseService.ListModulesForExtractionBackfillAsync(boundedLimit);
+        var queued = new List<ModuleExtractionRequest>();
+
+        foreach (var module in modules)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var request = new ModuleExtractionRequest(
+                module.Namespace,
+                module.Name,
+                module.Provider,
+                module.Version);
+
+            if (_queue.Writer.TryWrite(request))
+                queued.Add(request);
+        }
+
+        return queued;
     }
 
     public IAsyncEnumerable<ModuleExtractionRequest> ReadQueuedAsync(CancellationToken cancellationToken)
