@@ -19,6 +19,10 @@ interface PlatformDraft {
   shasum: string
   file: File | null
   created: boolean
+  createdOs: string
+  createdArch: string
+  createdFilename: string
+  createdShasum: string
   uploaded: boolean
   error: string
 }
@@ -50,6 +54,7 @@ const {
   uploadShasums,
   uploadShasumsSignature,
   createPlatform,
+  deletePlatform,
   uploadPlatformPackage,
 } = useProviders()
 
@@ -91,6 +96,7 @@ const keySourceUrl = ref("")
 
 const version = ref("")
 const protocols = ref("5.0")
+const createdVersion = ref("")
 const shasumsFile = ref<File | null>(null)
 const signatureFile = ref<File | null>(null)
 const platforms = ref<PlatformDraft[]>([])
@@ -99,7 +105,11 @@ const providerContext = computed(() => createdProvider.value ?? props.provider ?
 const effectiveNamespace = computed(() => providerContext.value?.namespace || namespace.value.trim())
 const effectiveType = computed(() => providerContext.value?.type || type.value.trim())
 const availableKeys = computed(() => props.existingKeys.filter(key => !key.revoked_at))
-const canUseExistingKey = computed(() => props.mode === "existing" && availableKeys.value.length > 0)
+const canUseExistingKey = computed(() => availableKeys.value.length > 0)
+const selectedKeyIsAvailable = computed(() =>
+  availableKeys.value.some(key => key.key_id === selectedKeyId.value)
+)
+const releaseVersion = computed(() => createdVersion.value || version.value.trim())
 const parsedProtocols = computed(() =>
   protocols.value
     .split(",")
@@ -128,7 +138,7 @@ const canSubmitKey = computed(() => {
   }
 
   if (keyMode.value === "existing") {
-    return Boolean(selectedKeyId.value)
+    return Boolean(selectedKeyId.value && selectedKeyIsAvailable.value)
   }
 
   return Boolean(props.allowManageKeys && keyId.value.trim() && asciiArmor.value.trim())
@@ -151,7 +161,41 @@ const canSubmitPlatforms = computed(() =>
   )
 )
 
+function isStepComplete(step: StepKey) {
+  return completedSteps.value.includes(step)
+}
+
+function canNavigateToStep(step: StepKey) {
+  const targetIndex = stepOrder.indexOf(step)
+  const firstIncompleteIndex = stepOrder.findIndex(candidate => !isStepComplete(candidate))
+
+  if (targetIndex < 0) {
+    return false
+  }
+
+  if (firstIncompleteIndex === -1) {
+    return true
+  }
+
+  return targetIndex <= firstIncompleteIndex
+}
+
+function nextStepAfter(step: StepKey) {
+  const index = stepOrder.indexOf(step)
+  return index >= 0 ? stepOrder[index + 1] : undefined
+}
+
+const providerLocked = computed(() => isStepComplete("provider"))
+const keyLocked = computed(() => isStepComplete("key"))
+const versionLocked = computed(() => isStepComplete("version"))
+const checksumsLocked = computed(() => isStepComplete("checksums"))
+const signatureLocked = computed(() => isStepComplete("signature"))
+
 const activeStepCanSubmit = computed(() => {
+  if (isStepComplete(activeStep.value)) {
+    return Boolean(nextStepAfter(activeStep.value))
+  }
+
   if (activeStep.value === "provider") return canSubmitProvider.value
   if (activeStep.value === "key") return canSubmitKey.value
   if (activeStep.value === "version") return canSubmitVersion.value
@@ -160,9 +204,10 @@ const activeStepCanSubmit = computed(() => {
   return canSubmitPlatforms.value
 })
 
-const submitLabel = computed(() =>
-  activeStep.value === "platforms" ? "Publish Release" : "Save And Continue"
-)
+const submitLabel = computed(() => {
+  if (isStepComplete(activeStep.value)) return "Continue"
+  return activeStep.value === "platforms" ? "Publish Release" : "Save And Continue"
+})
 
 function rowId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -181,6 +226,10 @@ function newPlatformDraft(): PlatformDraft {
     shasum: "",
     file: null,
     created: false,
+    createdOs: "",
+    createdArch: "",
+    createdFilename: "",
+    createdShasum: "",
     uploaded: false,
     error: "",
   }
@@ -189,26 +238,30 @@ function newPlatformDraft(): PlatformDraft {
 function stepState(step: StepKey): StepState {
   if (activeStep.value === step && formError.value) return "error"
   if (activeStep.value === step) return "active"
-  if (completedSteps.value.includes(step)) return "complete"
+  if (isStepComplete(step)) return "complete"
   return "pending"
 }
 
 function markComplete(step: StepKey) {
-  if (!completedSteps.value.includes(step)) {
+  if (!isStepComplete(step)) {
     completedSteps.value = [...completedSteps.value, step]
   }
 }
 
-function moveTo(step: StepKey) {
-  activeStep.value = step
-  formError.value = ""
+function clearCompletedFrom(step: StepKey) {
+  const stepIndex = stepOrder.indexOf(step)
+  completedSteps.value = completedSteps.value.filter(
+    completedStep => stepOrder.indexOf(completedStep) < stepIndex
+  )
 }
 
-function moveToNextStep() {
-  const index = stepOrder.indexOf(activeStep.value)
-  if (index >= 0 && index < stepOrder.length - 1) {
-    moveTo(stepOrder[index + 1])
+function moveTo(step: StepKey) {
+  if (!canNavigateToStep(step)) {
+    return
   }
+
+  activeStep.value = step
+  formError.value = ""
 }
 
 function moveToPreviousStep() {
@@ -216,6 +269,10 @@ function moveToPreviousStep() {
   if (index > 0) {
     moveTo(stepOrder[index - 1])
   }
+}
+
+function selectStep(step: StepKey) {
+  moveTo(step)
 }
 
 function resetForm() {
@@ -241,6 +298,7 @@ function resetForm() {
   keySourceUrl.value = ""
   version.value = ""
   protocols.value = "5.0"
+  createdVersion.value = ""
   shasumsFile.value = null
   signatureFile.value = null
   platforms.value = [newPlatformDraft()]
@@ -259,6 +317,10 @@ function removePlatform(id: string) {
 }
 
 function updateFile(target: "shasums" | "signature", event: Event) {
+  if ((target === "shasums" && checksumsLocked.value) || (target === "signature" && signatureLocked.value)) {
+    return
+  }
+
   const input = event.target as HTMLInputElement | null
   const file = input?.files?.[0] ?? null
 
@@ -326,12 +388,13 @@ async function submitKeyStep() {
 }
 
 async function submitVersionStep() {
-  await createVersion(effectiveNamespace.value, effectiveType.value, {
+  const providerVersion = await createVersion(effectiveNamespace.value, effectiveType.value, {
     version: version.value.trim(),
     protocols: parsedProtocols.value,
     key_id: effectiveKeyId.value,
   })
 
+  createdVersion.value = providerVersion.version
   markComplete("version")
   moveTo("checksums")
 }
@@ -341,7 +404,7 @@ async function submitChecksumsStep() {
     throw new Error("SHA256SUMS file is required.")
   }
 
-  await uploadShasums(effectiveNamespace.value, effectiveType.value, version.value.trim(), shasumsFile.value)
+  await uploadShasums(effectiveNamespace.value, effectiveType.value, releaseVersion.value, shasumsFile.value)
   markComplete("checksums")
   moveTo("signature")
 }
@@ -354,11 +417,51 @@ async function submitSignatureStep() {
   await uploadShasumsSignature(
     effectiveNamespace.value,
     effectiveType.value,
-    version.value.trim(),
+    releaseVersion.value,
     signatureFile.value
   )
   markComplete("signature")
   moveTo("platforms")
+}
+
+function hasPlatformMetadataChanged(platform: PlatformDraft) {
+  return Boolean(
+    platform.created
+    && (
+      platform.createdOs !== platform.os.trim()
+      || platform.createdArch !== platform.arch.trim()
+      || platform.createdFilename !== platform.filename.trim()
+      || platform.createdShasum !== platform.shasum.trim()
+    )
+  )
+}
+
+function clearPlatformCreatedState(platform: PlatformDraft) {
+  platform.created = false
+  platform.createdOs = ""
+  platform.createdArch = ""
+  platform.createdFilename = ""
+  platform.createdShasum = ""
+}
+
+async function deleteCreatedPlatformIfChanged(platform: PlatformDraft) {
+  if (!hasPlatformMetadataChanged(platform)) {
+    return
+  }
+
+  if (!platform.createdOs || !platform.createdArch) {
+    clearPlatformCreatedState(platform)
+    return
+  }
+
+  await deletePlatform(
+    effectiveNamespace.value,
+    effectiveType.value,
+    releaseVersion.value,
+    platform.createdOs,
+    platform.createdArch
+  )
+  clearPlatformCreatedState(platform)
 }
 
 async function submitPlatformsStep() {
@@ -374,20 +477,26 @@ async function submitPlatformsStep() {
     platform.error = ""
 
     try {
+      await deleteCreatedPlatformIfChanged(platform)
+
       if (!platform.created) {
-        await createPlatform(effectiveNamespace.value, effectiveType.value, version.value.trim(), {
+        await createPlatform(effectiveNamespace.value, effectiveType.value, releaseVersion.value, {
           os: platform.os.trim(),
           arch: platform.arch.trim(),
           filename: platform.filename.trim(),
           shasum: platform.shasum.trim(),
         })
         platform.created = true
+        platform.createdOs = platform.os.trim()
+        platform.createdArch = platform.arch.trim()
+        platform.createdFilename = platform.filename.trim()
+        platform.createdShasum = platform.shasum.trim()
       }
 
       await uploadPlatformPackage(
         effectiveNamespace.value,
         effectiveType.value,
-        version.value.trim(),
+        releaseVersion.value,
         platform.os.trim(),
         platform.arch.trim(),
         platform.file
@@ -403,13 +512,22 @@ async function submitPlatformsStep() {
   emit("published", {
     namespace: effectiveNamespace.value,
     type: effectiveType.value,
-    version: version.value.trim(),
+    version: releaseVersion.value,
   })
   modalOpen.value = false
 }
 
 async function submitActiveStep() {
   formError.value = ""
+
+  if (isStepComplete(activeStep.value)) {
+    const nextStep = nextStepAfter(activeStep.value)
+    if (nextStep) {
+      moveTo(nextStep)
+    }
+    return
+  }
+
   submitting.value = true
 
   try {
@@ -433,13 +551,28 @@ watch(() => props.open, (open) => {
 })
 
 watch(() => props.existingKeys, () => {
-  if (!props.open || selectedKeyId.value || !availableKeys.value.length) {
+  if (!props.open) {
     return
   }
 
-  selectedKeyId.value = availableKeys.value[0].key_id
-  if (props.mode === "existing") {
+  const firstAvailableKeyId = availableKeys.value[0]?.key_id ?? ""
+  const selectedKeyStillAvailable = availableKeys.value.some(key => key.key_id === selectedKeyId.value)
+
+  if (!selectedKeyStillAvailable) {
+    selectedKeyId.value = firstAvailableKeyId
+  }
+
+  if (!keyLocked.value && canUseExistingKey.value && keyMode.value === "new" && !keyId.value && !asciiArmor.value) {
     keyMode.value = "existing"
+  }
+
+  if (keyMode.value === "existing" && keyLocked.value && !versionLocked.value) {
+    effectiveKeyId.value = selectedKeyId.value
+
+    if (!effectiveKeyId.value) {
+      clearCompletedFrom("key")
+      moveTo("key")
+    }
   }
 }, { deep: true })
 </script>
@@ -479,15 +612,18 @@ watch(() => props.existingKeys, () => {
               :key="step"
               type="button"
               class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors"
-              :class="stepState(step) === 'active'
-                ? 'bg-primary-500/15 text-primary-200'
-                : stepState(step) === 'complete'
-                  ? 'text-green-300 hover:bg-neutral-800'
-                  : stepState(step) === 'error'
-                    ? 'text-red-300 bg-red-500/10'
-                    : 'text-neutral-400 hover:bg-neutral-800'"
-              :disabled="submitting"
-              @click="moveTo(step)"
+              :class="[
+                stepState(step) === 'active'
+                  ? 'bg-primary-500/15 text-primary-200'
+                  : stepState(step) === 'complete'
+                    ? 'text-green-300 hover:bg-neutral-800'
+                    : stepState(step) === 'error'
+                      ? 'text-red-300 bg-red-500/10'
+                      : 'text-neutral-400 hover:bg-neutral-800',
+                !canNavigateToStep(step) ? 'opacity-50 cursor-not-allowed hover:bg-transparent' : '',
+              ]"
+              :disabled="submitting || !canNavigateToStep(step)"
+              @click="selectStep(step)"
             >
               <UIcon
                 :name="stepState(step) === 'complete'
@@ -521,21 +657,21 @@ watch(() => props.existingKeys, () => {
               <div class="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Namespace</label>
-                  <UInput v-model="namespace" :disabled="mode === 'existing' || submitting" placeholder="acme" size="sm" />
+                  <UInput v-model="namespace" :disabled="providerLocked || mode === 'existing' || submitting" placeholder="acme" size="sm" />
                 </div>
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Type</label>
-                  <UInput v-model="type" :disabled="mode === 'existing' || submitting" placeholder="example" size="sm" />
+                  <UInput v-model="type" :disabled="providerLocked || mode === 'existing' || submitting" placeholder="example" size="sm" />
                 </div>
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Display Name</label>
-                  <UInput v-model="displayName" :disabled="mode === 'existing' || submitting" placeholder="Example" size="sm" />
+                  <UInput v-model="displayName" :disabled="providerLocked || mode === 'existing' || submitting" placeholder="Example" size="sm" />
                 </div>
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Source Repository URL</label>
                   <UInput
                     v-model="sourceRepositoryUrl"
-                    :disabled="mode === 'existing' || submitting"
+                    :disabled="providerLocked || mode === 'existing' || submitting"
                     placeholder="https://github.com/acme/terraform-provider-example"
                     size="sm"
                   />
@@ -545,7 +681,7 @@ watch(() => props.existingKeys, () => {
                 <label class="block text-xs text-neutral-400 mb-1">Description</label>
                 <UTextarea
                   v-model="description"
-                  :disabled="mode === 'existing' || submitting"
+                  :disabled="providerLocked || mode === 'existing' || submitting"
                   placeholder="Optional provider summary"
                   :rows="3"
                   class="w-full"
@@ -562,7 +698,7 @@ watch(() => props.existingKeys, () => {
                     label="Existing"
                     size="xs"
                     :variant="keyMode === 'existing' ? 'soft' : 'ghost'"
-                    :disabled="submitting"
+                    :disabled="keyLocked || submitting"
                     @click="keyMode = 'existing'"
                   />
                   <UButton
@@ -570,7 +706,7 @@ watch(() => props.existingKeys, () => {
                     label="New Key"
                     size="xs"
                     :variant="keyMode === 'new' ? 'soft' : 'ghost'"
-                    :disabled="submitting"
+                    :disabled="keyLocked || submitting"
                     @click="keyMode = 'new'"
                   />
                 </div>
@@ -593,7 +729,7 @@ watch(() => props.existingKeys, () => {
                     placeholder="Select signing key"
                     size="sm"
                     class="w-full"
-                    :disabled="submitting"
+                    :disabled="keyLocked || submitting"
                   />
                 </div>
               </div>
@@ -601,13 +737,13 @@ watch(() => props.existingKeys, () => {
               <div v-else-if="allowManageKeys" class="space-y-3">
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Key ID</label>
-                  <UInput v-model="keyId" :disabled="submitting" placeholder="ABC123DEF456" size="sm" />
+                  <UInput v-model="keyId" :disabled="keyLocked || submitting" placeholder="ABC123DEF456" size="sm" />
                 </div>
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">ASCII Armor</label>
                   <UTextarea
                     v-model="asciiArmor"
-                    :disabled="submitting"
+                    :disabled="keyLocked || submitting"
                     placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"
                     :rows="8"
                     class="w-full"
@@ -616,15 +752,15 @@ watch(() => props.existingKeys, () => {
                 <div class="grid gap-3 sm:grid-cols-3">
                   <div>
                     <label class="block text-xs text-neutral-400 mb-1">Trust Signature</label>
-                    <UInput v-model="trustSignature" :disabled="submitting" placeholder="Optional" size="sm" />
+                    <UInput v-model="trustSignature" :disabled="keyLocked || submitting" placeholder="Optional" size="sm" />
                   </div>
                   <div>
                     <label class="block text-xs text-neutral-400 mb-1">Source</label>
-                    <UInput v-model="keySource" :disabled="submitting" placeholder="keybase" size="sm" />
+                    <UInput v-model="keySource" :disabled="keyLocked || submitting" placeholder="keybase" size="sm" />
                   </div>
                   <div>
                     <label class="block text-xs text-neutral-400 mb-1">Source URL</label>
-                    <UInput v-model="keySourceUrl" :disabled="submitting" placeholder="https://..." size="sm" />
+                    <UInput v-model="keySourceUrl" :disabled="keyLocked || submitting" placeholder="https://..." size="sm" />
                   </div>
                 </div>
               </div>
@@ -642,11 +778,11 @@ watch(() => props.existingKeys, () => {
               <div class="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Version</label>
-                  <UInput v-model="version" :disabled="submitting" placeholder="1.0.0" size="sm" />
+                  <UInput v-model="version" :disabled="versionLocked || submitting" placeholder="1.0.0" size="sm" />
                 </div>
                 <div>
                   <label class="block text-xs text-neutral-400 mb-1">Protocols</label>
-                  <UInput v-model="protocols" :disabled="submitting" placeholder="5.0, 6.0" size="sm" />
+                  <UInput v-model="protocols" :disabled="versionLocked || submitting" placeholder="5.0, 6.0" size="sm" />
                 </div>
               </div>
               <p class="text-xs text-neutral-500">Signing key: {{ effectiveKeyId || "not selected" }}</p>
@@ -654,23 +790,29 @@ watch(() => props.existingKeys, () => {
 
             <div v-else-if="activeStep === 'checksums'" class="p-5 space-y-4">
               <h4 class="text-sm font-semibold text-neutral-200">SHA256SUMS</h4>
-              <label class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 cursor-pointer hover:border-primary-500/40 transition-colors">
+              <label
+                class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 transition-colors"
+                :class="checksumsLocked || submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
+              >
                 <span class="text-sm text-neutral-300 truncate">
                   {{ shasumsFile?.name || "Choose SHA256SUMS file" }}
                 </span>
                 <span class="text-xs text-neutral-500 uppercase tracking-wide">Browse</span>
-                <input class="hidden" type="file" :disabled="submitting" @change="updateFile('shasums', $event)">
+                <input class="hidden" type="file" :disabled="checksumsLocked || submitting" @change="updateFile('shasums', $event)">
               </label>
             </div>
 
             <div v-else-if="activeStep === 'signature'" class="p-5 space-y-4">
               <h4 class="text-sm font-semibold text-neutral-200">Detached Signature</h4>
-              <label class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 cursor-pointer hover:border-primary-500/40 transition-colors">
+              <label
+                class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-dashed border-neutral-700 bg-neutral-950/50 transition-colors"
+                :class="signatureLocked || submitting ? 'opacity-60' : 'cursor-pointer hover:border-primary-500/40'"
+              >
                 <span class="text-sm text-neutral-300 truncate">
                   {{ signatureFile?.name || "Choose signature file" }}
                 </span>
                 <span class="text-xs text-neutral-500 uppercase tracking-wide">Browse</span>
-                <input class="hidden" type="file" :disabled="submitting" @change="updateFile('signature', $event)">
+                <input class="hidden" type="file" :disabled="signatureLocked || submitting" @change="updateFile('signature', $event)">
               </label>
             </div>
 
@@ -696,24 +838,24 @@ watch(() => props.existingKeys, () => {
                   <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">OS</label>
-                      <UInput v-model="platform.os" :disabled="platform.created || platform.uploaded || submitting" placeholder="linux" size="sm" />
+                      <UInput v-model="platform.os" :disabled="platform.uploaded || submitting" placeholder="linux" size="sm" />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">Arch</label>
-                      <UInput v-model="platform.arch" :disabled="platform.created || platform.uploaded || submitting" placeholder="amd64" size="sm" />
+                      <UInput v-model="platform.arch" :disabled="platform.uploaded || submitting" placeholder="amd64" size="sm" />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">Filename</label>
                       <UInput
                         v-model="platform.filename"
-                        :disabled="platform.created || platform.uploaded || submitting"
+                        :disabled="platform.uploaded || submitting"
                         placeholder="terraform-provider-example_1.0.0_linux_amd64.zip"
                         size="sm"
                       />
                     </div>
                     <div>
                       <label class="block text-xs text-neutral-400 mb-1">SHA256</label>
-                      <UInput v-model="platform.shasum" :disabled="platform.created || platform.uploaded || submitting" placeholder="SHA256" size="sm" />
+                      <UInput v-model="platform.shasum" :disabled="platform.uploaded || submitting" placeholder="SHA256" size="sm" />
                     </div>
                   </div>
 
