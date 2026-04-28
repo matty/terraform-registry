@@ -45,6 +45,7 @@ const adminLinks = [
   { label: 'Users', icon: 'i-lucide-users', to: '/admin/users', permission: 'admin.users' },
   { label: 'Webhooks', icon: 'i-lucide-webhook', to: '/admin/webhooks', permission: 'webhooks.manage' },
   { label: 'VCS Connections', icon: 'i-lucide-git-branch', to: '/admin/vcs-connections', permission: 'vcs.manage' },
+  { label: 'Module Docs', icon: 'i-lucide-file-search', to: '/admin/module-docs', permission: 'module_docs.read' },
   { label: 'Audit Log', icon: 'i-lucide-scroll-text', to: '/admin/audit', permission: 'admin.audit' },
 ];
 
