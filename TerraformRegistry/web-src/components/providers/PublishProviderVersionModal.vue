@@ -405,6 +405,7 @@ async function submitChecksumsStep() {
   }
 
   await uploadShasums(effectiveNamespace.value, effectiveType.value, releaseVersion.value, shasumsFile.value)
+  clearPlatformUploadedState()
   clearCompletedFrom("signature")
   markComplete("checksums")
   moveTo("signature")
@@ -421,9 +422,17 @@ async function submitSignatureStep() {
     releaseVersion.value,
     signatureFile.value
   )
+  clearPlatformUploadedState()
   clearCompletedFrom("platforms")
   markComplete("signature")
   moveTo("platforms")
+}
+
+function clearPlatformUploadedState() {
+  for (const platform of platforms.value) {
+    platform.uploaded = false
+    platform.error = ""
+  }
 }
 
 function hasPlatformMetadataChanged(platform: PlatformDraft) {
