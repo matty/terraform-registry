@@ -31,4 +31,26 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
 
         Assert.Equal(expectedJson.modules_v1, actualJson.modules_v1);
     }
+
+    [Fact]
+    public async Task WellKnown_Endpoint_Exposes_LoginV1_OAuth_Metadata()
+    {
+        var response = await _client.GetAsync("/.well-known/terraform.json");
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        Assert.Equal("/v1/modules/", root.GetProperty("modules.v1").GetString());
+
+        var login = root.GetProperty("login.v1");
+        Assert.Equal("terraform-cli", login.GetProperty("client").GetString());
+        Assert.Equal("/api/auth/terraform/authorize", login.GetProperty("authz").GetString());
+        Assert.Equal("/api/auth/terraform/token", login.GetProperty("token").GetString());
+        Assert.Contains(
+            login.GetProperty("grant_types").EnumerateArray().Select(x => x.GetString()),
+            x => x == "authz_code");
+    }
 }

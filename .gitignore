@@ -201,6 +201,7 @@ ClientBin/
 *.pfx
 *.publishsettings
 node_modules/
+.worktrees/
 orleans.codegen.cs
 
 # Since there are multiple workflows, uncomment next line to ignore bower_components
@@ -313,3 +314,7 @@ node_modules
 # End of https://www.toptal.com/developers/gitignore/api/nuxtjs
 
 run-dev.ps1
+
+# Runtime data
+TerraformRegistry/modules/
+TerraformRegistry/terraform.db
