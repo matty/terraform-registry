@@ -227,7 +227,6 @@ public class S3ModuleService : ModuleService
     {
         var objectKey = $"{@namespace}/{name}-{provider}-{version}.zip";
         var objectExists = false;
-        var uploaded = false;
 
         try
         {
@@ -288,16 +287,26 @@ public class S3ModuleService : ModuleService
             }
         }
 
+        var useConditionalCreate = !objectExists;
+        var canDeleteUploadedObject = false;
+
         try
         {
-            await _s3Client.PutObjectAsync(new PutObjectRequest
+            var putRequest = new PutObjectRequest
             {
                 BucketName = _bucketName,
                 Key = objectKey,
                 InputStream = moduleContent,
                 AutoCloseStream = false
-            });
-            uploaded = true;
+            };
+
+            if (useConditionalCreate)
+            {
+                putRequest.IfNoneMatch = "*";
+            }
+
+            await _s3Client.PutObjectAsync(putRequest);
+            canDeleteUploadedObject = useConditionalCreate;
 
             var module = new ModuleStorage
             {
@@ -329,18 +338,9 @@ public class S3ModuleService : ModuleService
                 return true;
             }
 
-            try
+            if (canDeleteUploadedObject)
             {
-                await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
-                {
-                    BucketName = _bucketName,
-                    Key = objectKey
-                });
-                uploaded = false;
-            }
-            catch
-            {
-                // Best-effort cleanup only.
+                await TryDeleteUploadedObjectAsync(objectKey);
             }
 
             _logger.LogError(
@@ -351,22 +351,23 @@ public class S3ModuleService : ModuleService
                 version);
             return false;
         }
+        catch (AmazonS3Exception ex) when (
+            useConditionalCreate &&
+            (ex.StatusCode == HttpStatusCode.PreconditionFailed || ex.StatusCode == HttpStatusCode.Conflict))
+        {
+            _logger.LogWarning(
+                "Module {Namespace}/{Name}/{Provider}/{Version} was created concurrently in S3.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return false;
+        }
         catch (Exception ex)
         {
-            if (uploaded)
+            if (canDeleteUploadedObject)
             {
-                try
-                {
-                    await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
-                    {
-                        BucketName = _bucketName,
-                        Key = objectKey
-                    });
-                }
-                catch
-                {
-                    // Best-effort cleanup only.
-                }
+                await TryDeleteUploadedObjectAsync(objectKey);
             }
 
             _logger.LogError(
@@ -377,6 +378,22 @@ public class S3ModuleService : ModuleService
                 provider,
                 version);
             return false;
+        }
+    }
+
+    private async Task TryDeleteUploadedObjectAsync(string objectKey)
+    {
+        try
+        {
+            await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = _bucketName,
+                Key = objectKey
+            });
+        }
+        catch
+        {
+            // Best-effort cleanup only.
         }
     }
 }
