@@ -38,6 +38,11 @@ public interface IDatabaseService
     Task<bool> RemoveModuleAsync(ModuleStorage module);
 
     /// <summary>
+    ///     Removes a module row only when its stored metadata matches the provided module
+    /// </summary>
+    Task<bool> RemoveModuleExactAsync(ModuleStorage module);
+
+    /// <summary>
     ///     Soft deletes a module by setting deleted_at timestamp
     /// </summary>
     Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version);

@@ -385,6 +385,48 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage module)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND description = @description
+              AND storage_path = @storagePath
+              AND published_at = @publishedAt
+              AND dependencies = @dependencies
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", module.Namespace);
+            command.Parameters.AddWithValue("@name", module.Name);
+            command.Parameters.AddWithValue("@provider", module.Provider);
+            command.Parameters.AddWithValue("@version", module.Version);
+            command.Parameters.AddWithValue("@description", module.Description);
+            command.Parameters.AddWithValue("@storagePath", module.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("@dependencies",
+                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from database",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
     public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
     {
         var sql = @"UPDATE modules SET deleted_at = @deletedAt 
