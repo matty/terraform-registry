@@ -3,7 +3,8 @@
 
 /* Font configuration */
 @theme static {
-  --font-sans: "Public Sans", sans-serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
 /* Smooth transitions for theme changes */
@@ -13,4 +14,25 @@
 
 body {
   @apply bg-neutral-50 dark:bg-neutral-950;
+}
+
+/* Page header pattern — used across all pages */
+.page-header {
+  @apply px-6 pt-8 pb-6;
+}
+
+.page-header-title {
+  @apply text-2xl font-bold text-neutral-900 dark:text-white tracking-tight;
+}
+
+.page-header-subtitle {
+  @apply text-sm text-neutral-500 dark:text-neutral-400 mt-1;
+}
+
+.page-header-actions {
+  @apply flex items-center gap-3 mt-4;
+}
+
+.page-divider {
+  @apply border-t border-neutral-200 dark:border-neutral-800 mx-6;
 }

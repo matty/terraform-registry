@@ -6,6 +6,9 @@ const _useDashboard = () => {
   // Sidebar open state for mobile
   const isSidebarOpen = ref(false);
 
+  // Sidebar collapsed state for desktop
+  const isSidebarCollapsed = ref(false);
+
   // Close sidebar on route change
   watch(
     () => route.fullPath,
@@ -16,6 +19,7 @@ const _useDashboard = () => {
 
   return {
     isSidebarOpen,
+    isSidebarCollapsed,
   };
 };
 

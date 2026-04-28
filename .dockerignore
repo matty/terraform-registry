@@ -1,0 +1,17 @@
+.git
+.github
+docs
+
+**/.DS_Store
+**/*.user
+**/*.suo
+
+**/bin
+**/obj
+**/TestResults
+
+TerraformRegistry/web-src/.cache
+TerraformRegistry/web-src/.data
+TerraformRegistry/web-src/.nuxt
+TerraformRegistry/web-src/.output
+TerraformRegistry/web-src/node_modules

@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TerraformRegistry.API;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
@@ -9,7 +11,7 @@ namespace TerraformRegistry.Controllers;
 [ApiController]
 [Route("api/keys")]
 [Authorize]
-public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
+public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> ListKeys()
@@ -27,6 +29,8 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
     [HttpGet("shared")]
     public async Task<IActionResult> ListSharedKeys()
     {
+        if (!User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
+
         var keys = await apiKeyService.ListSharedApiKeysAsync();
 
         // Preload owners to display ownership information
@@ -41,8 +45,11 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (request.IsShared && !User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
 
         var (rawToken, key) = await apiKeyService.CreateApiKeyAsync(userId, request.Description, request.IsShared);
+
+        HttpContext.FireAuditLog(auditService, "api_key.created", "api_key", key.Id.ToString(), new { description = request.Description, isShared = request.IsShared });
 
         var owner = await apiKeyService.GetUserByIdAsync(userId);
 
@@ -58,6 +65,11 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
     {
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        var existing = await apiKeyService.GetApiKeyAsync(id);
+        if (existing == null) return NotFound();
+        if (existing.UserId != userId) return Forbid();
+        if ((existing.IsShared || request.IsShared) && !User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
 
         var result = await apiKeyService.UpdateApiKeyAsync(id, userId, request.Description, request.IsShared);
 
@@ -76,6 +88,8 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
 
         var success = await apiKeyService.RevokeApiKeyAsync(id, userId);
         if (!success) return NotFound();
+
+        HttpContext.FireAuditLog(auditService, "api_key.revoked", "api_key", id.ToString());
 
         return NoContent();
     }
@@ -99,6 +113,7 @@ public class ApiKeyController(IApiKeyService apiKeyService) : ControllerBase
             Prefix = key.Prefix,
             IsShared = key.IsShared,
             CreatedAt = key.CreatedAt,
+            ExpiresAt = key.ExpiresAt,
             LastUsedAt = key.LastUsedAt,
             OwnerUserId = owner?.Id ?? key.UserId,
             OwnerUsername = owner?.ProviderId,
@@ -156,6 +171,7 @@ public class ApiKeyResponse
     public string Prefix { get; set; } = string.Empty;
     public bool IsShared { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? ExpiresAt { get; set; }
     public DateTime? LastUsedAt { get; set; }
     public string? OwnerUserId { get; set; }
     public string? OwnerUsername { get; set; }
