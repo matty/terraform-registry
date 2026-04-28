@@ -42,6 +42,7 @@
         <!-- Condition="'$(UsePostgreSQL)' == 'true'" -->
         <ProjectReference Include="..\TerraformRegistry.AzureBlob\TerraformRegistry.AzureBlob.csproj" />
         <!-- Condition="'$(UseAzureBlob)' == 'true'"*/ -->
+        <ProjectReference Include="..\TerraformRegistry.S3\TerraformRegistry.S3.csproj" />
         <ProjectReference Include="..\TerraformRegistry.Migrations\TerraformRegistry.Migrations.csproj" />
     </ItemGroup>
 
