@@ -94,6 +94,25 @@ builder.Services.AddSingleton<IModuleService>(provider =>
     }
 });
 
+builder.Services.AddSingleton<IProviderArtifactStorage>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var storageProvider = config["StorageProvider"]?.ToLowerInvariant() ?? "local";
+    var expiryMinutes = int.TryParse(config["ProviderArtifactUrlExpiryMinutes"], out var parsed) ? parsed : 10;
+
+    return storageProvider switch
+    {
+        "azure" => new AzureBlobProviderArtifactStorage(
+            config,
+            provider.GetRequiredService<ILogger<AzureBlobProviderArtifactStorage>>()),
+        "local" => new LocalProviderArtifactStorage(
+            config["ProviderStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "providers"),
+            TimeSpan.FromMinutes(expiryMinutes),
+            provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>()),
+        _ => throw new InvalidOperationException($"Provider artifact storage is not implemented for StorageProvider '{storageProvider}'.")
+    };
+});
+
 builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 // Register HttpClientFactory for OAuth flows
@@ -646,6 +665,30 @@ app.MapGet("/module/download", async context =>
     }
 
     context.Response.ContentType = "application/zip";
+    context.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{Path.GetFileName(filePath)}\"";
+    await context.Response.SendFileAsync(filePath);
+});
+
+app.MapGet("/provider/download", async context =>
+{
+    var token = context.Request.Query["token"].ToString();
+    if (string.IsNullOrEmpty(token) || !LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out var filePath))
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync("Invalid or expired download link.");
+        return;
+    }
+
+    if (!File.Exists(filePath))
+    {
+        context.Response.StatusCode = 404;
+        await context.Response.WriteAsync("File not found.");
+        return;
+    }
+
+    context.Response.ContentType = Path.GetExtension(filePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)
+        ? "application/zip"
+        : "text/plain";
     context.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{Path.GetFileName(filePath)}\"";
     await context.Response.SendFileAsync(filePath);
 });
