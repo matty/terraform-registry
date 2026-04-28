@@ -612,6 +612,23 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .Produces(302)
     .ProducesProblem(404);
 
+app.MapGet("/v1/providers/{namespace}/{type}/versions",
+        (string @namespace, string type, IProviderRegistryService providerService, HttpContext context) =>
+            ProviderHandlers.GetVersions(@namespace, type, providerService, context))
+    .WithTags("Providers")
+    .WithDescription("Gets all versions for a provider")
+    .Produces<ProviderVersionsResponse>()
+    .ProducesProblem(404);
+
+app.MapGet("/v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}",
+        (string @namespace, string type, string version, string os, string arch, IProviderRegistryService providerService,
+                HttpContext context) =>
+            ProviderHandlers.GetPackage(@namespace, type, version, os, arch, providerService, context))
+    .WithTags("Providers")
+    .WithDescription("Gets package metadata for a provider version and platform")
+    .Produces<ProviderPackageResponse>()
+    .ProducesProblem(404);
+
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
             string provider, string version, HttpRequest request, IModulePublishCoordinator publishCoordinator, HttpContext context) =>
         await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, publishCoordinator, context))

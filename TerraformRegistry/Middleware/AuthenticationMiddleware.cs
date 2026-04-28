@@ -25,7 +25,13 @@ public class AuthenticationMiddleware(
         Permissions.ModulesDelete,
         Permissions.ModulesRestore,
         Permissions.ModulesPurge,
-        Permissions.ModulesDescription
+        Permissions.ModulesDescription,
+        Permissions.ProvidersRead,
+        Permissions.ProvidersPublish,
+        Permissions.ProvidersDelete,
+        Permissions.ProvidersPurge,
+        Permissions.ProvidersKeysManage,
+        Permissions.ProvidersDescription
     ];
 
     public async Task InvokeAsync(HttpContext context)
