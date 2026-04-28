@@ -2,6 +2,7 @@
 import PublishModuleModal from "~/components/modules/PublishModuleModal.vue";
 import { useDashboard } from "~/composables/useDashboard";
 import type { Module, ModulesResponse } from "~/composables/useModules";
+import type { VcsSourceCreateResponse } from "~/composables/useVcsSources";
 
 definePageMeta({
   middleware: "auth",
@@ -29,6 +30,11 @@ const publishModalOpen = ref(false);
 const openPublishModal = () => {
   if (!canOpenPublishModal.value) return;
   publishModalOpen.value = true;
+};
+
+const handleLinked = async (source: VcsSourceCreateResponse) => {
+  refreshModules();
+  await navigateTo(`/modules/${source.namespace}/${source.name}/${source.provider}`);
 };
 
 const filteredModules = computed(() => {
@@ -288,7 +294,7 @@ onMounted(async () => {
       :allow-manual-upload="canUploadModule"
       :allow-vcs-link="canManageVcs"
       @published="refreshModules"
-      @linked="refreshModules"
+      @linked="handleLinked"
     />
   </div>
 </template>

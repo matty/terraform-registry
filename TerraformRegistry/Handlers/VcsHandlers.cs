@@ -145,13 +145,17 @@ public static class VcsHandlers
         if (!context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
         var source = await vcsService.GetByModuleAsync(@namespace, name, provider);
         return source == null
+            || !string.Equals(source.UserId, userId, StringComparison.Ordinal)
             ? Results.NotFound(new { error = "VCS source not found" })
             : Results.Ok(source);
     }
 
-    public static async Task<IResult> SyncVcsSource(Guid id, IGitHubVcsService githubService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> SyncVcsSource(Guid id, IVcsSourceService vcsService, IGitHubVcsService githubService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated != true)
             return Results.Unauthorized();
@@ -160,6 +164,13 @@ public static class VcsHandlers
 
         var body = await request.ReadFromJsonAsync<SyncVcsSourceRequest>() ?? new SyncVcsSourceRequest(null, false);
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        var source = await vcsService.GetAsync(id);
+        if (source == null || !string.Equals(source.UserId, userId, StringComparison.Ordinal))
+        {
+            return Results.NotFound(new { error = "VCS source not found" });
+        }
 
         try
         {

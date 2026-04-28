@@ -345,18 +345,38 @@ public class GitHubVcsService : IGitHubVcsService
         }
 
         var client = _httpClientFactory.CreateClient("GitHubVcs");
-        using var request = CreateGitHubRequest(
-            HttpMethod.Get,
-            $"https://api.github.com/repos/{source.RepoOwner}/{source.RepoName}/tags?per_page=100",
-            connection);
+        var discoveredTags = new List<string>();
 
-        using var response = await client.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        for (var page = 1; ; page++)
+        {
+            using var request = CreateGitHubRequest(
+                HttpMethod.Get,
+                $"https://api.github.com/repos/{source.RepoOwner}/{source.RepoName}/tags?per_page=100&page={page}",
+                connection);
 
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-        return payload.RootElement
-            .EnumerateArray()
-            .Select(tag => tag.GetProperty("name").GetString() ?? string.Empty)
+            using var response = await client.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var batch = payload.RootElement
+                .EnumerateArray()
+                .Select(tag => tag.GetProperty("name").GetString() ?? string.Empty)
+                .ToList();
+
+            if (batch.Count == 0)
+            {
+                break;
+            }
+
+            discoveredTags.AddRange(batch);
+
+            if (batch.Count < 100)
+            {
+                break;
+            }
+        }
+
+        return discoveredTags
             .Where(tag => MatchesTagPattern(source.TagPattern, tag))
             .Where(tag => SemVerValidator.IsValid(NormalizeTag(tag)))
             .Distinct(StringComparer.OrdinalIgnoreCase)

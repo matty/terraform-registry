@@ -507,8 +507,8 @@ app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, I
         VcsHandlers.DeleteVcsSource(id, vcsService, auditService, context))
     .WithTags("VCS");
 
-app.MapPost("/api/vcs/sources/{id}/sync", (Guid id, IGitHubVcsService githubService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.SyncVcsSource(id, githubService, context, request))
+app.MapPost("/api/vcs/sources/{id}/sync", (Guid id, IVcsSourceService vcsService, IGitHubVcsService githubService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.SyncVcsSource(id, vcsService, githubService, context, request))
     .WithTags("VCS");
 
 // VCS Connection admin endpoints

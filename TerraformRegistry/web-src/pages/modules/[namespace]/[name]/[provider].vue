@@ -355,6 +355,65 @@ onMounted(() => {
           <p class="text-neutral-400 max-w-sm mx-auto">
             This module has no published versions.
           </p>
+          <div v-if="canManageVcs && vcsSource" class="mt-8 max-w-2xl mx-auto rounded-2xl bg-neutral-900/50 border border-neutral-800 overflow-hidden text-left">
+            <div class="px-5 py-4 flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-neutral-800 rounded-xl flex items-center justify-center">
+                  <UIcon name="i-lucide-github" class="text-xl text-neutral-300" />
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-neutral-200">
+                      Linked to {{ vcsSource.repoOwner }}/{{ vcsSource.repoName }}
+                    </span>
+                    <UBadge
+                      :variant="'soft'"
+                      :color="vcsSource.isActive ? 'success' : 'neutral'"
+                      size="xs"
+                    >
+                      {{ vcsSource.isActive ? 'Active' : 'Inactive' }}
+                    </UBadge>
+                  </div>
+                  <p class="text-xs text-neutral-500 mt-0.5">
+                    Last sync: {{ vcsSource.lastSyncStatus }}<span v-if="vcsSource.lastPublishedVersion"> • latest imported {{ vcsSource.lastPublishedVersion }}</span>
+                  </p>
+                  <p v-if="vcsSource.lastSyncError" class="text-xs text-red-400 mt-1">
+                    {{ vcsSource.lastSyncError }}
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <UButton
+                  label="Sync Now"
+                  icon="i-lucide-refresh-cw"
+                  color="primary"
+                  variant="soft"
+                  size="xs"
+                  :loading="isSyncingVcs"
+                  @click="syncLinkedSource"
+                />
+                <UButton
+                  label="Disconnect"
+                  icon="i-lucide-unlink"
+                  color="error"
+                  variant="ghost"
+                  size="xs"
+                  :loading="isDisconnectingVcs"
+                  @click="disconnectVcs"
+                />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="canOpenPublishModal" class="mt-8 flex justify-center">
+            <UButton
+              :label="publishActionLabel"
+              :icon="publishActionIcon"
+              color="primary"
+              variant="soft"
+              size="sm"
+              @click="publishModalOpen = true"
+            />
+          </div>
         </div>
 
         <!-- Module Info & Versions List -->

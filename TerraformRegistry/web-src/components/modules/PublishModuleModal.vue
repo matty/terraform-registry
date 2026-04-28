@@ -3,6 +3,7 @@ import type { VcsConnectionSummary } from "~/composables/useVcsConnections";
 import { useModulePublishing } from "~/composables/useModulePublishing";
 import { useVcsConnections } from "~/composables/useVcsConnections";
 import { useVcsSources } from "~/composables/useVcsSources";
+import type { VcsSourceCreateResponse } from "~/composables/useVcsSources";
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -20,7 +21,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   "update:open": [boolean]
   published: []
-  linked: []
+  linked: [VcsSourceCreateResponse]
 }>()
 
 const { uploadModule } = useModulePublishing()
@@ -173,7 +174,7 @@ async function submit() {
       return
     }
 
-    await createVcsSource({
+    const linkedSource = await createVcsSource({
       namespace: namespace.value,
       name: name.value,
       provider: provider.value,
@@ -183,7 +184,7 @@ async function submit() {
       syncExistingTags: syncExistingTags.value,
     })
 
-    emit("linked")
+    emit("linked", linkedSource)
     closeModal()
   } catch (err: any) {
     error.value = err?.data?.error || err?.message || "Publishing request failed"

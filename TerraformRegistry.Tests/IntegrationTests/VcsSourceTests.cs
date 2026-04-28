@@ -253,6 +253,29 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
+    public async Task VcsSource_ByModule_ForDifferentOwner_ReturnsNotFound()
+    {
+        var ownerClient = await CreateAuthenticatedClientAsync("vcs-module-owner@example.com", "vcs-module-owner-id");
+        var otherClient = await CreateAuthenticatedClientAsync("vcs-module-other@example.com", "vcs-module-other-id");
+
+        var connectionId = await CreateTestConnectionAsync();
+
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "owned-module-ns",
+            name = "owned-module-name",
+            provider = "aws",
+            repoOwner = "owned-module-owner",
+            repoName = "owned-module-repo",
+            connectionId
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var response = await otherClient.GetAsync("/api/vcs/sources/module/owned-module-ns/owned-module-name/aws");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task VcsSources_Create_WithSyncExistingTags_ReturnsSyncSummary()
     {
         var client = await CreateClientWithFakeGitHubSyncAsync(
@@ -278,6 +301,32 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
         Assert.True(json.TryGetProperty("sync", out var sync));
         Assert.Equal("succeeded", sync.GetProperty("status").GetString());
         Assert.Equal(2, sync.GetProperty("publishedCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task VcsSource_Sync_ForDifferentOwner_ReturnsNotFound()
+    {
+        var ownerClient = await CreateAuthenticatedClientAsync("vcs-sync-owner@example.com", "vcs-sync-owner-id");
+        var otherClient = await CreateAuthenticatedClientAsync("vcs-sync-other@example.com", "vcs-sync-other-id");
+
+        var connectionId = await CreateTestConnectionAsync();
+
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "owned-sync-ns",
+            name = "owned-sync-name",
+            provider = "aws",
+            repoOwner = "owned-sync-owner",
+            repoName = "owned-sync-repo",
+            connectionId
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        var response = await otherClient.PostAsJsonAsync($"/api/vcs/sources/{id}/sync", new { });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
