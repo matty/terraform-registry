@@ -141,7 +141,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
 
         var sql = @"
-            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
@@ -173,7 +173,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Versions = versions,
             Root = "main",
             Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string> { { provider, "*" } }
+            Providers = new Dictionary<string, string> { { provider, "*" } },
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
     }
 
@@ -202,7 +203,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await connection.OpenAsync();
 
         var sql = @"
-            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+            SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
 
@@ -230,7 +231,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = DateTime.Parse(reader.GetString(6)),
-            Dependencies = deps
+            Dependencies = deps,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
     }
 
@@ -238,9 +240,9 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
     {
         var sql = @"
             INSERT INTO modules (
-                namespace, name, provider, version, description, storage_path, published_at, dependencies
+                namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             ) VALUES (
-                $ns, $name, $prov, $ver, $desc, $path, $published, $deps
+                $ns, $name, $prov, $ver, $desc, $path, $published, $deps, $metadata
             )";
 
         try
@@ -259,6 +261,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             cmd.Parameters.AddWithValue("$published", module.PublishedAt.ToString("o"));
             cmd.Parameters.AddWithValue("$deps",
                 module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies));
+            cmd.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(module.Metadata));
 
             var rows = await cmd.ExecuteNonQueryAsync();
             return rows > 0;
@@ -430,7 +433,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
 
         await using var cmd = connection.CreateCommand();
@@ -457,7 +460,8 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = DateTime.Parse(reader.GetString(6)),
-            Dependencies = deps
+            Dependencies = deps,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
     }
 
@@ -487,6 +491,117 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT e.document_json
+            FROM module_extractions e
+            JOIN modules m ON m.id = e.module_id
+            WHERE m.namespace = $ns AND m.name = $name AND m.provider = $prov AND m.version = $ver";
+        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$prov", provider);
+        cmd.Parameters.AddWithValue("$ver", version);
+
+        var json = (string?)await cmd.ExecuteScalarAsync();
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<ModuleExtractionDocument>(json);
+    }
+
+    public async Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version,
+        ModuleExtractionDocument document, string? sourceChecksum = null)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var now = DateTime.UtcNow.ToString("o");
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO module_extractions (module_id, document_json, source_checksum, created_at, updated_at)
+            SELECT id, $document, $checksum, $now, $now
+            FROM modules
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL
+            ON CONFLICT(module_id) DO UPDATE SET
+                document_json = excluded.document_json,
+                source_checksum = excluded.source_checksum,
+                updated_at = excluded.updated_at";
+        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$prov", provider);
+        cmd.Parameters.AddWithValue("$ver", version);
+        cmd.Parameters.AddWithValue("$document", JsonSerializer.Serialize(document));
+        cmd.Parameters.AddWithValue("$checksum", (object?)sourceChecksum ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$now", now);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
+        Action<ModuleArtifactMetadata> mutate)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var readCmd = connection.CreateCommand();
+        readCmd.CommandText = @"
+            SELECT metadata
+            FROM modules
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
+        readCmd.Parameters.AddWithValue("$ns", @namespace);
+        readCmd.Parameters.AddWithValue("$name", name);
+        readCmd.Parameters.AddWithValue("$prov", provider);
+        readCmd.Parameters.AddWithValue("$ver", version);
+
+        var currentJson = (string?)await readCmd.ExecuteScalarAsync();
+        var metadata = DeserializeModuleMetadata(currentJson);
+        mutate(metadata);
+
+        await using var updateCmd = connection.CreateCommand();
+        updateCmd.CommandText = @"
+            UPDATE modules
+            SET metadata = $metadata
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
+        updateCmd.Parameters.AddWithValue("$ns", @namespace);
+        updateCmd.Parameters.AddWithValue("$name", name);
+        updateCmd.Parameters.AddWithValue("$prov", provider);
+        updateCmd.Parameters.AddWithValue("$ver", version);
+        updateCmd.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(metadata));
+
+        await updateCmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit)
+    {
+        var modules = new List<ModuleStorage>();
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.storage_path, m.published_at, m.dependencies, m.metadata
+            FROM modules m
+            LEFT JOIN module_extractions e ON e.module_id = m.id
+            WHERE m.deleted_at IS NULL AND e.module_id IS NULL
+            ORDER BY m.published_at
+            LIMIT $limit";
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            modules.Add(MapModuleStorage(reader));
+        }
+
+        return modules;
+    }
+
     private static async Task<List<string>> GetVersionsInternal(SqliteConnection connection, string @namespace,
         string name, string provider)
     {
@@ -500,6 +615,35 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync()) versions.Add(r.GetString(0));
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
+    }
+
+    private static ModuleArtifactMetadata DeserializeModuleMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new ModuleArtifactMetadata();
+
+        return JsonSerializer.Deserialize<ModuleArtifactMetadata>(json) ?? new ModuleArtifactMetadata();
+    }
+
+    private static ModuleStorage MapModuleStorage(SqliteDataReader reader)
+    {
+        var depsJson = reader.GetString(7);
+        var deps = string.IsNullOrWhiteSpace(depsJson)
+            ? new List<string>()
+            : (JsonSerializer.Deserialize<List<string>>(depsJson) ?? new List<string>());
+
+        return new ModuleStorage
+        {
+            Namespace = reader.GetString(0),
+            Name = reader.GetString(1),
+            Provider = reader.GetString(2),
+            Version = reader.GetString(3),
+            Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            FilePath = reader.GetString(5),
+            PublishedAt = DateTime.Parse(reader.GetString(6)),
+            Dependencies = deps,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
+        };
     }
 
     private sealed class ModuleRow

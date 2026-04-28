@@ -237,6 +237,27 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration013_AddsModuleMetadataAndCreatesModuleExtractionsTable()
+    {
+        MigrateUpTo(13, _connectionString);
+
+        var moduleColumns = GetColumns(_connection, "modules");
+        Assert.Contains("metadata", moduleColumns);
+
+        var tables = GetTables(_connection);
+        Assert.Contains("module_extractions", tables);
+
+        var extractionColumns = GetColumns(_connection, "module_extractions");
+        foreach (var column in new[] { "module_id", "document_json", "source_checksum", "created_at", "updated_at" })
+        {
+            Assert.Contains(column, extractionColumns);
+        }
+
+        var indexes = GetIndexes(_connection);
+        Assert.Contains("idx_module_extractions_updated_at", indexes);
+    }
+
+    [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
         MigrateUpTo(10, _connectionString);

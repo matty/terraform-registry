@@ -248,7 +248,8 @@ public class AzureBlobModuleService : ModuleService
                 Description = description,
                 FilePath = blobPath, // This is the crucial link between database and blob storage
                 PublishedAt = DateTime.UtcNow,
-                Dependencies = new List<string>() // Simplified, no dependencies
+                Dependencies = new List<string>(), // Simplified, no dependencies
+                Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
             if (replace)

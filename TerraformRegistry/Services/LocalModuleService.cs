@@ -271,7 +271,8 @@ public class LocalModuleService : ModuleService
                 Description = description,
                 FilePath = finalFilePath,
                 PublishedAt = DateTime.UtcNow,
-                Dependencies = []
+                Dependencies = [],
+                Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
             if (replace)

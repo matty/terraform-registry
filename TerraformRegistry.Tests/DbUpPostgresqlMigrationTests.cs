@@ -300,6 +300,29 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration014_CreatesModuleExtractionsTable()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        MigrateUpTo(14, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        var tables = GetTables(conn);
+        Assert.Contains("module_extractions", tables);
+
+        var columns = GetColumns(conn, "module_extractions");
+        foreach (var column in new[] { "module_id", "document_json", "source_checksum", "created_at", "updated_at" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        var indexes = GetIndexes(conn);
+        Assert.Contains("idx_module_extractions_updated_at", indexes);
+    }
+
+    [Fact]
     public async Task FullMigration_DataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
@@ -441,11 +464,11 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         svCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
         Assert.False((bool)(await svCheck.ExecuteScalarAsync())!);
 
-        // Verify journal has all 12 scripts recorded
+        // Verify journal has all scripts recorded
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(12, journalCount);
+        Assert.Equal(13, journalCount);
     }
 
     [Fact]
@@ -476,7 +499,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         var migrator = new DbUpMigrator(logger);
         migrator.Migrate("postgres", connectionString);
 
-        // All tables should exist — 1 bootstrapped, 11 executed
+        // All tables should exist — 1 bootstrapped, remaining scripts executed
         await using var verifyConn = new NpgsqlConnection(connectionString);
         await verifyConn.OpenAsync();
         var tables = GetTables(verifyConn);
@@ -488,7 +511,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(12, journalCount);
+        Assert.Equal(13, journalCount);
     }
 
     private string CreateFreshDatabase()

@@ -154,7 +154,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies::text,
+                metadata::text
             FROM 
                 modules m
             WHERE 
@@ -179,6 +180,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
+        var metadata = DeserializeModuleMetadata(reader.GetString(8));
         var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
         var publishedAt = reader.GetDateTime(6);
         await reader.DisposeAsync();
@@ -203,7 +205,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Providers = new Dictionary<string, string>
             {
                 { provider, "*" }
-            }
+            },
+            Metadata = metadata
         };
     }
 
@@ -244,7 +247,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies::text,
+                metadata::text
             FROM
                 modules
             WHERE
@@ -279,7 +283,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = reader.GetDateTime(6),
-            Dependencies = dependencies
+            Dependencies = dependencies,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
     }
 
@@ -297,7 +302,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 description,
                 storage_path,
                 published_at,
-                dependencies
+                dependencies,
+                metadata
             )
             VALUES (
                 @namespace,
@@ -307,7 +313,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 @description,
                 @storagePath,
                 @publishedAt,
-                @dependencies
+                @dependencies,
+                @metadata
             )";
 
         try
@@ -325,6 +332,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
                     module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(module.Metadata)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
             var rows = await command.ExecuteNonQueryAsync();
@@ -512,7 +521,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name,
         string provider, string version)
     {
-        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies
+        var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies::text, metadata::text
             FROM modules WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version";
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -539,7 +548,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
             PublishedAt = reader.GetDateTime(6),
-            Dependencies = dependencies
+            Dependencies = dependencies,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
     }
 
@@ -568,6 +578,132 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name,
+        string provider, string version)
+    {
+        const string sql = @"
+            SELECT e.document_json::text
+            FROM module_extractions e
+            JOIN modules m ON m.id = e.module_id
+            WHERE m.namespace = @namespace
+              AND m.name = @name
+              AND m.provider = @provider
+              AND m.version = @version";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+
+        var json = (string?)await command.ExecuteScalarAsync();
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<ModuleExtractionDocument>(json);
+    }
+
+    public async Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version,
+        ModuleExtractionDocument document, string? sourceChecksum = null)
+    {
+        const string sql = @"
+            INSERT INTO module_extractions (module_id, document_json, source_checksum, created_at, updated_at)
+            SELECT id, @document, @checksum, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND deleted_at IS NULL
+            ON CONFLICT (module_id) DO UPDATE SET
+                document_json = EXCLUDED.document_json,
+                source_checksum = EXCLUDED.source_checksum,
+                updated_at = CURRENT_TIMESTAMP";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@document", JsonSerializer.Serialize(document)).NpgsqlDbType = NpgsqlDbType.Jsonb;
+        command.Parameters.AddWithValue("@checksum", (object?)sourceChecksum ?? DBNull.Value);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
+        Action<ModuleArtifactMetadata> mutate)
+    {
+        const string selectSql = @"
+            SELECT metadata::text
+            FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND deleted_at IS NULL";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var selectCommand = new NpgsqlCommand(selectSql, connection);
+        selectCommand.Parameters.AddWithValue("@namespace", @namespace);
+        selectCommand.Parameters.AddWithValue("@name", name);
+        selectCommand.Parameters.AddWithValue("@provider", provider);
+        selectCommand.Parameters.AddWithValue("@version", version);
+
+        var currentJson = (string?)await selectCommand.ExecuteScalarAsync();
+        var metadata = DeserializeModuleMetadata(currentJson);
+        mutate(metadata);
+
+        const string updateSql = @"
+            UPDATE modules
+            SET metadata = @metadata
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND deleted_at IS NULL";
+
+        await using var updateCommand = new NpgsqlCommand(updateSql, connection);
+        updateCommand.Parameters.AddWithValue("@namespace", @namespace);
+        updateCommand.Parameters.AddWithValue("@name", name);
+        updateCommand.Parameters.AddWithValue("@provider", provider);
+        updateCommand.Parameters.AddWithValue("@version", version);
+        updateCommand.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(metadata)).NpgsqlDbType =
+            NpgsqlDbType.Jsonb;
+
+        await updateCommand.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit)
+    {
+        var modules = new List<ModuleStorage>();
+
+        const string sql = @"
+            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.storage_path, m.published_at, m.dependencies::text, m.metadata::text
+            FROM modules m
+            LEFT JOIN module_extractions e ON e.module_id = m.id
+            WHERE m.deleted_at IS NULL AND e.module_id IS NULL
+            ORDER BY m.published_at
+            LIMIT @limit";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@limit", limit);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            modules.Add(MapModuleStorage(reader));
+        }
+
+        return modules;
+    }
+
     private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string @namespace,
         string name, string provider)
     {
@@ -589,6 +725,33 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
 
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
+    }
+
+    private static ModuleArtifactMetadata DeserializeModuleMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new ModuleArtifactMetadata();
+
+        return JsonSerializer.Deserialize<ModuleArtifactMetadata>(json) ?? new ModuleArtifactMetadata();
+    }
+
+    private static ModuleStorage MapModuleStorage(NpgsqlDataReader reader)
+    {
+        var dependenciesJson = reader.GetString(7);
+        var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
+
+        return new ModuleStorage
+        {
+            Namespace = reader.GetString(0),
+            Name = reader.GetString(1),
+            Provider = reader.GetString(2),
+            Version = reader.GetString(3),
+            Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            FilePath = reader.GetString(5),
+            PublishedAt = reader.GetDateTime(6),
+            Dependencies = dependencies,
+            Metadata = DeserializeModuleMetadata(reader.GetString(8))
+        };
     }
 
     private sealed class ModuleRow
