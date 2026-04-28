@@ -52,6 +52,24 @@ public class S3ModuleServiceUploadTests
         };
     }
 
+    private static GetObjectMetadataResponse CreateMetadataResponse(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        string description,
+        string publishedAt)
+    {
+        var response = new GetObjectMetadataResponse();
+        response.Metadata["namespace"] = @namespace;
+        response.Metadata["name"] = name;
+        response.Metadata["provider"] = provider;
+        response.Metadata["version"] = version;
+        response.Metadata["description"] = description;
+        response.Metadata["publishedAt"] = publishedAt;
+        return response;
+    }
+
     private S3ModuleService CreateService()
     {
         return new S3ModuleService(
@@ -111,24 +129,38 @@ public class S3ModuleServiceUploadTests
         PutObjectRequest? putRequest = null;
         CopyObjectRequest? finalizeRequest = null;
         DeleteObjectRequest? deleteRequest = null;
+        var operations = new List<string>();
 
         _mockS3Client
             .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
-            .Callback<PutObjectRequest, CancellationToken>((request, _) => putRequest = request)
+            .Callback<PutObjectRequest, CancellationToken>((request, _) =>
+            {
+                putRequest = request;
+                operations.Add("put-temp");
+            })
             .ReturnsAsync(new PutObjectResponse());
 
         _mockDatabaseService
             .Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
+            .Callback(() => operations.Add("add-db"))
             .ReturnsAsync(true);
 
         _mockS3Client
             .Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default))
-            .Callback<CopyObjectRequest, CancellationToken>((request, _) => finalizeRequest = request)
+            .Callback<CopyObjectRequest, CancellationToken>((request, _) =>
+            {
+                finalizeRequest = request;
+                operations.Add("copy-finalize");
+            })
             .ReturnsAsync(new CopyObjectResponse());
 
         _mockS3Client
             .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
-            .Callback<DeleteObjectRequest, CancellationToken>((request, _) => deleteRequest = request)
+            .Callback<DeleteObjectRequest, CancellationToken>((request, _) =>
+            {
+                deleteRequest = request;
+                operations.Add("delete-temp");
+            })
             .ReturnsAsync(new DeleteObjectResponse());
 
         var service = CreateService();
@@ -140,6 +172,12 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(putRequest);
         Assert.NotEqual(FinalKey, putRequest!.Key);
         Assert.StartsWith(FinalKey, putRequest.Key);
+        Assert.Equal("ns", putRequest.Metadata["namespace"]);
+        Assert.Equal("name", putRequest.Metadata["name"]);
+        Assert.Equal("aws", putRequest.Metadata["provider"]);
+        Assert.Equal("1.0.0", putRequest.Metadata["version"]);
+        Assert.Equal("desc", putRequest.Metadata["description"]);
+        Assert.False(string.IsNullOrWhiteSpace(putRequest.Metadata["publishedAt"]));
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Namespace == "ns" &&
             module.Name == "name" &&
@@ -157,6 +195,7 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(deleteRequest);
         Assert.Equal(putRequest.Key, deleteRequest!.Key);
         _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+        Assert.Equal(["put-temp", "copy-finalize", "add-db", "delete-temp"], operations);
     }
 
     [Fact]
@@ -165,20 +204,75 @@ public class S3ModuleServiceUploadTests
         SetupFinalObjectMissing();
 
         PutObjectRequest? putRequest = null;
-        DeleteObjectRequest? deleteRequest = null;
+        var deleteKeys = new List<string>();
+        var finalObjectExists = false;
+        Dictionary<string, string>? finalObjectMetadata = null;
 
         _mockS3Client
             .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
             .Callback<PutObjectRequest, CancellationToken>((request, _) => putRequest = request)
             .ReturnsAsync(new PutObjectResponse());
 
+        _mockS3Client
+            .Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default))
+            .Callback<CopyObjectRequest, CancellationToken>((request, _) =>
+            {
+                if (request.DestinationKey == FinalKey)
+                {
+                    finalObjectExists = true;
+                    finalObjectMetadata = new Dictionary<string, string>
+                    {
+                        ["namespace"] = putRequest!.Metadata["namespace"],
+                        ["name"] = putRequest.Metadata["name"],
+                        ["provider"] = putRequest.Metadata["provider"],
+                        ["version"] = putRequest.Metadata["version"],
+                        ["description"] = putRequest.Metadata["description"],
+                        ["publishedAt"] = putRequest.Metadata["publishedAt"]
+                    };
+                }
+            })
+            .ReturnsAsync(new CopyObjectResponse());
+
         _mockDatabaseService
             .Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
             .ReturnsAsync(false);
 
         _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(
+                It.Is<GetObjectMetadataRequest>(request =>
+                    request.BucketName == BucketName &&
+                    request.Key == FinalKey),
+                default))
+            .Returns<GetObjectMetadataRequest, CancellationToken>((_, _) =>
+            {
+                if (!finalObjectExists || finalObjectMetadata == null)
+                {
+                    throw new AmazonS3Exception("Not found")
+                    {
+                        StatusCode = HttpStatusCode.NotFound
+                    };
+                }
+
+                return Task.FromResult(CreateMetadataResponse(
+                    finalObjectMetadata["namespace"],
+                    finalObjectMetadata["name"],
+                    finalObjectMetadata["provider"],
+                    finalObjectMetadata["version"],
+                    finalObjectMetadata["description"],
+                    finalObjectMetadata["publishedAt"]));
+            });
+
+        _mockS3Client
             .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
-            .Callback<DeleteObjectRequest, CancellationToken>((request, _) => deleteRequest = request)
+            .Callback<DeleteObjectRequest, CancellationToken>((request, _) =>
+            {
+                deleteKeys.Add(request.Key);
+                if (request.Key == FinalKey)
+                {
+                    finalObjectExists = false;
+                    finalObjectMetadata = null;
+                }
+            })
             .ReturnsAsync(new DeleteObjectResponse());
 
         var service = CreateService();
@@ -188,13 +282,9 @@ public class S3ModuleServiceUploadTests
 
         Assert.False(result);
         Assert.NotNull(putRequest);
-        Assert.NotNull(deleteRequest);
-        Assert.Equal(putRequest!.Key, deleteRequest!.Key);
-        Assert.NotEqual(FinalKey, deleteRequest.Key);
-        _mockS3Client.Verify(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default), Times.Never);
-        _mockS3Client.Verify(x => x.DeleteObjectAsync(
-            It.Is<DeleteObjectRequest>(request => request.Key == FinalKey),
-            default), Times.Never);
+        Assert.Contains(putRequest!.Key, deleteKeys);
+        Assert.Contains(FinalKey, deleteKeys);
+        _mockS3Client.Verify(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default), Times.Once);
     }
 
     [Fact]
@@ -211,10 +301,6 @@ public class S3ModuleServiceUploadTests
             .Callback<PutObjectRequest, CancellationToken>((request, _) => putRequest = request)
             .ReturnsAsync(new PutObjectResponse());
 
-        _mockDatabaseService
-            .Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
-            .ReturnsAsync(true);
-
         _mockS3Client
             .Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default))
             .Callback<CopyObjectRequest, CancellationToken>((request, _) => copyRequest = request)
@@ -222,10 +308,6 @@ public class S3ModuleServiceUploadTests
             {
                 StatusCode = HttpStatusCode.PreconditionFailed
             });
-
-        _mockDatabaseService
-            .Setup(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()))
-            .ReturnsAsync(true);
 
         _mockS3Client
             .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
@@ -241,9 +323,9 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(putRequest);
         Assert.NotNull(copyRequest);
         Assert.Equal("*", copyRequest!.IfNoneMatch);
-        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.Is<ModuleStorage>(module =>
-            module.Description == "desc" &&
-            module.FilePath == FinalKey)), Times.Once);
+        _mockDatabaseService.Verify(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+        _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(It.IsAny<ModuleStorage>()), Times.Never);
+        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
         Assert.NotNull(deleteRequest);
         Assert.Equal(putRequest!.Key, deleteRequest!.Key);
     }
@@ -257,6 +339,7 @@ public class S3ModuleServiceUploadTests
         var operations = new List<string>();
         string? tempKey = null;
         string? backupKey = null;
+        CopyObjectRequest? finalizeRequest = null;
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -282,6 +365,7 @@ public class S3ModuleServiceUploadTests
                 }
                 else if (request.SourceKey == tempKey && request.DestinationKey == FinalKey)
                 {
+                    finalizeRequest = request;
                     operations.Add("copy-finalize");
                 }
             })
@@ -307,7 +391,7 @@ public class S3ModuleServiceUploadTests
             .ReturnsAsync(new DeleteObjectResponse());
 
         _mockDatabaseService
-            .Setup(x => x.RemoveModuleAsync(existingModule))
+            .Setup(x => x.RemoveModuleExactAsync(existingModule))
             .Callback(() => operations.Add("remove-db"))
             .ReturnsAsync(true);
 
@@ -329,8 +413,10 @@ public class S3ModuleServiceUploadTests
         Assert.NotEqual(tempKey, backupKey);
         Assert.StartsWith(FinalKey, tempKey!, StringComparison.Ordinal);
         Assert.StartsWith(FinalKey, backupKey!, StringComparison.Ordinal);
+        Assert.NotNull(finalizeRequest);
+        Assert.Equal("*", finalizeRequest!.IfNoneMatch);
         Assert.Equal(
-            ["put-temp", "copy-backup", "delete-final", "remove-db", "add-db", "copy-finalize", "delete-temp", "delete-backup"],
+            ["put-temp", "copy-backup", "delete-final", "remove-db", "copy-finalize", "add-db", "delete-temp", "delete-backup"],
             operations);
     }
 
@@ -358,7 +444,7 @@ public class S3ModuleServiceUploadTests
             .ReturnsAsync(new DeleteObjectResponse());
 
         _mockDatabaseService
-            .Setup(x => x.RemoveModuleAsync(existingModule))
+            .Setup(x => x.RemoveModuleExactAsync(existingModule))
             .ReturnsAsync(false);
 
         _mockDatabaseService
@@ -373,7 +459,8 @@ public class S3ModuleServiceUploadTests
         var result = await service.UploadModuleAsync("ns", "name", "aws", "1.0.0", stream, "desc", replace: true);
 
         Assert.True(result);
-        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(existingModule), Times.Once);
+        _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(existingModule), Times.Once);
+        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Description == "desc" &&
             module.FilePath == FinalKey)), Times.Once);
@@ -416,7 +503,7 @@ public class S3ModuleServiceUploadTests
             .ReturnsAsync(new DeleteObjectResponse());
 
         _mockDatabaseService
-            .Setup(x => x.RemoveModuleAsync(existingModule))
+            .Setup(x => x.RemoveModuleExactAsync(existingModule))
             .ThrowsAsync(new InvalidOperationException("remove failed"));
 
         _mockDatabaseService
@@ -431,7 +518,8 @@ public class S3ModuleServiceUploadTests
         var result = await service.UploadModuleAsync("ns", "name", "aws", "1.0.0", stream, "desc", replace: true);
 
         Assert.True(result);
-        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(existingModule), Times.Once);
+        _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(existingModule), Times.Once);
+        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Description == "desc" &&
             module.FilePath == FinalKey)), Times.Once);
@@ -449,6 +537,19 @@ public class S3ModuleServiceUploadTests
         string? tempKey = null;
         string? backupKey = null;
         var deleteKeys = new List<string>();
+        CopyObjectRequest? restoreRequest = null;
+        PutObjectRequest? putRequest = null;
+        var existingPublishedAt = DateTime.UtcNow.AddMinutes(-1).ToString("o");
+        var finalObjectExists = true;
+        Dictionary<string, string>? finalObjectMetadata = new()
+        {
+            ["namespace"] = "ns",
+            ["name"] = "name",
+            ["provider"] = "aws",
+            ["version"] = "1.0.0",
+            ["description"] = "existing-desc",
+            ["publishedAt"] = existingPublishedAt
+        };
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -456,7 +557,11 @@ public class S3ModuleServiceUploadTests
 
         _mockS3Client
             .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
-            .Callback<PutObjectRequest, CancellationToken>((request, _) => tempKey = request.Key)
+            .Callback<PutObjectRequest, CancellationToken>((request, _) =>
+            {
+                tempKey = request.Key;
+                putRequest = request;
+            })
             .ReturnsAsync(new PutObjectResponse());
 
         _mockS3Client
@@ -467,16 +572,76 @@ public class S3ModuleServiceUploadTests
                 {
                     backupKey = request.DestinationKey;
                 }
+                else if (request.SourceKey == tempKey && request.DestinationKey == FinalKey)
+                {
+                    finalObjectExists = true;
+                    finalObjectMetadata = new Dictionary<string, string>
+                    {
+                        ["namespace"] = putRequest!.Metadata["namespace"],
+                        ["name"] = putRequest.Metadata["name"],
+                        ["provider"] = putRequest.Metadata["provider"],
+                        ["version"] = putRequest.Metadata["version"],
+                        ["description"] = putRequest.Metadata["description"],
+                        ["publishedAt"] = putRequest.Metadata["publishedAt"]
+                    };
+                }
+                else if (request.DestinationKey == FinalKey)
+                {
+                    restoreRequest = request;
+                    finalObjectExists = true;
+                    finalObjectMetadata = new Dictionary<string, string>
+                    {
+                        ["namespace"] = "ns",
+                        ["name"] = "name",
+                        ["provider"] = "aws",
+                        ["version"] = "1.0.0",
+                        ["description"] = "existing-desc",
+                        ["publishedAt"] = existingPublishedAt
+                    };
+                }
             })
             .ReturnsAsync(new CopyObjectResponse());
 
         _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(
+                It.Is<GetObjectMetadataRequest>(request =>
+                    request.BucketName == BucketName &&
+                    request.Key == FinalKey),
+                default))
+            .Returns<GetObjectMetadataRequest, CancellationToken>((_, _) =>
+            {
+                if (!finalObjectExists || finalObjectMetadata == null)
+                {
+                    throw new AmazonS3Exception("Not found")
+                    {
+                        StatusCode = HttpStatusCode.NotFound
+                    };
+                }
+
+                return Task.FromResult(CreateMetadataResponse(
+                    finalObjectMetadata["namespace"],
+                    finalObjectMetadata["name"],
+                    finalObjectMetadata["provider"],
+                    finalObjectMetadata["version"],
+                    finalObjectMetadata["description"],
+                    finalObjectMetadata["publishedAt"]));
+            });
+
+        _mockS3Client
             .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
-            .Callback<DeleteObjectRequest, CancellationToken>((request, _) => deleteKeys.Add(request.Key))
+            .Callback<DeleteObjectRequest, CancellationToken>((request, _) =>
+            {
+                deleteKeys.Add(request.Key);
+                if (request.Key == FinalKey)
+                {
+                    finalObjectExists = false;
+                    finalObjectMetadata = null;
+                }
+            })
             .ReturnsAsync(new DeleteObjectResponse());
 
         _mockDatabaseService
-            .Setup(x => x.RemoveModuleAsync(existingModule))
+            .Setup(x => x.RemoveModuleExactAsync(existingModule))
             .ReturnsAsync(true);
 
         _mockDatabaseService
@@ -502,12 +667,15 @@ public class S3ModuleServiceUploadTests
                 request.SourceKey == backupKey &&
                 request.DestinationKey == FinalKey),
             default), Times.Once);
+        Assert.NotNull(restoreRequest);
+        Assert.Equal("*", restoreRequest!.IfNoneMatch);
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Description == "desc" &&
             module.FilePath == FinalKey)), Times.Once);
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Description == "existing-desc" &&
             module.FilePath == FinalKey)), Times.Once);
+        Assert.Contains(FinalKey, deleteKeys);
         Assert.Contains(tempKey!, deleteKeys);
         Assert.Contains(backupKey!, deleteKeys);
     }
@@ -521,6 +689,9 @@ public class S3ModuleServiceUploadTests
         string? tempKey = null;
         string? backupKey = null;
         var deleteKeys = new List<string>();
+        CopyObjectRequest? finalizeRequest = null;
+        CopyObjectRequest? restoreRequest = null;
+        var finalObjectExists = true;
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -539,6 +710,15 @@ public class S3ModuleServiceUploadTests
                 {
                     backupKey = request.DestinationKey;
                 }
+                else if (request.SourceKey == tempKey && request.DestinationKey == FinalKey)
+                {
+                    finalizeRequest = request;
+                }
+                else if (request.SourceKey == backupKey && request.DestinationKey == FinalKey)
+                {
+                    restoreRequest = request;
+                    finalObjectExists = true;
+                }
             })
             .Returns<CopyObjectRequest, CancellationToken>((request, _) =>
             {
@@ -554,18 +734,41 @@ public class S3ModuleServiceUploadTests
             });
 
         _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(
+                It.Is<GetObjectMetadataRequest>(request =>
+                    request.BucketName == BucketName &&
+                    request.Key == FinalKey),
+                default))
+            .Returns<GetObjectMetadataRequest, CancellationToken>((_, _) =>
+            {
+                if (!finalObjectExists)
+                {
+                    throw new AmazonS3Exception("Not found")
+                    {
+                        StatusCode = HttpStatusCode.NotFound
+                    };
+                }
+
+                return Task.FromResult(CreateMetadataResponse(
+                    "ns",
+                    "name",
+                    "aws",
+                    "1.0.0",
+                    "existing-desc",
+                    existingModule.PublishedAt.ToString("o")));
+            });
+
+        _mockS3Client
             .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
             .Callback<DeleteObjectRequest, CancellationToken>((request, _) => deleteKeys.Add(request.Key))
             .ReturnsAsync(new DeleteObjectResponse());
 
         _mockDatabaseService
-            .SetupSequence(x => x.RemoveModuleAsync(It.IsAny<ModuleStorage>()))
-            .ReturnsAsync(true)
+            .Setup(x => x.RemoveModuleExactAsync(existingModule))
             .ReturnsAsync(true);
 
         _mockDatabaseService
-            .SetupSequence(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
-            .ReturnsAsync(true)
+            .Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
             .ReturnsAsync(true);
 
         var service = CreateService();
@@ -576,15 +779,19 @@ public class S3ModuleServiceUploadTests
         Assert.False(result);
         Assert.NotNull(tempKey);
         Assert.NotNull(backupKey);
-        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.Is<ModuleStorage>(module =>
+        Assert.NotNull(finalizeRequest);
+        Assert.Equal("*", finalizeRequest!.IfNoneMatch);
+        _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(It.Is<ModuleStorage>(module =>
             module.Description == "existing-desc" &&
-            module.FilePath == FinalKey)), Times.Once);
-        _mockDatabaseService.Verify(x => x.RemoveModuleAsync(It.Is<ModuleStorage>(module =>
-            module.Description == "desc" &&
             module.FilePath == FinalKey)), Times.Once);
         _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
             module.Description == "existing-desc" &&
             module.FilePath == FinalKey)), Times.Once);
+        _mockDatabaseService.Verify(x => x.AddModuleAsync(It.Is<ModuleStorage>(module =>
+            module.Description == "desc" &&
+            module.FilePath == FinalKey)), Times.Never);
+        Assert.NotNull(restoreRequest);
+        Assert.Equal("*", restoreRequest!.IfNoneMatch);
         _mockS3Client.Verify(x => x.CopyObjectAsync(
             It.Is<CopyObjectRequest>(request =>
                 request.SourceKey == backupKey &&

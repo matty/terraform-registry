@@ -207,6 +207,29 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RemoveModuleExact_OnlyDeletesMatchingRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var published = new DateTime(2024, 4, 1, 12, 34, 56, DateTimeKind.Utc);
+        var mod = MakeModule(version: "3.1.0", desc: "exact-desc", publishedAt: published, deps: ["a", "b"]);
+        await svc.AddModuleAsync(mod);
+
+        var wrongPublishedAt = MakeModule(
+            version: "3.1.0",
+            desc: "exact-desc",
+            publishedAt: published.AddSeconds(1),
+            deps: ["a", "b"]);
+
+        Assert.False(await svc.RemoveModuleExactAsync(wrongPublishedAt));
+        Assert.NotNull(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+
+        Assert.True(await svc.RemoveModuleExactAsync(mod));
+        Assert.Null(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
     public async Task GetModule_ReturnsNullAfterSoftDelete()
     {
         var svc = CreateService(_connectionString);

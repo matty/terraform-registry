@@ -303,6 +303,47 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage module)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = $ns
+              AND name = $name
+              AND provider = $prov
+              AND version = $ver
+              AND description = $desc
+              AND storage_path = $path
+              AND published_at = $published
+              AND dependencies = $deps
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", module.Namespace);
+            cmd.Parameters.AddWithValue("$name", module.Name);
+            cmd.Parameters.AddWithValue("$prov", module.Provider);
+            cmd.Parameters.AddWithValue("$ver", module.Version);
+            cmd.Parameters.AddWithValue("$desc", module.Description);
+            cmd.Parameters.AddWithValue("$path", module.FilePath);
+            cmd.Parameters.AddWithValue("$published", module.PublishedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$deps",
+                module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies));
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from SQLite",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
     public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
     {
         var sql = @"UPDATE modules SET deleted_at = $deletedAt 

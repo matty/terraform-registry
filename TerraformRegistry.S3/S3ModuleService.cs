@@ -170,7 +170,8 @@ public class S3ModuleService : ModuleService
     protected override Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
-        return UploadModuleAsyncImplInternal(@namespace, name, provider, version, moduleContent, description, replace);
+        return UploadModuleAsyncImplInternal(@namespace, name, provider, version, moduleContent, description, replace,
+            metadata);
     }
 
     public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider,
@@ -223,7 +224,7 @@ public class S3ModuleService : ModuleService
     }
 
     private async Task<bool> UploadModuleAsyncImplInternal(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         var objectKey = $"{@namespace}/{name}-{provider}-{version}.zip";
         var objectExists = false;
@@ -300,13 +301,15 @@ public class S3ModuleService : ModuleService
 
         try
         {
-            await _s3Client.PutObjectAsync(new PutObjectRequest
+            var putRequest = new PutObjectRequest
             {
                 BucketName = _bucketName,
                 Key = tempKey,
                 InputStream = moduleContent,
                 AutoCloseStream = false
-            });
+            };
+            AddModuleMetadata(putRequest.Metadata, newModule);
+            await _s3Client.PutObjectAsync(putRequest);
         }
         catch (Exception ex)
         {
@@ -332,14 +335,21 @@ public class S3ModuleService : ModuleService
 
     private async Task<bool> FinalizeCreateUploadAsync(ModuleStorage newModule, string tempKey)
     {
+        if (!await TryPromoteTemporaryObjectAsync(tempKey, newModule, "create"))
+        {
+            await TryDeleteTemporaryObjectAsync(tempKey);
+            return false;
+        }
+
         try
         {
             var added = await _databaseService.AddModuleAsync(newModule);
             if (!added)
             {
+                await TryDeleteFinalObjectIfMatchesModuleAsync(newModule);
                 await TryDeleteTemporaryObjectAsync(tempKey);
                 _logger.LogError(
-                    "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database before S3 finalization.",
+                    "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
                     newModule.Namespace,
                     newModule.Name,
                     newModule.Provider,
@@ -349,35 +359,11 @@ public class S3ModuleService : ModuleService
         }
         catch (Exception ex)
         {
+            await TryDeleteFinalObjectIfMatchesModuleAsync(newModule);
             await TryDeleteTemporaryObjectAsync(tempKey);
             _logger.LogError(
                 ex,
-                "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database before S3 finalization.",
-                newModule.Namespace,
-                newModule.Name,
-                newModule.Provider,
-                newModule.Version);
-            return false;
-        }
-
-        try
-        {
-            await _s3Client.CopyObjectAsync(new CopyObjectRequest
-            {
-                SourceBucket = _bucketName,
-                SourceKey = tempKey,
-                DestinationBucket = _bucketName,
-                DestinationKey = newModule.FilePath,
-                IfNoneMatch = "*"
-            });
-        }
-        catch (Exception ex)
-        {
-            await TryRemoveModuleRowAsync(newModule, "after create finalization failed");
-            await TryDeleteTemporaryObjectAsync(tempKey);
-            _logger.LogError(
-                ex,
-                "Error finalizing module {Namespace}/{Name}/{Provider}/{Version} from temporary S3 object.",
+                "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
                 newModule.Namespace,
                 newModule.Name,
                 newModule.Provider,
@@ -444,15 +430,29 @@ public class S3ModuleService : ModuleService
             }
         }
 
-        await TryRemoveModuleBeforeReplaceAsync(existingModule ?? newModule);
+        await TryRemoveExistingModuleSnapshotAsync(existingModule);
+
+        if (!await TryPromoteTemporaryObjectAsync(tempKey, newModule, "replace"))
+        {
+            if (await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath))
+            {
+                await TryRestoreModuleRowAsync(existingModule);
+            }
+            await TryDeleteTemporaryObjectAsync(tempKey);
+            await TryDeleteBackupObjectAsync(backupKey);
+            return false;
+        }
 
         try
         {
             var added = await _databaseService.AddModuleAsync(newModule);
             if (!added)
             {
-                await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
-                await TryRestoreModuleRowAsync(existingModule);
+                await TryDeleteFinalObjectIfMatchesModuleAsync(newModule);
+                if (await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath))
+                {
+                    await TryRestoreModuleRowAsync(existingModule);
+                }
                 await TryDeleteTemporaryObjectAsync(tempKey);
                 await TryDeleteBackupObjectAsync(backupKey);
                 _logger.LogError(
@@ -466,40 +466,16 @@ public class S3ModuleService : ModuleService
         }
         catch (Exception ex)
         {
-            await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
-            await TryRestoreModuleRowAsync(existingModule);
+            await TryDeleteFinalObjectIfMatchesModuleAsync(newModule);
+            if (await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath))
+            {
+                await TryRestoreModuleRowAsync(existingModule);
+            }
             await TryDeleteTemporaryObjectAsync(tempKey);
             await TryDeleteBackupObjectAsync(backupKey);
             _logger.LogError(
                 ex,
                 "Error adding replacement module row for {Namespace}/{Name}/{Provider}/{Version}.",
-                newModule.Namespace,
-                newModule.Name,
-                newModule.Provider,
-                newModule.Version);
-            return false;
-        }
-
-        try
-        {
-            await _s3Client.CopyObjectAsync(new CopyObjectRequest
-            {
-                SourceBucket = _bucketName,
-                SourceKey = tempKey,
-                DestinationBucket = _bucketName,
-                DestinationKey = newModule.FilePath
-            });
-        }
-        catch (Exception ex)
-        {
-            await TryRemoveModuleRowAsync(newModule, "after replacement finalization failed");
-            await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
-            await TryRestoreModuleRowAsync(existingModule);
-            await TryDeleteTemporaryObjectAsync(tempKey);
-            await TryDeleteBackupObjectAsync(backupKey);
-            _logger.LogError(
-                ex,
-                "Error finalizing replacement module {Namespace}/{Name}/{Provider}/{Version} from temporary S3 object.",
                 newModule.Namespace,
                 newModule.Name,
                 newModule.Provider,
@@ -520,6 +496,16 @@ public class S3ModuleService : ModuleService
     private static string CreateBackupObjectKey(string objectKey)
     {
         return $"{objectKey}.{Guid.NewGuid():N}.bak";
+    }
+
+    private static void AddModuleMetadata(MetadataCollection metadata, ModuleStorage module)
+    {
+        metadata["namespace"] = module.Namespace;
+        metadata["name"] = module.Name;
+        metadata["provider"] = module.Provider;
+        metadata["version"] = module.Version;
+        metadata["description"] = module.Description;
+        metadata["publishedAt"] = module.PublishedAt.ToString("o", CultureInfo.InvariantCulture);
     }
 
     private async Task TryDeleteTemporaryObjectAsync(string tempKey)
@@ -553,42 +539,157 @@ public class S3ModuleService : ModuleService
         }
     }
 
-    private async Task TryRemoveModuleBeforeReplaceAsync(ModuleStorage module)
+    private async Task<bool> TryPromoteTemporaryObjectAsync(string tempKey, ModuleStorage module, string operation)
     {
         try
         {
-            var removed = await _databaseService.RemoveModuleAsync(module);
-            if (!removed)
+            await _s3Client.CopyObjectAsync(new CopyObjectRequest
+            {
+                SourceBucket = _bucketName,
+                SourceKey = tempKey,
+                DestinationBucket = _bucketName,
+                DestinationKey = module.FilePath,
+                IfNoneMatch = "*"
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (await FinalObjectMatchesModuleAsync(module))
             {
                 _logger.LogWarning(
-                    "Failed to remove existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
+                    ex,
+                    "S3 finalization for module {Namespace}/{Name}/{Provider}/{Version} during {Operation} reported an error, but the final object metadata matches the uploaded module. Continuing.",
                     module.Namespace,
                     module.Name,
                     module.Provider,
-                    module.Version);
+                    module.Version,
+                    operation);
+                return true;
+            }
+
+            _logger.LogError(
+                ex,
+                "Error finalizing module {Namespace}/{Name}/{Provider}/{Version} from temporary S3 object during {Operation}.",
+                module.Namespace,
+                module.Name,
+                module.Provider,
+                module.Version,
+                operation);
+            return false;
+        }
+    }
+
+    private async Task<bool> FinalObjectMatchesModuleAsync(ModuleStorage module)
+    {
+        try
+        {
+            var response = await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = _bucketName,
+                Key = module.FilePath
+            });
+            return ObjectMetadataMatchesModule(response.Metadata, module);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error checking final S3 metadata for module {Namespace}/{Name}/{Provider}/{Version}.",
+                module.Namespace,
+                module.Name,
+                module.Provider,
+                module.Version);
+            return false;
+        }
+    }
+
+    private async Task<bool> TryDeleteFinalObjectIfMatchesModuleAsync(ModuleStorage module)
+    {
+        if (!await FinalObjectMatchesModuleAsync(module))
+        {
+            _logger.LogWarning(
+                "Skipped deleting final S3 object for module {Namespace}/{Name}/{Provider}/{Version} because the stored metadata no longer matches this upload attempt.",
+                module.Namespace,
+                module.Name,
+                module.Provider,
+                module.Version);
+            return false;
+        }
+
+        await TryDeleteObjectAsync(module.FilePath, "final");
+        return true;
+    }
+
+    private static bool ObjectMetadataMatchesModule(MetadataCollection metadata, ModuleStorage module)
+    {
+        var namespaceName = metadata["namespace"];
+        var name = metadata["name"];
+        var provider = metadata["provider"];
+        var version = metadata["version"];
+        var description = metadata["description"];
+        var publishedAt = metadata["publishedAt"];
+
+        return namespaceName != null &&
+               name != null &&
+               provider != null &&
+               version != null &&
+               description != null &&
+               publishedAt != null &&
+               string.Equals(namespaceName, module.Namespace, StringComparison.Ordinal) &&
+               string.Equals(name, module.Name, StringComparison.Ordinal) &&
+               string.Equals(provider, module.Provider, StringComparison.Ordinal) &&
+               string.Equals(version, module.Version, StringComparison.Ordinal) &&
+               string.Equals(description, module.Description, StringComparison.Ordinal) &&
+               string.Equals(publishedAt, module.PublishedAt.ToString("o", CultureInfo.InvariantCulture),
+                   StringComparison.Ordinal);
+    }
+
+    private async Task TryRemoveExistingModuleSnapshotAsync(ModuleStorage? existingModule)
+    {
+        if (existingModule == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var removed = await _databaseService.RemoveModuleExactAsync(existingModule);
+            if (!removed)
+            {
+                _logger.LogWarning(
+                    "Failed to remove exact existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
+                    existingModule.Namespace,
+                    existingModule.Name,
+                    existingModule.Provider,
+                    existingModule.Version);
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
-                "Error removing existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
-                module.Namespace,
-                module.Name,
-                module.Provider,
-                module.Version);
+                "Error removing exact existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
+                existingModule.Namespace,
+                existingModule.Name,
+                existingModule.Provider,
+                existingModule.Version);
         }
     }
 
-    private async Task TryRemoveModuleRowAsync(ModuleStorage module, string context)
+    private async Task TryRemoveExactModuleRowAsync(ModuleStorage module, string context)
     {
         try
         {
-            var removed = await _databaseService.RemoveModuleAsync(module);
+            var removed = await _databaseService.RemoveModuleExactAsync(module);
             if (!removed)
             {
                 _logger.LogError(
-                    "Failed to remove module row for {Namespace}/{Name}/{Provider}/{Version} {Context}.",
+                    "Failed to remove exact module row for {Namespace}/{Name}/{Provider}/{Version} {Context}.",
                     module.Namespace,
                     module.Name,
                     module.Provider,
@@ -600,7 +701,7 @@ public class S3ModuleService : ModuleService
         {
             _logger.LogError(
                 ex,
-                "Error removing module row for {Namespace}/{Name}/{Provider}/{Version} {Context}.",
+                "Error removing exact module row for {Namespace}/{Name}/{Provider}/{Version} {Context}.",
                 module.Namespace,
                 module.Name,
                 module.Provider,
@@ -641,11 +742,11 @@ public class S3ModuleService : ModuleService
         }
     }
 
-    private async Task TryRestoreObjectFromBackupAsync(string? backupKey, string objectKey)
+    private async Task<bool> TryRestoreObjectFromBackupAsync(string? backupKey, string objectKey)
     {
         if (string.IsNullOrWhiteSpace(backupKey))
         {
-            return;
+            return false;
         }
 
         try
@@ -655,13 +756,24 @@ public class S3ModuleService : ModuleService
                 SourceBucket = _bucketName,
                 SourceKey = backupKey,
                 DestinationBucket = _bucketName,
-                DestinationKey = objectKey
+                DestinationKey = objectKey,
+                IfNoneMatch = "*"
             });
+            return true;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            _logger.LogWarning(
+                "Skipped restoring S3 object {ObjectKey} from backup {BackupKey} because another writer recreated the final key first.",
+                objectKey,
+                backupKey);
+            return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to restore S3 object {ObjectKey} from backup {BackupKey}.", objectKey,
                 backupKey);
+            return false;
         }
     }
 }
