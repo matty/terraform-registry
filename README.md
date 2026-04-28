@@ -29,8 +29,6 @@ Module publishing is supported through:
 - GitHub repository linking and tag backfill for users with `vcs.manage`
 - GitHub webhook auto-publish for linked repositories
 
-Workflow details are documented in [docs/module-publishing-workflows.md](/home/rocky/terraform-registry/.worktrees/module-publishing-workflows/docs/module-publishing-workflows.md).
-
 ## Quick Start
 
 ### Using Docker (Recommended)
