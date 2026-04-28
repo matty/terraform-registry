@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
@@ -33,5 +34,30 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
 
         var listContent = await listResponse.Content.ReadAsStringAsync();
         Assert.Equal("{\"modules\":[],\"meta\":{\"limit\":\"10\",\"current_offset\":\"0\"}}", listContent);
+    }
+
+    [Fact]
+    public async Task ListModules_UsesSemVerPrecedenceForLatestVersion()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var olderContent = CreateModuleUploadContent();
+        var olderResponse = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/1.9.0", olderContent);
+        Assert.Equal(HttpStatusCode.Created, olderResponse.StatusCode);
+
+        using var newerContent = CreateModuleUploadContent();
+        var newerResponse = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/1.10.0", newerContent);
+        Assert.Equal(HttpStatusCode.Created, newerResponse.StatusCode);
+
+        var listResponse = await client.GetAsync("/v1/modules?namespace=test-ns&provider=test-provider&offset=0&limit=10");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+
+        var listContent = await listResponse.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(listContent);
+        var modules = json.RootElement.GetProperty("modules");
+        var module = Assert.Single(modules.EnumerateArray());
+
+        Assert.Equal("1.10.0", module.GetProperty("version").GetString());
     }
 }

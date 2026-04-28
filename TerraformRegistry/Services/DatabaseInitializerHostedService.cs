@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -14,6 +15,7 @@ namespace TerraformRegistry.Services;
 public class DatabaseInitializerHostedService : IHostedService
 {
     private readonly IInitializableDb? _initializableDb;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DatabaseInitializerHostedService> _logger;
     private readonly DatabaseRetryOptions _retryOptions;
 
@@ -22,6 +24,7 @@ public class DatabaseInitializerHostedService : IHostedService
         IOptions<DatabaseRetryOptions> retryOptions,
         ILogger<DatabaseInitializerHostedService> logger)
     {
+        _serviceProvider = serviceProvider;
         _initializableDb = serviceProvider.GetService(typeof(IInitializableDb)) as IInitializableDb;
         _retryOptions = retryOptions.Value;
         _logger = logger;
@@ -36,13 +39,62 @@ public class DatabaseInitializerHostedService : IHostedService
         }
 
         var pipeline = CreateRetryPipeline();
-        
+
         await pipeline.ExecuteAsync(async token =>
         {
             _logger.LogInformation("Attempting to initialize database...");
             await _initializableDb.InitializeDatabase();
             _logger.LogInformation("Database initialization completed successfully.");
         }, cancellationToken);
+
+        // Seed default RBAC roles after migration is complete
+        await SeedRolesAsync();
+    }
+
+    private async Task SeedRolesAsync()
+    {
+        try
+        {
+            var roleService = _serviceProvider.GetRequiredService<IRoleService>();
+            var permissionService = _serviceProvider.GetRequiredService<IPermissionService>();
+            var configuration = _serviceProvider.GetRequiredService<IConfiguration>();
+            var dbService = _serviceProvider.GetRequiredService<IDatabaseService>();
+
+            await roleService.SeedDefaultRolesAsync();
+            _logger.LogInformation("Default RBAC roles seeded successfully.");
+
+            var adminEmails = configuration["AdminEmails"];
+            if (!string.IsNullOrEmpty(adminEmails))
+            {
+                var roles = await roleService.ListRolesAsync();
+                var adminRole = roles.FirstOrDefault(r => r.Name == RoleNames.Admin);
+                if (adminRole != null)
+                {
+                    foreach (var email in adminEmails.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(email);
+                        if (matchingUsers.Count > 1)
+                        {
+                            _logger.LogError(
+                                "Skipping bootstrap admin assignment for {Email} because multiple legacy users match that email case-insensitively.",
+                                email);
+                            continue;
+                        }
+
+                        var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
+                        if (user != null)
+                        {
+                            await permissionService.AssignRoleAsync(user.Id, adminRole.Id, "system-bootstrap");
+                            _logger.LogInformation("Bootstrapped admin role for user {Email}", email);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to seed default RBAC roles.");
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

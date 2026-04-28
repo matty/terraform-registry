@@ -157,10 +157,16 @@ public class OAuthService
             email = await GetGitHubPrimaryEmailAsync(client, accessToken);
         }
 
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _logger.LogWarning("GitHub login rejected because no email address was available for the authenticated user.");
+            return null;
+        }
+
         return new UserInfo
         {
             Id = root.GetProperty("id").GetInt64().ToString(),
-            Email = email ?? "",
+            Email = email,
             Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? root.GetProperty("login").GetString() ?? "" : root.GetProperty("login").GetString() ?? "",
             Provider = "github",
             AvatarUrl = root.TryGetProperty("avatar_url", out var avatarProp) ? avatarProp.GetString() ?? "" : ""
@@ -183,7 +189,19 @@ public class OAuthService
 
             foreach (var emailEntry in emailDoc.RootElement.EnumerateArray())
             {
-                if (emailEntry.TryGetProperty("primary", out var primaryProp) && primaryProp.GetBoolean())
+                if (emailEntry.TryGetProperty("primary", out var primaryProp) &&
+                    primaryProp.GetBoolean() &&
+                    emailEntry.TryGetProperty("verified", out var verifiedProp) &&
+                    verifiedProp.GetBoolean())
+                {
+                    return emailEntry.GetProperty("email").GetString();
+                }
+            }
+
+            foreach (var emailEntry in emailDoc.RootElement.EnumerateArray())
+            {
+                if (emailEntry.TryGetProperty("verified", out var verifiedProp) &&
+                    verifiedProp.GetBoolean())
                 {
                     return emailEntry.GetProperty("email").GetString();
                 }
@@ -243,12 +261,19 @@ public class OAuthService
         var userJson = await userResponse.Content.ReadAsStringAsync();
         using var userDoc = JsonDocument.Parse(userJson);
         var root = userDoc.RootElement;
+        var email = root.TryGetProperty("mail", out var mailProp) ? mailProp.GetString() :
+            root.TryGetProperty("userPrincipalName", out var upnProp) ? upnProp.GetString() : null;
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            _logger.LogWarning("Azure AD login rejected because no email address was available for the authenticated user.");
+            return null;
+        }
 
         return new UserInfo
         {
             Id = root.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "",
-            Email = root.TryGetProperty("mail", out var mailProp) ? mailProp.GetString() ?? "" :
-                    root.TryGetProperty("userPrincipalName", out var upnProp) ? upnProp.GetString() ?? "" : "",
+            Email = email,
             Name = root.TryGetProperty("displayName", out var nameProp) ? nameProp.GetString() ?? "" : "",
             Provider = "azuread",
             AvatarUrl = "" // Azure doesn't provide avatar in basic profile
