@@ -304,6 +304,34 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
+    public async Task VcsSources_Create_WithSyncExistingTagsFailure_ReturnsCreatedWithFailedSyncPayload()
+    {
+        var client = await CreateClientWithFakeGitHubSyncFailureAsync(
+            "vcs-sync-create-failure@example.com",
+            "vcs-sync-create-failure-id",
+            "GitHub tag import failed");
+        var connectionId = await CreateTestConnectionAsync();
+
+        var response = await client.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "sync-failure-ns",
+            name = "sync-failure-mod",
+            provider = "aws",
+            repoOwner = "sync-failure-owner",
+            repoName = "sync-failure-repo",
+            connectionId,
+            syncExistingTags = true
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("sync", out var sync));
+        Assert.Equal("failed", sync.GetProperty("status").GetString());
+        Assert.Equal("GitHub tag import failed", sync.GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task VcsSource_Sync_ForDifferentOwner_ReturnsNotFound()
     {
         var ownerClient = await CreateAuthenticatedClientAsync("vcs-sync-owner@example.com", "vcs-sync-owner-id");
@@ -327,6 +355,44 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
         var response = await otherClient.PostAsJsonAsync($"/api/vcs/sources/{id}/sync", new { });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task VcsSource_Sync_ReturnsSyncSummary()
+    {
+        var client = await CreateClientWithFakeGitHubSyncAsync(
+            "vcs-sync-success@example.com",
+            "vcs-sync-success-id",
+            new SyncVcsSourceResult("succeeded", 3, 1, "2.0.0", null));
+        var connectionId = await CreateTestConnectionAsync();
+
+        var createResponse = await client.PostAsJsonAsync("/api/vcs/sources", new
+        {
+            @namespace = "sync-success-ns",
+            name = "sync-success-mod",
+            provider = "aws",
+            repoOwner = "sync-success-owner",
+            repoName = "sync-success-repo",
+            connectionId
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = created.GetProperty("id").GetString();
+
+        var response = await client.PostAsJsonAsync($"/api/vcs/sources/{id}/sync", new
+        {
+            tag = "v2.0.0",
+            replace = true
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("succeeded", json.GetProperty("status").GetString());
+        Assert.Equal(3, json.GetProperty("publishedCount").GetInt32());
+        Assert.Equal(1, json.GetProperty("skippedCount").GetInt32());
+        Assert.Equal("2.0.0", json.GetProperty("latestVersion").GetString());
     }
 
     [Fact]
@@ -467,12 +533,22 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
     private async Task<HttpClient> CreateClientWithFakeGitHubSyncAsync(string email, string providerId, SyncVcsSourceResult result)
     {
+        return await CreateClientWithFakeGitHubSyncAsync(email, providerId, _ => Task.FromResult(result));
+    }
+
+    private async Task<HttpClient> CreateClientWithFakeGitHubSyncFailureAsync(string email, string providerId, string errorMessage)
+    {
+        return await CreateClientWithFakeGitHubSyncAsync(email, providerId, _ => throw new InvalidOperationException(errorMessage));
+    }
+
+    private async Task<HttpClient> CreateClientWithFakeGitHubSyncAsync(string email, string providerId, Func<SyncRequest, Task<SyncVcsSourceResult>> syncHandler)
+    {
         var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IGitHubVcsService>();
-                services.AddSingleton<IGitHubVcsService>(new FakeGitHubVcsService(result));
+                services.AddSingleton<IGitHubVcsService>(new FakeGitHubVcsService(syncHandler));
             });
         });
 
@@ -491,12 +567,14 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
         return client;
     }
 
-    private sealed class FakeGitHubVcsService(SyncVcsSourceResult result) : IGitHubVcsService
+    private sealed record SyncRequest(Guid SourceId, string? RequestedTag, bool Replace, string? ActorUserId);
+
+    private sealed class FakeGitHubVcsService(Func<SyncRequest, Task<SyncVcsSourceResult>> syncHandler) : IGitHubVcsService
     {
         public Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(string? signatureHeader, string? eventHeader, string body) =>
             Task.FromResult<(string Status, string? Reason, string? Version)>(("skipped", null, null));
 
         public Task<SyncVcsSourceResult> SyncSourceAsync(Guid sourceId, string? requestedTag, bool replace, string? actorUserId, CancellationToken cancellationToken) =>
-            Task.FromResult(result);
+            syncHandler(new SyncRequest(sourceId, requestedTag, replace, actorUserId));
     }
 }
