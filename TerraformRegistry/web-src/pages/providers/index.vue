@@ -16,6 +16,7 @@ const requestUrl = useRequestURL();
 
 const providers = ref<TerraformProvider[]>([]);
 const searchQuery = ref("");
+const serverQuery = ref("");
 const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref("");
@@ -58,7 +59,7 @@ const fetchProviders = async (offset = 0, append = false) => {
     }
     error.value = "";
 
-    const response = await listProviders(searchQuery.value, offset, limit);
+    const response = await listProviders(serverQuery.value, offset, limit);
 
     if (append) {
       providers.value.push(...response.providers);
@@ -77,6 +78,7 @@ const fetchProviders = async (offset = 0, append = false) => {
 };
 
 const refreshProviders = async () => {
+  serverQuery.value = searchQuery.value.trim();
   currentOffset.value = 0;
   await fetchProviders(0, false);
 };
