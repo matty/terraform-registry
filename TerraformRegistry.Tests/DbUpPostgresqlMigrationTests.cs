@@ -323,6 +323,26 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration015_CreatesRuntimeSettingsTable()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        MigrateUpTo(15, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        var tables = GetTables(conn);
+        Assert.Contains("runtime_settings", tables);
+
+        var columns = GetColumns(conn, "runtime_settings");
+        Assert.Contains("key", columns);
+        Assert.Contains("value_json", columns);
+        Assert.Contains("updated_at", columns);
+        Assert.Contains("updated_by", columns);
+    }
+
+    [Fact]
     public async Task FullMigration_DataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
@@ -468,7 +488,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(13, journalCount);
+        Assert.Equal(14, journalCount);
     }
 
     [Fact]
@@ -511,7 +531,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(13, journalCount);
+        Assert.Equal(14, journalCount);
     }
 
     private string CreateFreshDatabase()

@@ -67,6 +67,20 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
     }
 });
 
+builder.Services.AddSingleton<IRuntimeSettingsService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new PostgreSqlRuntimeSettingsService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for runtime settings service.")),
+        "sqlite" => new SqliteRuntimeSettingsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 // Register module storage service using DI factory
 builder.Services.AddSingleton<IModuleService>(provider =>
 {

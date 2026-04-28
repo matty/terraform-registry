@@ -258,6 +258,21 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration014_CreatesRuntimeSettingsTable()
+    {
+        MigrateUpTo(14, _connectionString);
+
+        var tables = GetTables(_connection);
+        Assert.Contains("runtime_settings", tables);
+
+        var columns = GetColumns(_connection, "runtime_settings");
+        Assert.Contains("key", columns);
+        Assert.Contains("value_json", columns);
+        Assert.Contains("updated_at", columns);
+        Assert.Contains("updated_by", columns);
+    }
+
+    [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
         MigrateUpTo(10, _connectionString);
