@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Handlers;
@@ -18,7 +19,7 @@ public static class VcsHandlers
         return Results.Ok(sources);
     }
 
-    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request)
+    public static async Task<IResult> CreateVcsSource(IVcsSourceService vcsService, IVcsConnectionService connectionService, IGitHubVcsService githubService, IAuditService auditService, HttpContext context, HttpRequest request)
     {
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.VcsManage))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
@@ -53,7 +54,22 @@ public static class VcsHandlers
             userId, body.Namespace, body.Name, body.Provider,
             body.RepoOwner, body.RepoName, body.ConnectionId);
 
-        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName, connectionId = body.ConnectionId });
+        SyncVcsSourceResult? sync = null;
+        if (body.SyncExistingTags)
+        {
+            try
+            {
+                sync = await githubService.SyncSourceAsync(source.Id, null, false, userId, context.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                sync = new SyncVcsSourceResult("failed", 0, 0, null, ex.Message);
+            }
+        }
+
+        source = await vcsService.GetAsync(source.Id) ?? source;
+
+        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName, connectionId = body.ConnectionId, body.SyncExistingTags });
 
         return Results.Created($"/api/vcs/sources/{source.Id}", new
         {
@@ -65,8 +81,14 @@ public static class VcsHandlers
             source.RepoName,
             source.ConnectionId,
             source.IsActive,
+            source.TagPattern,
+            source.LastPublishedVersion,
+            source.LastSyncStatus,
+            source.LastSyncAt,
+            source.LastSyncError,
             source.CreatedAt,
-            source.UpdatedAt
+            source.UpdatedAt,
+            sync
         });
     }
 
@@ -114,6 +136,51 @@ public static class VcsHandlers
         context.FireAuditLog(auditService, "vcs.deleted", "vcs_source", id.ToString());
 
         return Results.NoContent();
+    }
+
+    public static async Task<IResult> GetVcsSourceByModule(IVcsSourceService vcsService, HttpContext context, string @namespace, string name, string provider)
+    {
+        if (context.User.Identity?.IsAuthenticated != true)
+            return Results.Unauthorized();
+        if (!context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        var source = await vcsService.GetByModuleAsync(@namespace, name, provider);
+        return source == null
+            || !string.Equals(source.UserId, userId, StringComparison.Ordinal)
+            ? Results.NotFound(new { error = "VCS source not found" })
+            : Results.Ok(source);
+    }
+
+    public static async Task<IResult> SyncVcsSource(Guid id, IVcsSourceService vcsService, IGitHubVcsService githubService, HttpContext context, HttpRequest request)
+    {
+        if (context.User.Identity?.IsAuthenticated != true)
+            return Results.Unauthorized();
+        if (!context.User.HasPermission(Permissions.VcsManage))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
+        var body = await request.ReadFromJsonAsync<SyncVcsSourceRequest>() ?? new SyncVcsSourceRequest(null, false);
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Results.Unauthorized();
+
+        var source = await vcsService.GetAsync(id);
+        if (source == null || !string.Equals(source.UserId, userId, StringComparison.Ordinal))
+        {
+            return Results.NotFound(new { error = "VCS source not found" });
+        }
+
+        try
+        {
+            var result = await githubService.SyncSourceAsync(id, body.Tag, body.Replace, userId, context.RequestAborted);
+            return Results.Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static IResult? TryEncryptPat(string pat, IConfiguration config, out string? encrypted)
@@ -217,7 +284,7 @@ public static class VcsHandlers
 
     // --- GitHub Webhook ---
 
-    public static async Task<IResult> HandleGitHubWebhook(GitHubVcsService githubService, HttpContext context)
+    public static async Task<IResult> HandleGitHubWebhook(IGitHubVcsService githubService, HttpContext context)
     {
         context.Request.EnableBuffering();
         using var reader = new StreamReader(context.Request.Body);
@@ -231,7 +298,8 @@ public static class VcsHandlers
     }
 }
 
-public record CreateVcsSourceRequest(string Namespace, string Name, string Provider, string RepoOwner, string RepoName, Guid ConnectionId);
+public record CreateVcsSourceRequest(string Namespace, string Name, string Provider, string RepoOwner, string RepoName, Guid ConnectionId, bool SyncExistingTags = false);
 public record UpdateVcsSourceRequest(string? RepoOwner, string? RepoName, Guid? ConnectionId, bool? IsActive);
+public record SyncVcsSourceRequest(string? Tag, bool Replace);
 public record CreateConnectionRequest(string Label, string? Provider, string? Pat, string? DefaultOrg);
 public record UpdateConnectionRequest(string? Label, string? Pat, string? DefaultOrg, bool? IsActive);

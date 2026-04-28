@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PublishModuleModal from "~/components/modules/PublishModuleModal.vue";
 import { useDashboard } from "~/composables/useDashboard";
 import { useModules, type Module, type ModulesResponse } from "~/composables/useModules";
 import { useVcsSources } from "~/composables/useVcsSources";
@@ -11,9 +12,11 @@ definePageMeta({
 const route = useRoute();
 const { isSidebarOpen } = useDashboard();
 const { getModuleVersions, deleteModuleVersion, updateModuleDescription } = useModules();
-const { listVcsSources, deleteVcsSource } = useVcsSources();
+const { getVcsSourceByModule, syncVcsSource, deleteVcsSource } = useVcsSources();
 const { getAuthHeaders } = useAuth();
 const { hasPermission } = usePermissions();
+const { featureCreateModule } = useRuntimeConfig().public;
+const canUploadModule = computed(() => hasPermission("modules.upload"));
 const canManageVcs = computed(() => hasPermission("vcs.manage"));
 
 // Route params
@@ -31,6 +34,13 @@ const copied = ref(false);
 // VCS state
 const vcsSource = ref<VcsSource | null>(null);
 const isDisconnectingVcs = ref(false);
+const isSyncingVcs = ref(false);
+const publishModalOpen = ref(false);
+const canOpenPublishModal = computed(() =>
+  featureCreateModule && (canUploadModule.value || (canManageVcs.value && !vcsSource.value))
+);
+const publishActionLabel = computed(() => canUploadModule.value ? "Publish Version" : "Link Source");
+const publishActionIcon = computed(() => canUploadModule.value ? "i-lucide-upload" : "i-simple-icons-github");
 
 const fetchVcsSource = async () => {
   if (!canManageVcs.value) {
@@ -39,10 +49,7 @@ const fetchVcsSource = async () => {
   }
 
   try {
-    const sources = await listVcsSources();
-    vcsSource.value = sources.find(
-      s => s.namespace === namespace.value && s.name === name.value && s.provider === provider.value
-    ) || null;
+    vcsSource.value = await getVcsSourceByModule(namespace.value, name.value, provider.value);
   } catch (e) {
     // VCS info is non-critical, silently ignore
     vcsSource.value = null;
@@ -59,6 +66,21 @@ const disconnectVcs = async () => {
     console.error("Failed to disconnect VCS source", e);
   } finally {
     isDisconnectingVcs.value = false;
+  }
+};
+
+const syncLinkedSource = async () => {
+  if (!vcsSource.value) return;
+
+  isSyncingVcs.value = true;
+  try {
+    await syncVcsSource(vcsSource.value.id, {});
+    await fetchVcsSource();
+    await fetchVersions();
+  } catch (e) {
+    console.error("Failed to sync VCS source", e);
+  } finally {
+    isSyncingVcs.value = false;
   }
 };
 
@@ -209,6 +231,11 @@ const getDownloadUrl = (version: string) => {
   return `/v1/modules/${namespace.value}/${name.value}/${provider.value}/${version}/download`;
 };
 
+const handlePublishLinked = async () => {
+  await fetchVcsSource();
+  await fetchVersions();
+};
+
 onMounted(() => {
   fetchVersions();
   fetchVcsSource();
@@ -217,6 +244,17 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col h-full">
+    <PublishModuleModal
+      v-model:open="publishModalOpen"
+      :allow-manual-upload="canUploadModule"
+      :allow-vcs-link="canManageVcs && !vcsSource"
+      :initial-namespace="namespace"
+      :initial-name="name"
+      :initial-provider="provider"
+      @published="fetchVersions"
+      @linked="handlePublishLinked"
+    />
+
     <!-- Mobile menu button -->
     <div class="lg:hidden px-4 pt-4">
       <UButton
@@ -261,6 +299,15 @@ onMounted(() => {
             color="neutral"
             variant="ghost"
             size="sm"
+          />
+          <UButton
+            v-if="canOpenPublishModal"
+            :label="publishActionLabel"
+            :icon="publishActionIcon"
+            color="primary"
+            variant="soft"
+            size="sm"
+            @click="publishModalOpen = true"
           />
         </div>
       </div>
@@ -308,6 +355,65 @@ onMounted(() => {
           <p class="text-neutral-400 max-w-sm mx-auto">
             This module has no published versions.
           </p>
+          <div v-if="canManageVcs && vcsSource" class="mt-8 max-w-2xl mx-auto rounded-2xl bg-neutral-900/50 border border-neutral-800 overflow-hidden text-left">
+            <div class="px-5 py-4 flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-neutral-800 rounded-xl flex items-center justify-center">
+                  <UIcon name="i-lucide-github" class="text-xl text-neutral-300" />
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-neutral-200">
+                      Linked to {{ vcsSource.repoOwner }}/{{ vcsSource.repoName }}
+                    </span>
+                    <UBadge
+                      :variant="'soft'"
+                      :color="vcsSource.isActive ? 'success' : 'neutral'"
+                      size="xs"
+                    >
+                      {{ vcsSource.isActive ? 'Active' : 'Inactive' }}
+                    </UBadge>
+                  </div>
+                  <p class="text-xs text-neutral-500 mt-0.5">
+                    Last sync: {{ vcsSource.lastSyncStatus }}<span v-if="vcsSource.lastPublishedVersion"> • latest imported {{ vcsSource.lastPublishedVersion }}</span>
+                  </p>
+                  <p v-if="vcsSource.lastSyncError" class="text-xs text-red-400 mt-1">
+                    {{ vcsSource.lastSyncError }}
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <UButton
+                  label="Sync Now"
+                  icon="i-lucide-refresh-cw"
+                  color="primary"
+                  variant="soft"
+                  size="xs"
+                  :loading="isSyncingVcs"
+                  @click="syncLinkedSource"
+                />
+                <UButton
+                  label="Disconnect"
+                  icon="i-lucide-unlink"
+                  color="error"
+                  variant="ghost"
+                  size="xs"
+                  :loading="isDisconnectingVcs"
+                  @click="disconnectVcs"
+                />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="canOpenPublishModal" class="mt-8 flex justify-center">
+            <UButton
+              :label="publishActionLabel"
+              :icon="publishActionIcon"
+              color="primary"
+              variant="soft"
+              size="sm"
+              @click="publishModalOpen = true"
+            />
+          </div>
         </div>
 
         <!-- Module Info & Versions List -->
@@ -457,36 +563,34 @@ onMounted(() => {
                     </UBadge>
                   </div>
                   <p class="text-xs text-neutral-500 mt-0.5">
-                    Versions are published automatically when Git tags are pushed
+                    Last sync: {{ vcsSource.lastSyncStatus }}<span v-if="vcsSource.lastPublishedVersion"> • latest imported {{ vcsSource.lastPublishedVersion }}</span>
+                  </p>
+                  <p v-if="vcsSource.lastSyncError" class="text-xs text-red-400 mt-1">
+                    {{ vcsSource.lastSyncError }}
                   </p>
                 </div>
               </div>
-              <UButton
-                label="Disconnect"
-                icon="i-lucide-unlink"
-                color="error"
-                variant="ghost"
-                size="xs"
-                :loading="isDisconnectingVcs"
-                @click="disconnectVcs"
-              />
+              <div class="flex items-center gap-2">
+                <UButton
+                  label="Sync Now"
+                  icon="i-lucide-refresh-cw"
+                  color="primary"
+                  variant="soft"
+                  size="xs"
+                  :loading="isSyncingVcs"
+                  @click="syncLinkedSource"
+                />
+                <UButton
+                  label="Disconnect"
+                  icon="i-lucide-unlink"
+                  color="error"
+                  variant="ghost"
+                  size="xs"
+                  :loading="isDisconnectingVcs"
+                  @click="disconnectVcs"
+                />
+              </div>
             </div>
-          </div>
-
-          <!-- Link to GitHub (when no VCS source) -->
-          <div
-            v-else-if="canManageVcs && !isLoading && useRuntimeConfig().public.featureCreateModule"
-            class="flex justify-end"
-          >
-            <NuxtLink :to="{ path: '/', query: { addModule: '1' } }">
-              <UButton
-                label="Link to GitHub"
-                icon="i-lucide-github"
-                color="neutral"
-                variant="soft"
-                size="xs"
-              />
-            </NuxtLink>
           </div>
 
           <!-- Versions List -->

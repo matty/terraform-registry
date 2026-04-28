@@ -34,6 +34,21 @@ public class VcsSource
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
 
+    [Column("tag_pattern")]
+    public string TagPattern { get; set; } = "v*";
+
+    [Column("last_published_version")]
+    public string? LastPublishedVersion { get; set; }
+
+    [Column("last_sync_status")]
+    public string LastSyncStatus { get; set; } = "never";
+
+    [Column("last_sync_at")]
+    public DateTime? LastSyncAt { get; set; }
+
+    [Column("last_sync_error")]
+    public string? LastSyncError { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

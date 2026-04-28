@@ -3,37 +3,54 @@ using System.Text;
 using System.Text.Json;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
+using TerraformRegistry.Models;
+using TerraformRegistry.Services.Publishing;
 
 namespace TerraformRegistry.Services;
 
-public class GitHubVcsService
+public class GitHubVcsService : IGitHubVcsService
 {
     private readonly IVcsSourceService _vcsSourceService;
     private readonly IVcsConnectionService _vcsConnectionService;
-    private readonly IModuleService _moduleService;
+    private readonly IModuleService? _moduleService;
+    private readonly IModulePublishCoordinator _publishCoordinator;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
-    private readonly WebhookDispatcher _webhookDispatcher;
-    private readonly IAuditService _auditService;
     private readonly ILogger<GitHubVcsService> _logger;
 
     public GitHubVcsService(
         IVcsSourceService vcsSourceService,
         IVcsConnectionService vcsConnectionService,
-        IModuleService moduleService,
+        IModulePublishCoordinator publishCoordinator,
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
-        WebhookDispatcher webhookDispatcher,
-        IAuditService auditService,
+        ILogger<GitHubVcsService> logger)
+        : this(
+            vcsSourceService,
+            vcsConnectionService,
+            null,
+            publishCoordinator,
+            httpClientFactory,
+            configuration,
+            logger)
+    {
+    }
+
+    public GitHubVcsService(
+        IVcsSourceService vcsSourceService,
+        IVcsConnectionService vcsConnectionService,
+        IModuleService? moduleService,
+        IModulePublishCoordinator publishCoordinator,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
         ILogger<GitHubVcsService> logger)
     {
         _vcsSourceService = vcsSourceService;
         _vcsConnectionService = vcsConnectionService;
         _moduleService = moduleService;
+        _publishCoordinator = publishCoordinator;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
-        _webhookDispatcher = webhookDispatcher;
-        _auditService = auditService;
         _logger = logger;
     }
 
@@ -165,33 +182,259 @@ public class GitHubVcsService
         }
 
         await using var tarballStream = await response.Content.ReadAsStreamAsync();
-        var uploaded = await _moduleService.UploadModuleAsync(
-            vcsSource.Namespace,
-            vcsSource.Name,
-            vcsSource.Provider,
-            version,
-            tarballStream,
-            $"Auto-published from {repoOwner}/{repoName} tag {tag}",
-            replace: false);
+        var uploaded = await _publishCoordinator.PublishAsync(new ModulePublishRequest
+        {
+            Namespace = vcsSource.Namespace,
+            Name = vcsSource.Name,
+            Provider = vcsSource.Provider,
+            Version = version,
+            Description = $"Auto-published from {repoOwner}/{repoName} tag {tag}",
+            ModuleContent = tarballStream,
+            Replace = false,
+            ActorUserId = null,
+            AuditAction = "vcs.auto_published",
+            Metadata = new ModuleArtifactMetadata
+            {
+                Source = new ModuleSourceInfo
+                {
+                    Kind = "vcs-tag",
+                    RepoOwner = repoOwner,
+                    RepoName = repoName,
+                    RepoUrl = $"https://github.com/{repoOwner}/{repoName}",
+                    Ref = $"refs/tags/{tag}"
+                }
+            }
+        }, CancellationToken.None);
 
         if (!uploaded)
         {
+            await _vcsSourceService.UpdateSyncStateAsync(vcsSource.Id, "failed", vcsSource.LastPublishedVersion, $"Module upload failed for version {version}");
             return ("error", $"Module upload failed for version {version}", null);
         }
 
-        _webhookDispatcher.FireEvent(
-            "module.published",
-            vcsSource.Namespace,
-            vcsSource.Name,
-            vcsSource.Provider,
-            version,
-            $"Auto-published from {repoOwner}/{repoName} tag {tag}");
-
-        _ = _auditService.LogAsync(null, "vcs.auto_published", "module",
-            $"{vcsSource.Namespace}/{vcsSource.Name}/{vcsSource.Provider}/{version}",
-            new { @namespace = vcsSource.Namespace, name = vcsSource.Name, provider = vcsSource.Provider, version, repoOwner, repoName, tag },
-            null);
-
+        await _vcsSourceService.UpdateSyncStateAsync(vcsSource.Id, "succeeded", version, null);
         return ("published", null, version);
     }
+
+    public async Task<SyncVcsSourceResult> SyncSourceAsync(
+        Guid sourceId,
+        string? requestedTag,
+        bool replace,
+        string? actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var source = await _vcsSourceService.GetAsync(sourceId)
+            ?? throw new InvalidOperationException($"VCS source {sourceId} was not found.");
+
+        if (!source.IsActive)
+            throw new InvalidOperationException($"VCS source {sourceId} is inactive.");
+
+        var connection = await _vcsConnectionService.GetConnectionAsync(source.ConnectionId)
+            ?? throw new InvalidOperationException($"VCS connection {source.ConnectionId} was not found.");
+
+        if (!connection.IsActive)
+            throw new InvalidOperationException($"VCS connection {source.ConnectionId} is inactive.");
+
+        try
+        {
+            var knowsExistingVersions = _moduleService != null;
+            var knownVersions = knowsExistingVersions
+                ? await GetKnownVersionsAsync(source.Namespace, source.Name, source.Provider)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var published = new List<string>();
+            var skipped = 0;
+
+            foreach (var tag in await ListCandidateTagsAsync(source, connection, requestedTag, cancellationToken))
+            {
+                var version = NormalizeTag(tag);
+                if (!replace && knownVersions.Contains(version))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                await using var tarballStream = await DownloadTarballAsync(
+                    source.RepoOwner,
+                    source.RepoName,
+                    tag,
+                    connection,
+                    cancellationToken);
+
+                var uploaded = await _publishCoordinator.PublishAsync(new ModulePublishRequest
+                {
+                    Namespace = source.Namespace,
+                    Name = source.Name,
+                    Provider = source.Provider,
+                    Version = version,
+                    Description = $"Synced from {source.RepoOwner}/{source.RepoName} tag {tag}",
+                    ModuleContent = tarballStream,
+                    Replace = replace,
+                    ActorUserId = actorUserId,
+                    AuditAction = "vcs.sync_published",
+                    Metadata = new ModuleArtifactMetadata
+                    {
+                        Source = new ModuleSourceInfo
+                        {
+                            Kind = "vcs-tag",
+                            RepoOwner = source.RepoOwner,
+                            RepoName = source.RepoName,
+                            RepoUrl = $"https://github.com/{source.RepoOwner}/{source.RepoName}",
+                            Ref = $"refs/tags/{tag}"
+                        }
+                    }
+                }, cancellationToken);
+
+                if (uploaded)
+                {
+                    published.Add(version);
+                    knownVersions.Add(version);
+                    continue;
+                }
+
+                if (!knowsExistingVersions && !replace)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                throw new InvalidOperationException($"Module upload failed for version {version}");
+            }
+
+            var latestVersion = published.LastOrDefault() ?? source.LastPublishedVersion;
+            await _vcsSourceService.UpdateSyncStateAsync(source.Id, "succeeded", latestVersion, null);
+
+            return new SyncVcsSourceResult("succeeded", published.Count, skipped, latestVersion, null);
+        }
+        catch (Exception ex)
+        {
+            await _vcsSourceService.UpdateSyncStateAsync(source.Id, "failed", source.LastPublishedVersion, ex.Message);
+            _logger.LogError(ex, "VCS sync failed for source {SourceId}", sourceId);
+            throw;
+        }
+    }
+
+    private async Task<HashSet<string>> GetKnownVersionsAsync(string @namespace, string name, string provider)
+    {
+        if (_moduleService == null)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var existingVersions = await _moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        return existingVersions.Modules
+            .SelectMany(module => module.Versions)
+            .Select(version => version.Version)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<List<string>> ListCandidateTagsAsync(
+        VcsSource source,
+        VcsConnection connection,
+        string? requestedTag,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedTag))
+        {
+            if (!SemVerValidator.IsValid(NormalizeTag(requestedTag)))
+            {
+                throw new InvalidOperationException($"Requested tag '{requestedTag}' is not a valid semantic version tag.");
+            }
+
+            return [requestedTag];
+        }
+
+        var client = _httpClientFactory.CreateClient("GitHubVcs");
+        var discoveredTags = new List<string>();
+
+        for (var page = 1; ; page++)
+        {
+            using var request = CreateGitHubRequest(
+                HttpMethod.Get,
+                $"https://api.github.com/repos/{source.RepoOwner}/{source.RepoName}/tags?per_page=100&page={page}",
+                connection);
+
+            using var response = await client.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var batch = payload.RootElement
+                .EnumerateArray()
+                .Select(tag => tag.GetProperty("name").GetString() ?? string.Empty)
+                .ToList();
+
+            if (batch.Count == 0)
+            {
+                break;
+            }
+
+            discoveredTags.AddRange(batch);
+
+            if (batch.Count < 100)
+            {
+                break;
+            }
+        }
+
+        return discoveredTags
+            .Where(tag => MatchesTagPattern(source.TagPattern, tag))
+            .Where(tag => SemVerValidator.IsValid(NormalizeTag(tag)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(tag => NormalizeTag(tag), SemVerVersionComparer.Instance)
+            .ToList();
+    }
+
+    private async Task<Stream> DownloadTarballAsync(
+        string repoOwner,
+        string repoName,
+        string tag,
+        VcsConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var client = _httpClientFactory.CreateClient("GitHubVcs");
+        using var request = CreateGitHubRequest(
+            HttpMethod.Get,
+            $"https://api.github.com/repos/{repoOwner}/{repoName}/tarball/{tag}",
+            connection);
+
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStreamAsync(cancellationToken);
+    }
+
+    private HttpRequestMessage CreateGitHubRequest(HttpMethod method, string url, VcsConnection connection)
+    {
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Add("User-Agent", "TerraformRegistry");
+        request.Headers.Add("Accept", "application/vnd.github+json");
+
+        var pat = TryDecryptPat(connection);
+        if (!string.IsNullOrWhiteSpace(pat))
+        {
+            request.Headers.Add("Authorization", $"Bearer {pat}");
+        }
+
+        return request;
+    }
+
+    private string? TryDecryptPat(VcsConnection connection)
+    {
+        if (string.IsNullOrWhiteSpace(connection.PatEncrypted))
+        {
+            return null;
+        }
+
+        var encryptionKey = _configuration["EncryptionKey"]
+            ?? throw new InvalidOperationException("EncryptionKey not configured");
+        return EncryptionHelper.Decrypt(connection.PatEncrypted, encryptionKey);
+    }
+
+    private static bool MatchesTagPattern(string tagPattern, string tag)
+    {
+        var prefix = tagPattern.TrimEnd('*');
+        return tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeTag(string tag) =>
+        tag.StartsWith('v') ? tag[1..] : tag;
 }

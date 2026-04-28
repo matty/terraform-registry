@@ -12,6 +12,8 @@ using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Services;
+using TerraformRegistry.Services.ModuleExtraction;
+using TerraformRegistry.Services.Publishing;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -190,7 +192,10 @@ builder.Services.AddSingleton<IVcsConnectionService>(provider =>
     };
 });
 
+builder.Services.AddSingleton<IModuleExtractionService, NoOpModuleExtractionService>();
+builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 builder.Services.AddSingleton<GitHubVcsService>();
+builder.Services.AddSingleton<IGitHubVcsService>(provider => provider.GetRequiredService<GitHubVcsService>());
 builder.Services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
 
 // Register Role Service
@@ -486,8 +491,12 @@ app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext contex
         VcsHandlers.ListVcsSources(vcsService, context))
     .WithTags("VCS");
 
-app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
-        VcsHandlers.CreateVcsSource(vcsService, connectionService, auditService, context, request))
+app.MapPost("/api/vcs/sources", (IVcsSourceService vcsService, IVcsConnectionService connectionService, IGitHubVcsService githubService, IAuditService auditService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.CreateVcsSource(vcsService, connectionService, githubService, auditService, context, request))
+    .WithTags("VCS");
+
+app.MapGet("/api/vcs/sources/module/{namespace}/{name}/{provider}", (string @namespace, string name, string provider, IVcsSourceService vcsService, HttpContext context) =>
+        VcsHandlers.GetVcsSourceByModule(vcsService, context, @namespace, name, provider))
     .WithTags("VCS");
 
 app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IVcsConnectionService connectionService, IAuditService auditService, HttpContext context, HttpRequest request) =>
@@ -496,6 +505,10 @@ app.MapPut("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IVcs
 
 app.MapDelete("/api/vcs/sources/{id}", (Guid id, IVcsSourceService vcsService, IAuditService auditService, HttpContext context) =>
         VcsHandlers.DeleteVcsSource(id, vcsService, auditService, context))
+    .WithTags("VCS");
+
+app.MapPost("/api/vcs/sources/{id}/sync", (Guid id, IVcsSourceService vcsService, IGitHubVcsService githubService, HttpContext context, HttpRequest request) =>
+        VcsHandlers.SyncVcsSource(id, vcsService, githubService, context, request))
     .WithTags("VCS");
 
 // VCS Connection admin endpoints
@@ -521,7 +534,7 @@ app.MapGet("/api/vcs/connections", (IVcsConnectionService connectionService, Htt
     .WithTags("VCS");
 
 // GitHub webhook endpoint (public, no auth required)
-app.MapPost("/api/vcs/github/webhook", (GitHubVcsService githubService, HttpContext context) =>
+app.MapPost("/api/vcs/github/webhook", (IGitHubVcsService githubService, HttpContext context) =>
         VcsHandlers.HandleGitHubWebhook(githubService, context))
     .WithTags("VCS");
 
@@ -565,8 +578,8 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
     .ProducesProblem(404);
 
 app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}", async (string @namespace, string name,
-            string provider, string version, HttpRequest request, IModuleService moduleService, WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
-        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, moduleService, webhookDispatcher, auditService, context))
+            string provider, string version, HttpRequest request, IModulePublishCoordinator publishCoordinator, HttpContext context) =>
+        await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, publishCoordinator, context))
     .WithTags("Modules")
     .WithDescription("Uploads a new module version")
     .Accepts<IFormFile>("multipart/form-data")

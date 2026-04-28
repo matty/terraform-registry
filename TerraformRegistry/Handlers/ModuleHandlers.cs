@@ -1,9 +1,11 @@
+using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Middleware;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Services.Publishing;
 
 namespace TerraformRegistry.Handlers;
 
@@ -219,9 +221,7 @@ public static class ModuleHandlers
         string provider,
         string version,
         HttpRequest request,
-        IModuleService moduleService,
-        WebhookDispatcher webhookDispatcher,
-        IAuditService auditService,
+        IModulePublishCoordinator publishCoordinator,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesUpload);
@@ -266,17 +266,26 @@ public static class ModuleHandlers
             }
 
             await using var stream = moduleFile.OpenReadStream();
-            var result =
-                await moduleService.UploadModuleAsync(@namespace, name, provider, version, stream, description,
-                    replace);
+            var result = await publishCoordinator.PublishAsync(new ModulePublishRequest
+            {
+                Namespace = @namespace,
+                Name = name,
+                Provider = provider,
+                Version = version,
+                Description = description,
+                ModuleContent = stream,
+                Replace = replace,
+                ActorUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier),
+                Metadata = new ModuleArtifactMetadata
+                {
+                    Source = new ModuleSourceInfo { Kind = "api-upload" }
+                }
+            }, context.RequestAborted);
 
             if (!result)
             {
                 return ErrorResponseExtensions.Conflict("Module version already exists");
             }
-
-            webhookDispatcher.FireEvent("module.published", @namespace, name, provider, version, description);
-            context.FireAuditLog(auditService, "module.published", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
             // Return JSON with filename using DTO
             var response = new UploadModuleResponse { Filename = moduleFile.FileName };

@@ -12,6 +12,8 @@ A lightweight, feature-rich private Terraform module registry implementation.
 - Built-in web UI and OpenAPI (Swagger) documentation
 - OIDC Authentication for web portal (GitHub, Azure AD)
 - Terraform CLI authentication via `terraform login` and per-user API keys
+- Manual portal upload for users with `modules.upload`
+- GitHub-linked module publishing, tag backfill, and webhook sync for users with `vcs.manage`
 - Local filesystem and Azure Blob Storage support
 - PostgreSQL database
 - Docker-ready deployment
@@ -20,7 +22,12 @@ A lightweight, feature-rich private Terraform module registry implementation.
 
 This project is focused on private Terraform **modules**. It does not currently implement the Terraform provider registry protocol (`providers.v1`), provider package distribution, provider checksums, or signing-key endpoints. Provider registry support is a separate roadmap item.
 
-Module publishing is supported through the authenticated HTTP API and configured VCS automation. The web UI does not provide manual module upload support.
+Module publishing is supported through:
+
+- authenticated HTTP upload (`POST /v1/modules/{namespace}/{name}/{provider}/{version}`)
+- manual upload in the web UI for users with `modules.upload`
+- GitHub repository linking and tag backfill for users with `vcs.manage`
+- GitHub webhook auto-publish for linked repositories
 
 ## Quick Start
 
@@ -60,7 +67,9 @@ Visit `http://localhost:5131` to access the web interface!
 - `GET /v1/modules/{namespace}/{name}/{provider}/versions` - Get all module versions
 - `GET /v1/modules/{namespace}/{name}/{provider}/{version}/download` - Download specific version
 - `GET /v1/modules/{namespace}/{name}/{provider}/download` - Download latest version
-- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module by API/CLI (auth required)
+- `POST /v1/modules/{namespace}/{name}/{provider}/{version}` - Upload new module by API/CLI or portal (auth required)
+- `GET /api/vcs/sources/module/{namespace}/{name}/{provider}` - Get linked VCS source for a module (auth required)
+- `POST /api/vcs/sources/{id}/sync` - Manually sync a linked GitHub source (auth required)
 
 ### Documentation
 

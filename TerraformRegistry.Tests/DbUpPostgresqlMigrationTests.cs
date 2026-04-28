@@ -416,7 +416,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
             INSERT INTO schema_version VALUES ('1.0.1', 'Users and API keys', NOW())";
         await createSv.ExecuteNonQueryAsync();
 
-        // Now run the full DbUp migrator — should bootstrap 2, execute remaining 9
+        // Now run the full DbUp migrator — should bootstrap 2, execute remaining 10
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
         var migrator = new DbUpMigrator(logger);
         migrator.Migrate("postgres", connectionString);
@@ -441,11 +441,11 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         svCheck.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_version')";
         Assert.False((bool)(await svCheck.ExecuteScalarAsync())!);
 
-        // Verify journal has all 11 scripts recorded
+        // Verify journal has all 12 scripts recorded
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(11, journalCount);
+        Assert.Equal(12, journalCount);
     }
 
     [Fact]
@@ -476,7 +476,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         var migrator = new DbUpMigrator(logger);
         migrator.Migrate("postgres", connectionString);
 
-        // All tables should exist — 1 bootstrapped, 10 executed
+        // All tables should exist — 1 bootstrapped, 11 executed
         await using var verifyConn = new NpgsqlConnection(connectionString);
         await verifyConn.OpenAsync();
         var tables = GetTables(verifyConn);
@@ -488,7 +488,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(11, journalCount);
+        Assert.Equal(12, journalCount);
     }
 
     private string CreateFreshDatabase()

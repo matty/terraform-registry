@@ -19,7 +19,12 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE user_id = @userId ORDER BY created_at DESC";
+        var sql = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                           tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                           created_at, updated_at
+                    FROM vcs_sources
+                    WHERE user_id = @userId
+                    ORDER BY created_at DESC";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@userId", userId);
 
@@ -115,7 +120,11 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await cmd.ExecuteNonQueryAsync();
 
         // SELECT the row back
-        var selectSql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE id = @selectId AND user_id = @selectUserId";
+        var selectSql = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                                 tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                                 created_at, updated_at
+                          FROM vcs_sources
+                          WHERE id = @selectId AND user_id = @selectUserId";
         await using var selectCmd = new NpgsqlCommand(selectSql, connection);
         selectCmd.Parameters.AddWithValue("@selectId", id);
         selectCmd.Parameters.AddWithValue("@selectUserId", userId);
@@ -144,7 +153,12 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
 
-        var sql = "SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at FROM vcs_sources WHERE repo_owner = @repoOwner AND repo_name = @repoName AND is_active = true LIMIT 1";
+        var sql = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                           tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                           created_at, updated_at
+                    FROM vcs_sources
+                    WHERE repo_owner = @repoOwner AND repo_name = @repoName AND is_active = true
+                    LIMIT 1";
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@repoOwner", repoOwner);
         cmd.Parameters.AddWithValue("@repoName", repoName);
@@ -152,6 +166,72 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
         return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> GetAsync(Guid id)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                           tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                           created_at, updated_at
+                    FROM vcs_sources
+                    WHERE id = @id
+                    LIMIT 1";
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@id", id);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> GetByModuleAsync(string @namespace, string name, string provider)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = @"SELECT id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active,
+                           tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
+                           created_at, updated_at
+                    FROM vcs_sources
+                    WHERE namespace = @namespace AND name = @name AND provider = @provider AND is_active = true
+                    LIMIT 1";
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@namespace", @namespace);
+        cmd.Parameters.AddWithValue("@name", name);
+        cmd.Parameters.AddWithValue("@provider", provider);
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        return MapVcsSource(reader);
+    }
+
+    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? error)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var sql = @"UPDATE vcs_sources
+                    SET last_sync_status = @status,
+                        last_published_version = @lastPublishedVersion,
+                        last_sync_error = @error,
+                        last_sync_at = @lastSyncAt,
+                        updated_at = @updatedAt
+                    WHERE id = @id";
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@status", status);
+        cmd.Parameters.AddWithValue("@lastPublishedVersion", (object?)lastPublishedVersion ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@error", (object?)error ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@lastSyncAt", DateTime.UtcNow);
+        cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+
+        var rows = await cmd.ExecuteNonQueryAsync();
+        if (rows == 0) return null;
+
+        return await GetAsync(id);
     }
 
     private static VcsSource MapVcsSource(NpgsqlDataReader reader)
@@ -167,8 +247,13 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
             RepoName = reader.GetString(6),
             ConnectionId = reader.GetGuid(7),
             IsActive = reader.GetBoolean(8),
-            CreatedAt = reader.GetDateTime(9),
-            UpdatedAt = reader.GetDateTime(10)
+            TagPattern = reader.GetString(9),
+            LastPublishedVersion = reader.IsDBNull(10) ? null : reader.GetString(10),
+            LastSyncStatus = reader.GetString(11),
+            LastSyncAt = reader.IsDBNull(12) ? null : reader.GetDateTime(12),
+            LastSyncError = reader.IsDBNull(13) ? null : reader.GetString(13),
+            CreatedAt = reader.GetDateTime(14),
+            UpdatedAt = reader.GetDateTime(15)
         };
     }
 }

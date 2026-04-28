@@ -241,7 +241,7 @@ public class LocalModuleService : ModuleService
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
         if (coordinateError != null)
