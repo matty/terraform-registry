@@ -509,6 +509,41 @@ app.MapGet("/api/admin/users/{userId}/roles", (string userId, IPermissionService
 app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, auditService, context, request)).WithTags("Admin");
 app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, IRoleService roleService, IAuditService auditService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, roleService, auditService, context)).WithTags("Admin");
 
+// Admin - Module Docs
+app.MapGet("/api/admin/module-docs/summary",
+        (IDatabaseService dbService, IModuleExtractionConfigService configService, HttpContext context) =>
+            ModuleDocsHandlers.GetSummary(dbService, configService, context))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/modules",
+        (IDatabaseService dbService, HttpContext context, string? status, string? q, int limit = 50, int offset = 0) =>
+            ModuleDocsHandlers.ListModules(dbService, context, status, q, limit, offset))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IDatabaseService dbService, HttpContext context) =>
+            ModuleDocsHandlers.GetModuleDetail(@namespace, name, provider, version, dbService, context))
+    .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}/requeue",
+        (string @namespace, string name, string provider, string version, IModuleExtractionService extractionService,
+                IDatabaseService dbService, IAuditService auditService, IModuleExtractionConfigService configService,
+                HttpContext context) =>
+            ModuleDocsHandlers.Requeue(@namespace, name, provider, version, extractionService, dbService, auditService,
+                configService, context))
+    .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/backfill",
+        (IModuleExtractionService extractionService, IModuleExtractionConfigService configService,
+                IAuditService auditService, HttpContext context, HttpRequest request) =>
+            ModuleDocsHandlers.Backfill(extractionService, configService, auditService, context, request))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/config",
+        (IModuleExtractionConfigService configService, HttpContext context) =>
+            ModuleDocsHandlers.GetConfig(configService, context))
+    .WithTags("Module Docs");
+app.MapPut("/api/admin/module-docs/config",
+        (IModuleExtractionConfigService configService, IAuditService auditService, HttpContext context,
+                HttpRequest request) =>
+            ModuleDocsHandlers.UpdateConfig(configService, auditService, context, request))
+    .WithTags("Module Docs");
+
 // VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
 app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>
         VcsHandlers.ListVcsSources(vcsService, context))
