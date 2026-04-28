@@ -11,10 +11,16 @@ public interface IApiKeyService
     Task<(string RawToken, ApiKey Key)> CreateApiKeyAsync(string userId, string description, bool isShared = false);
 
     /// <summary>
+    /// Creates a new expiring API key for the specified user.
+    /// </summary>
+    Task<(string RawToken, ApiKey Key)> CreateExpiringApiKeyAsync(string userId, string description, DateTime expiresAt,
+        bool isShared = false);
+
+    /// <summary>
     /// Validates a raw token and returns the key details if valid.
     /// Also updates the LastUsedAt timestamp.
     /// </summary>
-    Task<ApiKey?> ValidateApiKeyAsync(string rawToken);
+    Task<ApiKeyValidationResult> ValidateApiKeyAsync(string rawToken);
 
     /// <summary>
     /// Gets a single API key by identifier.
@@ -41,6 +47,11 @@ public interface IApiKeyService
     /// Updates an API key's metadata (description/shared) enforcing owner-only permission.
     /// </summary>
     Task<ApiKeyUpdateResult> UpdateApiKeyAsync(Guid keyId, string requestingUserId, string description, bool isShared);
+
+    /// <summary>
+    /// Ensures an OIDC login only binds to a matching provider identity.
+    /// </summary>
+    Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId);
 
     /// <summary>
     /// Ensures a User record exists for the given external details.

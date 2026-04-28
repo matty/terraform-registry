@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using TerraformRegistry.Models;
 
@@ -11,11 +12,13 @@ namespace TerraformRegistry.Services;
 /// </summary>
 public class JwtService
 {
+    private const string PlaceholderJwtSecretKey = "your-256-bit-secret-key-here-minimum-32-chars";
+
     private readonly string _secretKey;
     private readonly int _expiryHours;
     private readonly ILogger<JwtService> _logger;
 
-    public JwtService(OidcOptions options, ILogger<JwtService> logger)
+    public JwtService(OidcOptions options, ILogger<JwtService> logger, IHostEnvironment environment)
     {
         _secretKey = options.JwtSecretKey;
         _expiryHours = options.JwtExpiryHours;
@@ -25,6 +28,13 @@ public class JwtService
         {
             throw new InvalidOperationException(
                 "JWT secret key must be at least 32 characters. Set 'Oidc:JwtSecretKey' in configuration.");
+        }
+
+        if (!environment.IsDevelopment()
+            && string.Equals(_secretKey, PlaceholderJwtSecretKey, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "OIDC JWT secret key is still set to the placeholder value. Set 'Oidc:JwtSecretKey' to a unique secret before running outside Development.");
         }
     }
 
@@ -113,9 +123,15 @@ public class JwtService
 
         return new UserInfo
         {
-            Id = principal.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? string.Empty,
-            Email = principal.FindFirstValue(JwtRegisteredClaimNames.Email) ?? string.Empty,
-            Name = principal.FindFirstValue(JwtRegisteredClaimNames.Name) ?? string.Empty,
+            Id = principal.FindFirstValue(JwtRegisteredClaimNames.Sub)
+                 ?? principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                 ?? string.Empty,
+            Email = principal.FindFirstValue(JwtRegisteredClaimNames.Email)
+                    ?? principal.FindFirstValue(ClaimTypes.Email)
+                    ?? string.Empty,
+            Name = principal.FindFirstValue(JwtRegisteredClaimNames.Name)
+                   ?? principal.FindFirstValue(ClaimTypes.Name)
+                   ?? string.Empty,
             Provider = principal.FindFirstValue("provider") ?? string.Empty,
             AvatarUrl = principal.FindFirstValue("avatar_url") ?? string.Empty
         };

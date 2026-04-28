@@ -153,7 +153,7 @@ public class LocalModuleServiceTests
             Provider = "provider",
             Version = "1.0.0",
             Description = "desc",
-            FilePath = "fakepath",
+            FilePath = Path.Combine(_testModulePath, "ns", "name-provider-1.0.0.zip"),
             PublishedAt = DateTime.UtcNow,
             Dependencies = new List<string>()
         };
@@ -197,6 +197,42 @@ public class LocalModuleServiceTests
         Assert.True(File.Exists(filePath));
     }
 
+    [Fact]
+    public async Task UploadModuleAsync_RejectsTraversalNamespace()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        await using var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.UploadModuleAsync("../outside", "name", "provider", "1.0.0", content, "desc"));
+
+        Assert.Contains("Invalid namespace", ex.Message, StringComparison.Ordinal);
+        _mockDbService.Verify(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsync_ReturnsNullForPathOutsideStorageRoot()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}.zip");
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = outsidePath,
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+
+        var result = await service.GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.Null(result);
+    }
+
     // Helper to expose protected method for testing
     private class TestableLocalModuleService : LocalModuleService
     {
@@ -208,7 +244,7 @@ public class LocalModuleServiceTests
         public Task<bool> CallUploadModuleAsyncImpl(string ns, string name, string provider, string version,
             Stream content, string desc, bool replace = false)
         {
-            return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc, replace);
+            return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc, replace, null);
         }
     }
 }

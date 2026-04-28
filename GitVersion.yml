@@ -1,25 +1,25 @@
 mode: ContinuousDeployment
 branches:
   main:
-    tag: ""
+    label: ""
     increment: Patch
     prevent-increment-of-merged-branch-version: true
     track-merge-target: false
   develop:
-    tag: beta
+    label: beta
     increment: Minor
     prevent-increment-of-merged-branch-version: false
     track-merge-target: true
   release:
-    tag: rc
+    label: rc
     increment: None
     prevent-increment-of-merged-branch-version: true
   hotfix:
-    tag: fix
+    label: fix
     increment: Patch
     prevent-increment-of-merged-branch-version: false
   feature:
-    tag: feature-{BranchName}
+    label: feature-{BranchName}
     increment: Inherit
 ignore:
   sha: []
