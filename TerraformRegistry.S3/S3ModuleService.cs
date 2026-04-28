@@ -170,7 +170,7 @@ public class S3ModuleService : ModuleService
     protected override Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
-        return Task.FromResult(false);
+        return UploadModuleAsyncImplInternal(@namespace, name, provider, version, moduleContent, description, replace);
     }
 
     public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider,
@@ -219,6 +219,145 @@ public class S3ModuleService : ModuleService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to reach S3 bucket '{BucketName}' during startup.", _bucketName);
+        }
+    }
+
+    private async Task<bool> UploadModuleAsyncImplInternal(string @namespace, string name, string provider,
+        string version, Stream moduleContent, string description, bool replace)
+    {
+        var objectKey = $"{@namespace}/{name}-{provider}-{version}.zip";
+        var objectExists = false;
+
+        try
+        {
+            await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = _bucketName,
+                Key = objectKey
+            });
+            objectExists = true;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            objectExists = false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error checking S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return false;
+        }
+
+        if (objectExists)
+        {
+            if (!replace)
+            {
+                _logger.LogWarning(
+                    "Module {Namespace}/{Name}/{Provider}/{Version} already exists in S3.",
+                    @namespace,
+                    name,
+                    provider,
+                    version);
+                return false;
+            }
+
+            try
+            {
+                await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+                {
+                    BucketName = _bucketName,
+                    Key = objectKey
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to delete existing S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
+                    @namespace,
+                    name,
+                    provider,
+                    version);
+                return false;
+            }
+        }
+
+        try
+        {
+            await _s3Client.PutObjectAsync(new PutObjectRequest
+            {
+                BucketName = _bucketName,
+                Key = objectKey,
+                InputStream = moduleContent,
+                AutoCloseStream = false
+            });
+
+            var module = new ModuleStorage
+            {
+                Namespace = @namespace,
+                Name = name,
+                Provider = provider,
+                Version = version,
+                Description = description,
+                FilePath = objectKey,
+                PublishedAt = DateTime.UtcNow,
+                Dependencies = []
+            };
+
+            if (replace)
+            {
+                try
+                {
+                    await _databaseService.RemoveModuleAsync(module);
+                }
+                catch
+                {
+                    // Ignore remove failures; Add will determine the final result.
+                }
+            }
+
+            var added = await _databaseService.AddModuleAsync(module);
+            if (added)
+            {
+                return true;
+            }
+
+            try
+            {
+                await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+                {
+                    BucketName = _bucketName,
+                    Key = objectKey
+                });
+            }
+            catch
+            {
+                // Best-effort cleanup only.
+            }
+
+            _logger.LogError(
+                "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database after S3 upload.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error uploading module {Namespace}/{Name}/{Provider}/{Version} to S3.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return false;
         }
     }
 }
