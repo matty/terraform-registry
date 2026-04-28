@@ -213,6 +213,7 @@ builder.Services.AddSingleton<ReadmeDiscoveryService>();
 builder.Services.AddSingleton<ExampleDiscoveryService>();
 builder.Services.AddSingleton<SubmoduleDiscoveryService>();
 builder.Services.AddSingleton<ITerraformModuleInspector, TerraformConfigInspectRunner>();
+builder.Services.AddSingleton<IModuleExtractionConfigService, ModuleExtractionConfigService>();
 builder.Services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
 builder.Services.AddHostedService<ModuleExtractionHostedService>();
 builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
