@@ -1,0 +1,11 @@
+fail-on-severity: high
+fail-on-scopes:
+  - runtime
+  - development
+  - unknown
+license-check: false
+vulnerability-check: true
+show-openssf-scorecard: true
+show-patched-versions: true
+retry-on-snapshot-warnings: true
+retry-on-snapshot-warnings-timeout: 120
