@@ -5,7 +5,8 @@ namespace TerraformRegistry.Services;
 
 public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
 {
-    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens = new();
+    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens =
+        new(StringComparer.Ordinal);
     private readonly ILogger<LocalProviderArtifactStorage> _logger;
     private readonly string _storageRoot;
     private readonly TimeSpan _tokenLifetime;
@@ -69,7 +70,7 @@ public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
         catch (Exception ex)
         {
             _logger.LogError(ex, "Provider artifact local storage health check failed");
-            return Task.FromResult((false, ex.Message));
+            return Task.FromResult((false, (string?)ex.Message));
         }
     }
 

@@ -113,6 +113,22 @@ builder.Services.AddSingleton<IProviderArtifactStorage>(provider =>
     };
 });
 
+builder.Services.AddSingleton<IProviderRegistryService, ProviderRegistryService>();
+builder.Services.AddSingleton<IProviderPackageValidator, ProviderPackageValidator>();
+builder.Services.AddSingleton<IProviderRepository>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new PostgreSqlProviderRepository(
+            config["PostgreSQL:ConnectionString"] ??
+            throw new InvalidOperationException("PostgreSQL connection string is missing.")),
+        "sqlite" => new SqliteProviderRepository(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+    };
+});
+
 builder.Services.AddHostedService<DatabaseInitializerHostedService>();
 
 // Register HttpClientFactory for OAuth flows
