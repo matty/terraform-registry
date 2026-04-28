@@ -304,6 +304,8 @@ if (authToken == "default-auth-token"
     throw new InvalidOperationException(
         "AuthorizationToken is set to the default placeholder value. Configure a unique secret before running outside Development/Test.");
 
+app.Services.GetRequiredService<IModuleService>();
+
 app.UseHttpsRedirection();
 
 // Add global exception handling middleware early in the pipeline
