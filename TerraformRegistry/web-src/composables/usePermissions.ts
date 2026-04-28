@@ -17,6 +17,7 @@ export function usePermissions() {
   const hasAdminSection = computed(() => hasAnyPermission(
     'admin.roles', 'admin.users', 'admin.audit',
     'webhooks.manage', 'vcs.manage',
+    'module_docs.read', 'module_docs.manage', 'module_docs.configure',
   ))
 
   return { hasPermission, hasAnyPermission, isAdmin, hasAdminSection, permissions: effectivePermissions }
