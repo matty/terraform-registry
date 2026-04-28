@@ -25,6 +25,7 @@ builder.Configuration
 // Register database retry options
 builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
 builder.Services.Configure<WebhookSecurityOptions>(builder.Configuration.GetSection("WebhookSecurity"));
+builder.Services.Configure<ModuleExtractionOptions>(builder.Configuration.GetSection("ModuleExtraction"));
 builder.Services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
 builder.Services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
 builder.Services.AddSingleton<WebhookPinnedConnectionHelper>();
@@ -192,7 +193,14 @@ builder.Services.AddSingleton<IVcsConnectionService>(provider =>
     };
 });
 
-builder.Services.AddSingleton<IModuleExtractionService, NoOpModuleExtractionService>();
+builder.Services.AddSingleton<IArchiveWorkspaceFactory, ArchiveWorkspaceFactory>();
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<ReadmeDiscoveryService>();
+builder.Services.AddSingleton<ExampleDiscoveryService>();
+builder.Services.AddSingleton<SubmoduleDiscoveryService>();
+builder.Services.AddSingleton<ITerraformModuleInspector, TerraformConfigInspectRunner>();
+builder.Services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
+builder.Services.AddHostedService<ModuleExtractionHostedService>();
 builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 builder.Services.AddSingleton<GitHubVcsService>();
 builder.Services.AddSingleton<IGitHubVcsService>(provider => provider.GetRequiredService<GitHubVcsService>());
