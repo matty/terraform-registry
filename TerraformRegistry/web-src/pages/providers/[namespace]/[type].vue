@@ -15,6 +15,11 @@ definePageMeta({
 
 type CopyTarget = "source" | "snippet";
 
+interface ParsedSemver {
+  core: [number, number, number];
+  prerelease: string[];
+}
+
 const route = useRoute();
 const requestUrl = useRequestURL();
 const { isSidebarOpen } = useDashboard();
@@ -107,31 +112,78 @@ function compareVersionsDesc(a: string, b: string) {
 function compareVersions(a: string, b: string) {
   const parsedA = parseVersion(a);
   const parsedB = parseVersion(b);
-  const maxLength = Math.max(parsedA.core.length, parsedB.core.length);
 
-  for (let index = 0; index < maxLength; index += 1) {
-    const diff = (parsedA.core[index] ?? 0) - (parsedB.core[index] ?? 0);
+  for (let index = 0; index < 3; index += 1) {
+    const diff = parsedA.core[index] - parsedB.core[index];
     if (diff !== 0) return diff;
   }
 
-  if (!parsedA.preRelease && parsedB.preRelease) return 1;
-  if (parsedA.preRelease && !parsedB.preRelease) return -1;
-  if (!parsedA.preRelease && !parsedB.preRelease) return 0;
-
-  return (parsedA.preRelease ?? "").localeCompare(parsedB.preRelease ?? "", undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
+  return comparePrerelease(parsedA.prerelease, parsedB.prerelease);
 }
 
-function parseVersion(version: string) {
-  const [rawCore, preRelease] = version.replace(/^v/i, "").split("-", 2);
-  const core = rawCore
-    .split(".")
-    .map((part) => Number.parseInt(part, 10))
-    .map((part) => (Number.isNaN(part) ? 0 : part));
+function parseVersion(version: string): ParsedSemver {
+  const withoutBuild = version.replace(/^v/i, "").split("+", 1)[0];
+  const prereleaseStart = withoutBuild.indexOf("-");
+  const rawCore =
+    prereleaseStart === -1 ? withoutBuild : withoutBuild.slice(0, prereleaseStart);
+  const rawPrerelease =
+    prereleaseStart === -1 ? "" : withoutBuild.slice(prereleaseStart + 1);
+  const numericParts = rawCore.split(".").map((part) => Number.parseInt(part, 10));
 
-  return { core, preRelease };
+  return {
+    core: [
+      normalizeVersionPart(numericParts[0]),
+      normalizeVersionPart(numericParts[1]),
+      normalizeVersionPart(numericParts[2]),
+    ],
+    prerelease: rawPrerelease ? rawPrerelease.split(".") : [],
+  };
+}
+
+function normalizeVersionPart(part: number | undefined) {
+  return part === undefined || Number.isNaN(part) ? 0 : part;
+}
+
+function comparePrerelease(a: string[], b: string[]) {
+  if (!a.length && !b.length) return 0;
+  if (!a.length) return 1;
+  if (!b.length) return -1;
+
+  const maxLength = Math.max(a.length, b.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const aIdentifier = a[index];
+    const bIdentifier = b[index];
+
+    if (aIdentifier === undefined) return -1;
+    if (bIdentifier === undefined) return 1;
+
+    const diff = comparePrereleaseIdentifier(aIdentifier, bIdentifier);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
+function comparePrereleaseIdentifier(a: string, b: string) {
+  const aNumeric = isNumericIdentifier(a);
+  const bNumeric = isNumericIdentifier(b);
+
+  if (aNumeric && bNumeric) {
+    const diff = Number.parseInt(a, 10) - Number.parseInt(b, 10);
+    return diff === 0 ? 0 : diff;
+  }
+
+  if (aNumeric) return -1;
+  if (bNumeric) return 1;
+
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+function isNumericIdentifier(identifier: string) {
+  return /^(0|[1-9]\d*)$/.test(identifier);
 }
 
 function formatDate(dateString?: string | null) {
