@@ -324,7 +324,7 @@ public class S3ModuleService : ModuleService
 
         if (isReplacingExisting)
         {
-            return await FinalizeReplaceUploadAsync(existingModule, newModule, tempKey);
+            return await FinalizeReplaceUploadAsync(existingModule, newModule, tempKey, objectExists);
         }
 
         return await FinalizeCreateUploadAsync(newModule, tempKey);
@@ -390,33 +390,52 @@ public class S3ModuleService : ModuleService
     }
 
     private async Task<bool> FinalizeReplaceUploadAsync(ModuleStorage? existingModule, ModuleStorage newModule,
-        string tempKey)
+        string tempKey, bool objectExists)
     {
-        var existingRowRemoved = false;
+        string? backupKey = null;
 
-        if (existingModule != null)
+        if (objectExists)
         {
+            backupKey = CreateBackupObjectKey(newModule.FilePath);
+
             try
             {
-                existingRowRemoved = await _databaseService.RemoveModuleAsync(existingModule);
-                if (!existingRowRemoved)
+                await _s3Client.CopyObjectAsync(new CopyObjectRequest
                 {
-                    await TryDeleteTemporaryObjectAsync(tempKey);
-                    _logger.LogError(
-                        "Failed to remove existing module row for {Namespace}/{Name}/{Provider}/{Version}.",
-                        newModule.Namespace,
-                        newModule.Name,
-                        newModule.Provider,
-                        newModule.Version);
-                    return false;
-                }
+                    SourceBucket = _bucketName,
+                    SourceKey = newModule.FilePath,
+                    DestinationBucket = _bucketName,
+                    DestinationKey = backupKey
+                });
             }
             catch (Exception ex)
             {
                 await TryDeleteTemporaryObjectAsync(tempKey);
                 _logger.LogError(
                     ex,
-                    "Error removing existing module row for {Namespace}/{Name}/{Provider}/{Version}.",
+                    "Error backing up existing S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
+                    newModule.Namespace,
+                    newModule.Name,
+                    newModule.Provider,
+                    newModule.Version);
+                return false;
+            }
+
+            try
+            {
+                await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
+                {
+                    BucketName = _bucketName,
+                    Key = newModule.FilePath
+                });
+            }
+            catch (Exception ex)
+            {
+                await TryDeleteTemporaryObjectAsync(tempKey);
+                await TryDeleteBackupObjectAsync(backupKey);
+                _logger.LogError(
+                    ex,
+                    "Error deleting existing S3 object for module {Namespace}/{Name}/{Provider}/{Version} before replacement.",
                     newModule.Namespace,
                     newModule.Name,
                     newModule.Provider,
@@ -425,17 +444,17 @@ public class S3ModuleService : ModuleService
             }
         }
 
+        await TryRemoveModuleBeforeReplaceAsync(existingModule ?? newModule);
+
         try
         {
             var added = await _databaseService.AddModuleAsync(newModule);
             if (!added)
             {
-                if (existingRowRemoved)
-                {
-                    await TryRestoreModuleRowAsync(existingModule);
-                }
-
+                await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
+                await TryRestoreModuleRowAsync(existingModule);
                 await TryDeleteTemporaryObjectAsync(tempKey);
+                await TryDeleteBackupObjectAsync(backupKey);
                 _logger.LogError(
                     "Failed to add replacement module row for {Namespace}/{Name}/{Provider}/{Version}.",
                     newModule.Namespace,
@@ -447,12 +466,10 @@ public class S3ModuleService : ModuleService
         }
         catch (Exception ex)
         {
-            if (existingRowRemoved)
-            {
-                await TryRestoreModuleRowAsync(existingModule);
-            }
-
+            await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
+            await TryRestoreModuleRowAsync(existingModule);
             await TryDeleteTemporaryObjectAsync(tempKey);
+            await TryDeleteBackupObjectAsync(backupKey);
             _logger.LogError(
                 ex,
                 "Error adding replacement module row for {Namespace}/{Name}/{Provider}/{Version}.",
@@ -476,13 +493,10 @@ public class S3ModuleService : ModuleService
         catch (Exception ex)
         {
             await TryRemoveModuleRowAsync(newModule, "after replacement finalization failed");
-
-            if (existingRowRemoved)
-            {
-                await TryRestoreModuleRowAsync(existingModule);
-            }
-
+            await TryRestoreObjectFromBackupAsync(backupKey, newModule.FilePath);
+            await TryRestoreModuleRowAsync(existingModule);
             await TryDeleteTemporaryObjectAsync(tempKey);
+            await TryDeleteBackupObjectAsync(backupKey);
             _logger.LogError(
                 ex,
                 "Error finalizing replacement module {Namespace}/{Name}/{Provider}/{Version} from temporary S3 object.",
@@ -494,6 +508,7 @@ public class S3ModuleService : ModuleService
         }
 
         await TryDeleteTemporaryObjectAsync(tempKey);
+        await TryDeleteBackupObjectAsync(backupKey);
         return true;
     }
 
@@ -502,19 +517,66 @@ public class S3ModuleService : ModuleService
         return $"{objectKey}.{Guid.NewGuid():N}.tmp";
     }
 
+    private static string CreateBackupObjectKey(string objectKey)
+    {
+        return $"{objectKey}.{Guid.NewGuid():N}.bak";
+    }
+
     private async Task TryDeleteTemporaryObjectAsync(string tempKey)
+    {
+        await TryDeleteObjectAsync(tempKey, "temporary");
+    }
+
+    private async Task TryDeleteBackupObjectAsync(string? backupKey)
+    {
+        if (string.IsNullOrWhiteSpace(backupKey))
+        {
+            return;
+        }
+
+        await TryDeleteObjectAsync(backupKey, "backup");
+    }
+
+    private async Task TryDeleteObjectAsync(string objectKey, string objectType)
     {
         try
         {
             await _s3Client.DeleteObjectAsync(new DeleteObjectRequest
             {
                 BucketName = _bucketName,
-                Key = tempKey
+                Key = objectKey
             });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete temporary S3 object {TempKey}.", tempKey);
+            _logger.LogError(ex, "Failed to delete {ObjectType} S3 object {ObjectKey}.", objectType, objectKey);
+        }
+    }
+
+    private async Task TryRemoveModuleBeforeReplaceAsync(ModuleStorage module)
+    {
+        try
+        {
+            var removed = await _databaseService.RemoveModuleAsync(module);
+            if (!removed)
+            {
+                _logger.LogWarning(
+                    "Failed to remove existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
+                    module.Namespace,
+                    module.Name,
+                    module.Provider,
+                    module.Version);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Error removing existing module row for {Namespace}/{Name}/{Provider}/{Version} before replacement; continuing.",
+                module.Namespace,
+                module.Name,
+                module.Provider,
+                module.Version);
         }
     }
 
@@ -576,6 +638,30 @@ public class S3ModuleService : ModuleService
                 existingModule.Name,
                 existingModule.Provider,
                 existingModule.Version);
+        }
+    }
+
+    private async Task TryRestoreObjectFromBackupAsync(string? backupKey, string objectKey)
+    {
+        if (string.IsNullOrWhiteSpace(backupKey))
+        {
+            return;
+        }
+
+        try
+        {
+            await _s3Client.CopyObjectAsync(new CopyObjectRequest
+            {
+                SourceBucket = _bucketName,
+                SourceKey = backupKey,
+                DestinationBucket = _bucketName,
+                DestinationKey = objectKey
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to restore S3 object {ObjectKey} from backup {BackupKey}.", objectKey,
+                backupKey);
         }
     }
 }
