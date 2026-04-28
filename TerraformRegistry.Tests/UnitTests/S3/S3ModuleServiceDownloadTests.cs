@@ -114,6 +114,7 @@ public class S3ModuleServiceDownloadTests
     {
         const string expectedUrl = "https://example.invalid/presigned";
         var moduleStorage = CreateModuleStorage();
+        GetPreSignedUrlRequest? capturedRequest = null;
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -129,21 +130,25 @@ public class S3ModuleServiceDownloadTests
 
         _mockS3Client
             .Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
-            .Callback<GetPreSignedUrlRequest>(request =>
-            {
-                Assert.Equal("modules", request.BucketName);
-                Assert.Equal(moduleStorage.FilePath, request.Key);
-                Assert.Equal(HttpVerb.GET, request.Verb);
-                Assert.NotNull(request.Expires);
-                Assert.InRange(request.Expires!.Value, DateTime.UtcNow.AddMinutes(10), DateTime.UtcNow.AddMinutes(12));
-            })
+            .Callback<GetPreSignedUrlRequest>(request => capturedRequest = request)
             .Returns(expectedUrl);
 
         var service = CreateService();
+        var beforeCall = DateTime.UtcNow;
 
         var result = await service.GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0");
+        var afterCall = DateTime.UtcNow;
 
         Assert.Equal(expectedUrl, result);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("modules", capturedRequest!.BucketName);
+        Assert.Equal(moduleStorage.FilePath, capturedRequest.Key);
+        Assert.Equal(HttpVerb.GET, capturedRequest.Verb);
+        Assert.NotNull(capturedRequest.Expires);
+        Assert.InRange(
+            capturedRequest.Expires!.Value,
+            beforeCall.AddMinutes(11),
+            afterCall.AddMinutes(11));
         _mockDatabaseService.Verify(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"), Times.Once);
         _mockS3Client.Verify(x => x.GetObjectMetadataAsync(
             It.Is<GetObjectMetadataRequest>(request =>
@@ -192,6 +197,48 @@ public class S3ModuleServiceDownloadTests
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("pre-signed URL")),
                 It.IsAny<InvalidOperationException>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsync_Returns_Null_And_Logs_Error_When_Metadata_Lookup_Throws_Non404()
+    {
+        var moduleStorage = CreateModuleStorage();
+
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+
+        _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(
+                It.Is<GetObjectMetadataRequest>(request =>
+                    request.BucketName == "modules" &&
+                    request.Key == moduleStorage.FilePath),
+                default))
+            .ThrowsAsync(new AmazonS3Exception("boom")
+            {
+                StatusCode = HttpStatusCode.InternalServerError
+            });
+
+        var service = CreateService();
+
+        var result = await service.GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0");
+
+        Assert.Null(result);
+        _mockDatabaseService.Verify(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"), Times.Once);
+        _mockS3Client.Verify(x => x.GetObjectMetadataAsync(
+            It.Is<GetObjectMetadataRequest>(request =>
+                request.BucketName == "modules" &&
+                request.Key == moduleStorage.FilePath),
+            default), Times.Once);
+        _mockS3Client.Verify(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()), Times.Never);
+        _mockLogger.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("Error checking S3 object")),
+                It.IsAny<AmazonS3Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
