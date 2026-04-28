@@ -27,6 +27,7 @@
         <ProjectReference Include="..\TerraformRegistry.API\TerraformRegistry.API.csproj"/>
         <ProjectReference Include="..\TerraformRegistry.PostgreSQL\TerraformRegistry.PostgreSQL.csproj"/>
         <ProjectReference Include="..\TerraformRegistry.AzureBlob\TerraformRegistry.AzureBlob.csproj"/>
+        <ProjectReference Include="..\TerraformRegistry.Migrations\TerraformRegistry.Migrations.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

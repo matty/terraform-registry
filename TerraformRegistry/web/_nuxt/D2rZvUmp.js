@@ -1,0 +1,1 @@
+import{aG as a,aH as r,z as u}from"./XjwWjIdd.js";function i(){const e=a("impersonated-user",()=>null),s=u(()=>e.value!==null),n=t=>{e.value=t},o=()=>{e.value=null};return{impersonatedUser:r(e),isImpersonating:s,startImpersonation:n,stopImpersonation:o}}export{i as u};

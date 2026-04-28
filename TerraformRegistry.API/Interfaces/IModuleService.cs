@@ -31,5 +31,35 @@ public interface IModuleService
     ///     Uploads a new module
     /// </summary>
     Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,
-        string description, bool replace = false);
+        string description, bool replace = false, ModuleArtifactMetadata? metadata = null);
+
+    /// <summary>
+    ///     Soft deletes a module version
+    /// </summary>
+    Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Restores a soft-deleted module version
+    /// </summary>
+    Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Permanently deletes a module version (purge)
+    /// </summary>
+    Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Lists all soft-deleted modules
+    /// </summary>
+    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+
+    /// <summary>
+    ///     Updates the description for all active versions of a module
+    /// </summary>
+    Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
+
+    /// <summary>
+    ///     Checks that the storage backend is healthy and writable
+    /// </summary>
+    Task<(bool Healthy, string? Reason)> CheckStorageAsync();
 }

@@ -1,22 +1,20 @@
 <template>
-  <div class="min-h-screen bg-slate-900 flex items-center justify-center px-4">
+  <div class="min-h-screen bg-neutral-950 flex items-center justify-center px-4">
     <div class="text-center">
-      <div
-        class="w-16 h-16 mx-auto mb-4 bg-blue-600 rounded-xl flex items-center justify-center"
-      >
+      <div class="w-12 h-12 mx-auto mb-6">
         <UIcon
           v-if="!hasError"
           name="i-lucide-loader-2"
-          class="text-2xl text-white animate-spin"
+          class="text-4xl text-neutral-400 animate-spin"
         />
-        <UIcon v-else name="i-lucide-x-circle" class="text-2xl text-white" />
+        <UIcon v-else name="i-lucide-x-circle" class="text-4xl text-red-400" />
       </div>
 
-      <h1 class="text-2xl font-bold text-slate-100 mb-2">
+      <h1 class="text-2xl font-bold text-white mb-2">
         {{ hasError ? "Authentication Failed" : "Completing Sign In..." }}
       </h1>
 
-      <p class="text-slate-400 mb-6">
+      <p class="text-neutral-400 mb-6">
         {{
           hasError
             ? "There was a problem signing you in."
@@ -24,7 +22,7 @@
         }}
       </p>
 
-      <UButton v-if="hasError" to="/login" color="primary" size="lg">
+      <UButton v-if="hasError" to="/login" color="neutral" variant="solid" size="lg">
         Back to Login
       </UButton>
     </div>

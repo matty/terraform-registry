@@ -1,0 +1,66 @@
+-- Modules table
+CREATE TABLE IF NOT EXISTS modules (
+    id SERIAL PRIMARY KEY,
+    namespace VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    provider VARCHAR(255) NOT NULL,
+    version VARCHAR(50) NOT NULL,
+    description TEXT,
+    storage_path TEXT NOT NULL,
+    published_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    dependencies JSONB NOT NULL DEFAULT '[]',
+    metadata JSONB NOT NULL DEFAULT '{}',
+    CONSTRAINT module_unique_constraint UNIQUE (namespace, name, provider, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_module_namespace ON modules(namespace);
+CREATE INDEX IF NOT EXISTS idx_module_name ON modules(name);
+CREATE INDEX IF NOT EXISTS idx_module_provider ON modules(provider);
+CREATE INDEX IF NOT EXISTS idx_module_version ON modules(version);
+CREATE INDEX IF NOT EXISTS idx_module_metadata ON modules USING GIN (metadata);
+
+-- Download tracking
+CREATE TABLE IF NOT EXISTS module_downloads (
+    id SERIAL PRIMARY KEY,
+    module_id INTEGER REFERENCES modules(id),
+    namespace VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    provider VARCHAR(255) NOT NULL,
+    version VARCHAR(50) NOT NULL,
+    download_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    client_ip VARCHAR(50),
+    user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_downloads_module_id ON module_downloads(module_id);
+CREATE INDEX IF NOT EXISTS idx_downloads_namespace ON module_downloads(namespace);
+CREATE INDEX IF NOT EXISTS idx_downloads_name ON module_downloads(name);
+CREATE INDEX IF NOT EXISTS idx_downloads_provider ON module_downloads(provider);
+CREATE INDEX IF NOT EXISTS idx_downloads_time ON module_downloads(download_time);
+
+-- Download recording function
+CREATE OR REPLACE FUNCTION record_module_download(
+    p_namespace VARCHAR(255),
+    p_name VARCHAR(255),
+    p_provider VARCHAR(255),
+    p_version VARCHAR(50),
+    p_client_ip VARCHAR(50),
+    p_user_agent TEXT
+)
+RETURNS VOID AS $$
+DECLARE
+    module_id INTEGER;
+BEGIN
+    SELECT id INTO module_id FROM modules
+    WHERE namespace = p_namespace
+    AND name = p_name
+    AND provider = p_provider
+    AND version = p_version;
+
+    INSERT INTO module_downloads (
+        module_id, namespace, name, provider, version, client_ip, user_agent
+    ) VALUES (
+        module_id, p_namespace, p_name, p_provider, p_version, p_client_ip, p_user_agent
+    );
+END;
+$$ LANGUAGE plpgsql;
