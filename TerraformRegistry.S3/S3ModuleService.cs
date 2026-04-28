@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using Amazon;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -97,10 +98,73 @@ public class S3ModuleService : ModuleService
         return _databaseService.GetModuleVersionsAsync(@namespace, name, provider);
     }
 
-    public override Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider,
+    public override async Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider,
         string version)
     {
-        return Task.FromResult<string?>(null);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        if (moduleStorage == null)
+        {
+            _logger.LogWarning(
+                "Module {Namespace}/{Name}/{Provider}/{Version} not found in database.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return null;
+        }
+
+        try
+        {
+            await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = _bucketName,
+                Key = moduleStorage.FilePath
+            });
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning(
+                "Module {Namespace}/{Name}/{Provider}/{Version} exists in database but object {ObjectKey} was not found in S3.",
+                @namespace,
+                name,
+                provider,
+                version,
+                moduleStorage.FilePath);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error checking S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return null;
+        }
+
+        try
+        {
+            return _s3Client.GetPreSignedURL(new GetPreSignedUrlRequest
+            {
+                BucketName = _bucketName,
+                Key = moduleStorage.FilePath,
+                Verb = HttpVerb.GET,
+                Expires = DateTime.UtcNow.AddMinutes(_presignedUrlExpiryMinutes)
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error generating pre-signed URL for module {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return null;
+        }
     }
 
     protected override Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
