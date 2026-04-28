@@ -154,4 +154,31 @@ public class S3ModuleServiceConstructorTests
             x => x.Create(It.IsAny<AmazonS3Config>(), null, null, null),
             Times.Once);
     }
+
+    [Fact]
+    public void Constructor_Invalid_PresignedUrlExpiryMinutes_Defaults_And_Does_Not_Throw()
+    {
+        var config = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["S3:BucketName"] = "modules",
+            ["S3:Region"] = "eu-west-2",
+            ["S3:PresignedUrlExpiryMinutes"] = "abc"
+        });
+
+        _mockClientFactory
+            .Setup(x => x.Create(It.IsAny<AmazonS3Config>(), null, null, null))
+            .Returns(_mockS3Client.Object);
+
+        var service = new S3ModuleService(
+            config,
+            _mockDatabaseService.Object,
+            _mockLogger.Object,
+            null,
+            _mockClientFactory.Object);
+
+        Assert.NotNull(service);
+        _mockClientFactory.Verify(
+            x => x.Create(It.IsAny<AmazonS3Config>(), null, null, null),
+            Times.Once);
+    }
 }

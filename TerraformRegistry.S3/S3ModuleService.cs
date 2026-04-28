@@ -33,13 +33,13 @@ public class S3ModuleService : ModuleService
         var region = configuration["S3:Region"]
             ?? throw new ArgumentNullException("S3:Region", "S3 region is required.");
 
-        _presignedUrlExpiryMinutes =
-            int.Parse(configuration["S3:PresignedUrlExpiryMinutes"] ?? "5", CultureInfo.InvariantCulture);
-        if (_presignedUrlExpiryMinutes <= 0)
+        var configuredPresignedUrlExpiry = configuration["S3:PresignedUrlExpiryMinutes"] ?? "5";
+        if (!int.TryParse(configuredPresignedUrlExpiry, CultureInfo.InvariantCulture, out _presignedUrlExpiryMinutes)
+            || _presignedUrlExpiryMinutes <= 0)
         {
             _logger.LogWarning(
                 "S3:PresignedUrlExpiryMinutes must be a positive integer, but was configured as {ConfiguredValue}. Defaulting to 5 minutes.",
-                _presignedUrlExpiryMinutes);
+                configuredPresignedUrlExpiry);
             _presignedUrlExpiryMinutes = 5;
         }
 
