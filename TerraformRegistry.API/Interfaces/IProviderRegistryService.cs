@@ -5,6 +5,8 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IProviderRegistryService
 {
     Task<ProviderVersionsResponse?> GetVersionsAsync(string @namespace, string type);
+    Task<ProviderManagementVersionsResponse?> GetManagementVersionsAsync(string @namespace, string type);
+    Task<ProviderManagementPlatformsResponse?> GetManagementPlatformsAsync(string @namespace, string type, string version);
     Task<ProviderPackageResponse?> GetPackageAsync(string @namespace, string type, string version, string os, string arch,
         string? clientIp, string? userAgent, CancellationToken cancellationToken);
 

@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using TerraformRegistry.API;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using Xunit.Abstractions;
 
@@ -125,6 +127,54 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
+    public async Task ListVersionsAndPlatforms_ReturnManagementMetadata()
+    {
+        var client = await CreatePublisherClientAsync("provider-management-metadata@example.com", "provider-management-metadata");
+        var ns = NewNamespace();
+        await CreateProviderVersionAsync(client, ns);
+        await UploadShasumsAndSignatureAsync(client, ns);
+        await CreatePlatformAsync(client, ns);
+        await MarkPlatformPackageUploadedAsync(ns);
+
+        var versionsResponse = await client.GetAsync($"/api/providers/{ns}/example/versions");
+
+        Assert.Equal(HttpStatusCode.OK, versionsResponse.StatusCode);
+        var versionsJson = await versionsResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var version = versionsJson.GetProperty("versions")[0];
+        Assert.False(string.IsNullOrWhiteSpace(version.GetProperty("id").GetString()));
+        Assert.Equal("1.0.0", version.GetProperty("version").GetString());
+        Assert.Equal("5.0", version.GetProperty("protocols")[0].GetString());
+        Assert.Equal("test-key", version.GetProperty("key_id").GetString());
+        Assert.True(version.GetProperty("has_shasums").GetBoolean());
+        Assert.True(version.GetProperty("has_shasums_signature").GetBoolean());
+        Assert.NotEqual(default, version.GetProperty("published_at").GetDateTime());
+
+        var versionPlatform = version.GetProperty("platforms")[0];
+        Assert.False(string.IsNullOrWhiteSpace(versionPlatform.GetProperty("id").GetString()));
+        Assert.Equal("linux", versionPlatform.GetProperty("os").GetString());
+        Assert.Equal("amd64", versionPlatform.GetProperty("arch").GetString());
+        Assert.Equal("terraform-provider-example_1.0.0_linux_amd64.zip", versionPlatform.GetProperty("filename").GetString());
+        Assert.Equal(ValidShasum, versionPlatform.GetProperty("shasum").GetString());
+        Assert.True(versionPlatform.GetProperty("has_package").GetBoolean());
+        Assert.Equal(123, versionPlatform.GetProperty("size_bytes").GetInt64());
+        Assert.NotEqual(default, versionPlatform.GetProperty("uploaded_at").GetDateTime());
+
+        var platformsResponse = await client.GetAsync($"/api/providers/{ns}/example/versions/1.0.0/platforms");
+
+        Assert.Equal(HttpStatusCode.OK, platformsResponse.StatusCode);
+        var platformsJson = await platformsResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var platform = platformsJson.GetProperty("platforms")[0];
+        Assert.False(string.IsNullOrWhiteSpace(platform.GetProperty("id").GetString()));
+        Assert.Equal("linux", platform.GetProperty("os").GetString());
+        Assert.Equal("amd64", platform.GetProperty("arch").GetString());
+        Assert.Equal("terraform-provider-example_1.0.0_linux_amd64.zip", platform.GetProperty("filename").GetString());
+        Assert.Equal(ValidShasum, platform.GetProperty("shasum").GetString());
+        Assert.True(platform.GetProperty("has_package").GetBoolean());
+        Assert.Equal(123, platform.GetProperty("size_bytes").GetInt64());
+        Assert.NotEqual(default, platform.GetProperty("uploaded_at").GetDateTime());
+    }
+
+    [Fact]
     public async Task AddGpgKey_WithoutKeysPermission_ReturnsForbidden()
     {
         var client = await CreateClientWithPermissionsAsync(
@@ -198,6 +248,40 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
             KeyId = "test-key"
         });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private static async Task UploadShasumsAndSignatureAsync(HttpClient client, string ns)
+    {
+        using var shasums = new StringContent(
+            $"{ValidShasum}  terraform-provider-example_1.0.0_linux_amd64.zip\n",
+            Encoding.UTF8,
+            "text/plain");
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsync($"/api/providers/{ns}/example/versions/1.0.0/shasums", shasums)).StatusCode);
+
+        using var signature = new ByteArrayContent([1, 2, 3]);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsync($"/api/providers/{ns}/example/versions/1.0.0/shasums.sig", signature)).StatusCode);
+    }
+
+    private static async Task CreatePlatformAsync(HttpClient client, string ns)
+    {
+        var response = await client.PostAsJsonAsync($"/api/providers/{ns}/example/versions/1.0.0/platforms",
+            new CreateProviderPlatformRequest
+            {
+                Os = "linux",
+                Arch = "amd64",
+                Filename = "terraform-provider-example_1.0.0_linux_amd64.zip",
+                Shasum = ValidShasum
+            });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    private async Task MarkPlatformPackageUploadedAsync(string ns)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IProviderRepository>();
+        var platform = await repository.GetProviderPlatformAsync(ns, "example", "1.0.0", "linux", "amd64");
+        Assert.NotNull(platform);
+        Assert.True(await repository.SetPlatformPackagePathAsync(platform!.Id, "test/package.zip", 123));
     }
 
     private static async Task CreateProviderAndGpgKeyAsync(HttpClient client, string ns)

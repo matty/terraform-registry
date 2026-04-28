@@ -310,7 +310,7 @@ public static class ProviderHandlers
         var invalid = ValidateCoordinates(@namespace, type);
         if (invalid != null) return invalid;
 
-        var versions = await providerService.GetVersionsAsync(@namespace, type);
+        var versions = await providerService.GetManagementVersionsAsync(@namespace, type);
         return versions == null ? ErrorResponseExtensions.NotFound("Provider not found") : Results.Ok(versions);
     }
 
@@ -428,11 +428,10 @@ public static class ProviderHandlers
         var invalid = ValidateVersionAndPlatform(@namespace, type, version);
         if (invalid != null) return invalid;
 
-        var versions = await providerService.GetVersionsAsync(@namespace, type);
-        var versionEntry = versions?.Versions.FirstOrDefault(v => string.Equals(v.Version, version, StringComparison.Ordinal));
-        return versionEntry == null
+        var platforms = await providerService.GetManagementPlatformsAsync(@namespace, type, version);
+        return platforms == null
             ? ErrorResponseExtensions.NotFound("Provider version not found")
-            : Results.Ok(new { platforms = versionEntry.Platforms });
+            : Results.Ok(platforms);
     }
 
     public static async Task<IResult> CreatePlatform(

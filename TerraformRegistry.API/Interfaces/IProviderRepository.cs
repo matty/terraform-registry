@@ -11,12 +11,14 @@ public interface IProviderRepository
     Task<bool> DeleteProviderAsync(string @namespace, string type);
 
     Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string @namespace, string type);
+    Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string @namespace, string type);
     Task<ProviderVersion?> GetProviderVersionAsync(string @namespace, string type, string version);
     Task<ProviderVersion> CreateProviderVersionAsync(Guid providerId, string version, string[] protocols, string keyId);
     Task<bool> SetVersionShasumsPathAsync(Guid versionId, string storagePath);
     Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath);
     Task<bool> DeleteProviderVersionAsync(string @namespace, string type, string version);
 
+    Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version);
     Task<ProviderPlatform?> GetProviderPlatformAsync(string @namespace, string type, string version, string os, string arch);
     Task<ProviderPlatform> CreateProviderPlatformAsync(Guid versionId, string os, string arch, string filename, string shasum);
     Task<bool> SetPlatformPackagePathAsync(Guid platformId, string storagePath, long sizeBytes);

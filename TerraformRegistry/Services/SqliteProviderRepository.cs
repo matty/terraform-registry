@@ -159,6 +159,59 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return entries;
     }
 
+    public async Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string @namespace, string type)
+    {
+        await using var connection = await OpenConnectionAsync();
+        var versionRows = new List<(string Id, string Version, string[] Protocols, string KeyId, bool HasShasums,
+            bool HasShasumsSignature, DateTime PublishedAt)>();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+                SELECT pv.id, pv.version, pv.protocols, pv.key_id, pv.shasums_storage_path,
+                       pv.shasums_signature_storage_path, pv.published_at
+                FROM provider_versions pv
+                INNER JOIN providers p ON p.id = pv.provider_id
+                WHERE p.namespace = $namespace AND p.type = $type
+                  AND p.deleted_at IS NULL AND pv.deleted_at IS NULL";
+            command.Parameters.AddWithValue("$namespace", @namespace);
+            command.Parameters.AddWithValue("$type", type);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var shasumsStoragePath = ReadNullableString(reader, 4);
+                var shasumsSignatureStoragePath = ReadNullableString(reader, 5);
+                versionRows.Add((
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    DeserializeProtocols(reader.GetString(2)),
+                    reader.GetString(3),
+                    !string.IsNullOrWhiteSpace(shasumsStoragePath),
+                    !string.IsNullOrWhiteSpace(shasumsSignatureStoragePath),
+                    DateTime.Parse(reader.GetString(6)).ToUniversalTime()));
+            }
+        }
+
+        var entries = new List<ProviderManagementVersionEntry>();
+        foreach (var row in versionRows.OrderByDescending(row => row.Version, SemVerVersionComparer.Instance))
+        {
+            entries.Add(new ProviderManagementVersionEntry
+            {
+                Id = row.Id,
+                Version = row.Version,
+                Protocols = row.Protocols,
+                KeyId = row.KeyId,
+                HasShasums = row.HasShasums,
+                HasShasumsSignature = row.HasShasumsSignature,
+                PublishedAt = row.PublishedAt,
+                Platforms = await GetManagementPlatformEntriesAsync(connection, row.Id)
+            });
+        }
+
+        return entries;
+    }
+
     public async Task<ProviderVersion?> GetProviderVersionAsync(string @namespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
@@ -236,6 +289,33 @@ public sealed class SqliteProviderRepository : IProviderRepository
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT pp.id, pp.os, pp.arch, pp.filename, pp.shasum, pp.package_storage_path,
+                   pp.size_bytes, pp.uploaded_at
+            FROM provider_platforms pp
+            INNER JOIN provider_versions pv ON pv.id = pp.provider_version_id
+            INNER JOIN providers p ON p.id = pv.provider_id
+            WHERE p.namespace = $namespace AND p.type = $type AND pv.version = $version
+              AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
+            ORDER BY pp.os, pp.arch";
+        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$version", version);
+
+        var platforms = new List<ProviderManagementPlatformEntry>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            platforms.Add(MapManagementPlatformEntry(reader));
+        }
+
+        return platforms;
     }
 
     public async Task<ProviderPlatform?> GetProviderPlatformAsync(string @namespace, string type, string version, string os, string arch)
@@ -469,6 +549,26 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return platforms;
     }
 
+    private static async Task<List<ProviderManagementPlatformEntry>> GetManagementPlatformEntriesAsync(SqliteConnection connection, string versionId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT id, os, arch, filename, shasum, package_storage_path, size_bytes, uploaded_at
+            FROM provider_platforms
+            WHERE provider_version_id = $versionId
+            ORDER BY os, arch";
+        command.Parameters.AddWithValue("$versionId", versionId);
+
+        var platforms = new List<ProviderManagementPlatformEntry>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            platforms.Add(MapManagementPlatformEntry(reader));
+        }
+
+        return platforms;
+    }
+
     private async Task<SqliteConnection> OpenConnectionAsync()
     {
         var connection = new SqliteConnection(_connectionString);
@@ -522,6 +622,22 @@ public sealed class SqliteProviderRepository : IProviderRepository
             PackageStoragePath = ReadNullableString(reader, 6),
             SizeBytes = reader.GetInt64(7),
             UploadedAt = ReadNullableDateTime(reader, 8)
+        };
+    }
+
+    private static ProviderManagementPlatformEntry MapManagementPlatformEntry(SqliteDataReader reader)
+    {
+        var packageStoragePath = ReadNullableString(reader, 5);
+        return new ProviderManagementPlatformEntry
+        {
+            Id = reader.GetString(0),
+            Os = reader.GetString(1),
+            Arch = reader.GetString(2),
+            Filename = reader.GetString(3),
+            Shasum = reader.GetString(4),
+            HasPackage = !string.IsNullOrWhiteSpace(packageStoragePath),
+            SizeBytes = reader.GetInt64(6),
+            UploadedAt = ReadNullableDateTime(reader, 7)
         };
     }
 

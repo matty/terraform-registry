@@ -37,6 +37,35 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         return new ProviderVersionsResponse { Versions = versions.ToList() };
     }
 
+    public async Task<ProviderManagementVersionsResponse?> GetManagementVersionsAsync(string @namespace, string type)
+    {
+        ValidateCoordinate(@namespace, type);
+
+        var provider = await _repository.GetProviderAsync(@namespace, type);
+        if (provider == null)
+        {
+            return null;
+        }
+
+        var versions = await _repository.GetProviderManagementVersionsAsync(@namespace, type);
+        return new ProviderManagementVersionsResponse { Versions = versions.ToList() };
+    }
+
+    public async Task<ProviderManagementPlatformsResponse?> GetManagementPlatformsAsync(string @namespace, string type, string version)
+    {
+        ValidateCoordinate(@namespace, type);
+        ValidateVersion(version);
+
+        var providerVersion = await _repository.GetProviderVersionAsync(@namespace, type, version);
+        if (providerVersion == null)
+        {
+            return null;
+        }
+
+        var platforms = await _repository.GetProviderManagementPlatformsAsync(@namespace, type, version);
+        return new ProviderManagementPlatformsResponse { Platforms = platforms.ToList() };
+    }
+
     public async Task<ProviderPackageResponse?> GetPackageAsync(string @namespace, string type, string version, string os,
         string arch, string? clientIp, string? userAgent, CancellationToken cancellationToken)
     {
