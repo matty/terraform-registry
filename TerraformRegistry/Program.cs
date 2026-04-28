@@ -482,6 +482,77 @@ app.MapGet("/api/analytics/downloads/module/{namespace}/{name}/{provider}",
     .WithTags("Analytics")
     .WithDescription("Per-module download analytics");
 
+// Provider management endpoints (auth handled by middleware via /api/providers prefix)
+app.MapGet("/api/providers", (IProviderRegistryService service, HttpContext context, string? q, int offset = 0, int limit = 20) =>
+        ProviderHandlers.ListProviders(service, context, q, offset, limit))
+    .WithTags("Providers");
+
+app.MapPost("/api/providers", (IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.CreateProvider(service, context, request))
+    .WithTags("Providers");
+
+app.MapGet("/api/providers/{namespace}/{type}", (string @namespace, string type, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.GetProvider(@namespace, type, service, context))
+    .WithTags("Providers");
+
+app.MapPatch("/api/providers/{namespace}/{type}", (string @namespace, string type, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.UpdateProvider(@namespace, type, service, context, request))
+    .WithTags("Providers");
+
+app.MapDelete("/api/providers/{namespace}/{type}", (string @namespace, string type, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.DeleteProvider(@namespace, type, service, context))
+    .WithTags("Providers");
+
+app.MapGet("/api/providers/{namespace}/{type}/gpg-keys", (string @namespace, string type, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.ListGpgKeys(@namespace, type, service, context))
+    .WithTags("Providers");
+
+app.MapPost("/api/providers/{namespace}/{type}/gpg-keys", (string @namespace, string type, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.AddGpgKey(@namespace, type, service, context, request))
+    .WithTags("Providers");
+
+app.MapDelete("/api/providers/{namespace}/{type}/gpg-keys/{keyId}", (string @namespace, string type, string keyId, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.RevokeGpgKey(@namespace, type, keyId, service, context))
+    .WithTags("Providers");
+
+app.MapGet("/api/providers/{namespace}/{type}/versions", (string @namespace, string type, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.ListVersions(@namespace, type, service, context))
+    .WithTags("Providers");
+
+app.MapPost("/api/providers/{namespace}/{type}/versions", (string @namespace, string type, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.CreateVersion(@namespace, type, service, context, request))
+    .WithTags("Providers");
+
+app.MapDelete("/api/providers/{namespace}/{type}/versions/{version}", (string @namespace, string type, string version, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.DeleteVersion(@namespace, type, version, service, context))
+    .WithTags("Providers");
+
+app.MapGet("/api/providers/{namespace}/{type}/versions/{version}/platforms", (string @namespace, string type, string version, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.ListPlatforms(@namespace, type, version, service, context))
+    .WithTags("Providers");
+
+app.MapPost("/api/providers/{namespace}/{type}/versions/{version}/platforms", (string @namespace, string type, string version, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.CreatePlatform(@namespace, type, version, service, context, request))
+    .WithTags("Providers");
+
+app.MapDelete("/api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}", (string @namespace, string type, string version, string os, string arch, IProviderRegistryService service, HttpContext context) =>
+        ProviderHandlers.DeletePlatform(@namespace, type, version, os, arch, service, context))
+    .WithTags("Providers");
+
+app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/shasums", (string @namespace, string type, string version, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.UploadShasums(@namespace, type, version, service, context, request))
+    .WithTags("Providers");
+
+app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/shasums.sig", (string @namespace, string type, string version, IProviderRegistryService service, HttpContext context, HttpRequest request) =>
+        ProviderHandlers.UploadShasumsSignature(@namespace, type, version, service, context, request))
+    .WithTags("Providers");
+
+app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}/package",
+        (string @namespace, string type, string version, string os, string arch, IProviderRegistryService service, HttpContext context,
+                HttpRequest request) =>
+            ProviderHandlers.UploadPlatformPackage(@namespace, type, version, os, arch, service, context, request))
+    .WithTags("Providers");
+
 // Webhook endpoints (admin-only, auth handled by middleware via /api/admin prefix)
 app.MapGet("/api/admin/webhooks", (IWebhookService webhookService, HttpContext context) =>
         WebhookHandlers.ListWebhooks(webhookService, context))
