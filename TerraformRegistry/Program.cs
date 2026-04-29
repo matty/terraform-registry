@@ -523,6 +523,13 @@ app.MapGet("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{versio
         (string @namespace, string name, string provider, string version, IDatabaseService dbService, HttpContext context) =>
             ModuleDocsHandlers.GetModuleDetail(@namespace, name, provider, version, dbService, context))
     .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}/regenerate-llm",
+        (string @namespace, string name, string provider, string version, IModuleExtractionService extractionService,
+                IDatabaseService dbService, IAuditService auditService, IModuleExtractionConfigService configService,
+                HttpContext context) =>
+            ModuleDocsHandlers.RegenerateLlmContext(@namespace, name, provider, version, extractionService, dbService,
+                auditService, configService, context))
+    .WithTags("Module Docs");
 app.MapPost("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}/requeue",
         (string @namespace, string name, string provider, string version, IModuleExtractionService extractionService,
                 IDatabaseService dbService, IAuditService auditService, IModuleExtractionConfigService configService,
@@ -619,6 +626,35 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",
     .WithTags("Modules")
     .WithDescription("Gets all versions of a specific module")
     .Produces<ModuleVersions>();
+
+app.MapGet("/llm.txt", (IConfiguration configuration) => LlmHandlers.GetGuide(configuration))
+    .WithTags("LLM")
+    .WithDescription("Provides LLM discovery guidance");
+
+app.MapGet("/v1/llm/modules",
+        (IModuleService moduleService, IConfiguration configuration, HttpContext context, string? q, int offset = 0,
+                int limit = 50) =>
+            LlmHandlers.ListModules(moduleService, configuration, context, q, offset, limit))
+    .WithTags("LLM")
+    .WithDescription("Lists modules for authenticated LLM discovery")
+    .Produces<ModuleLlmIndexResponse>();
+
+app.MapGet("/v1/llm/modules/{namespace}/{name}/{provider}",
+        (string @namespace, string name, string provider, IModuleService moduleService, IDatabaseService dbService,
+                IConfiguration configuration, HttpContext context) =>
+            LlmHandlers.GetModuleVersions(@namespace, name, provider, moduleService, dbService, configuration, context))
+    .WithTags("LLM")
+    .WithDescription("Lists module versions and LLM readiness for authenticated clients")
+    .Produces<ModuleLlmModuleVersionsResponse>();
+
+app.MapGet("/v1/llm/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IDatabaseService dbService,
+                HttpContext context) =>
+            LlmHandlers.GetModuleContext(@namespace, name, provider, version, dbService, context))
+    .WithTags("LLM")
+    .WithDescription("Returns the stored LLM context for a module version")
+    .Produces<ModuleLlmContextDocument>()
+    .ProducesProblem(409);
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download", (string @namespace, string name,
             string provider, string version, IModuleService moduleService, IDatabaseService dbService, HttpContext context) =>

@@ -40,10 +40,15 @@ public class ModuleExtractionAdminListItem
     public DateTime? LastAttemptedAt { get; set; }
     public DateTime? LastSucceededAt { get; set; }
     public string? Error { get; set; }
+    public string LlmStatus { get; set; } = "pending";
+    public DateTime? LlmLastAttemptedAt { get; set; }
+    public DateTime? LlmLastSucceededAt { get; set; }
+    public string? LlmError { get; set; }
     public ModuleDocumentationSummary? Documentation { get; set; }
 }
 
 public sealed class ModuleExtractionAdminDetail : ModuleExtractionAdminListItem
 {
     public ModuleExtractionDocument? Document { get; set; }
+    public ModuleLlmContextDocument? LlmContext { get; set; }
 }

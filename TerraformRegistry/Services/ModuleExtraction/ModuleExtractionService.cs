@@ -147,6 +147,77 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         }
     }
 
+    public async Task RegenerateLlmContextAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+
+        try
+        {
+            await _databaseService.UpdateModuleMetadataAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version,
+                metadata =>
+                {
+                    metadata.LlmContext ??= new ModuleLlmContextState();
+                    metadata.LlmContext.Status = "processing";
+                    metadata.LlmContext.LastAttemptedAt = now;
+                    metadata.LlmContext.LastUpdatedAt = now;
+                    metadata.LlmContext.Error = null;
+                });
+
+            var module = await _databaseService.GetModuleAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version);
+            if (module == null)
+                throw new InvalidOperationException("Module metadata was not found.");
+
+            var extraction = await _databaseService.GetModuleExtractionAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version);
+            if (extraction == null)
+                throw new InvalidOperationException("Module extraction document was not found.");
+
+            var llmContext = _llmContextGenerator.Generate(module, extraction);
+
+            await _databaseService.UpsertModuleLlmContextAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version,
+                llmContext);
+
+            await _databaseService.UpdateModuleMetadataAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version,
+                metadata =>
+                {
+                    metadata.LlmContext ??= new ModuleLlmContextState();
+                    metadata.LlmContext.Status = "succeeded";
+                    metadata.LlmContext.LastAttemptedAt ??= now;
+                    metadata.LlmContext.LastSucceededAt = now;
+                    metadata.LlmContext.LastUpdatedAt = now;
+                    metadata.LlmContext.Error = null;
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await TryMarkLlmFailedAsync(request, ex);
+            throw;
+        }
+    }
+
     private Task MarkProcessingAsync(ModuleExtractionRequest request)
     {
         var now = DateTime.UtcNow;
@@ -242,6 +313,37 @@ public sealed class ModuleExtractionService : IModuleExtractionService
             _logger.LogError(
                 metadataException,
                 "Failed to mark extraction failure for module {Namespace}/{Name}/{Provider}/{Version}",
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version);
+        }
+    }
+
+    private async Task TryMarkLlmFailedAsync(ModuleExtractionRequest request, Exception exception)
+    {
+        var now = DateTime.UtcNow;
+
+        try
+        {
+            await _databaseService.UpdateModuleMetadataAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version,
+                metadata =>
+                {
+                    metadata.LlmContext ??= new ModuleLlmContextState();
+                    metadata.LlmContext.Status = "failed";
+                    metadata.LlmContext.LastUpdatedAt = now;
+                    metadata.LlmContext.Error = Truncate(exception.Message, 2048);
+                });
+        }
+        catch (Exception metadataException)
+        {
+            _logger.LogError(
+                metadataException,
+                "Failed to mark LLM context failure for module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,
                 request.Name,
                 request.Provider,

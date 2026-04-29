@@ -15,6 +15,11 @@ export interface ModuleExtractionAdminSummary {
   pending: number
   processing: number
   neverExtracted: number
+  llmSucceeded: number
+  llmFailed: number
+  llmPending: number
+  llmProcessing: number
+  llmNeverGenerated: number
   total: number
 }
 
@@ -36,6 +41,10 @@ export interface ModuleExtractionAdminListItem {
   lastAttemptedAt: string | null
   lastSucceededAt: string | null
   error: string | null
+  llmStatus: string
+  llmLastAttemptedAt: string | null
+  llmLastSucceededAt: string | null
+  llmError: string | null
   documentation: ModuleDocumentationSummary | null
 }
 
@@ -101,8 +110,66 @@ export interface ModuleExtractionDocument {
   warnings: string[]
 }
 
+export interface ModuleLlmModuleReference {
+  namespace: string
+  name: string
+  provider: string
+  version: string
+}
+
+export interface ModuleLlmSourceReference {
+  registryUrl: string | null
+  publishedAt: string | null
+}
+
+export interface ModuleLlmContextSummary {
+  oneLine: string | null
+  capabilities: string[]
+  usageNotes: string[]
+}
+
+export interface ModuleLlmResourceSummary {
+  managed: string[]
+  data: string[]
+}
+
+export interface ModuleLlmExampleSummary {
+  name: string
+  path: string
+  summary: string | null
+}
+
+export interface ModuleLlmReadmeSummary {
+  title: string | null
+  summary: string | null
+}
+
+export interface ModuleLlmNavigationLinks {
+  humanUrl: string | null
+  moduleVersionsUrl: string | null
+  rawExtractionUrl: string | null
+}
+
+export interface ModuleLlmContextDocument {
+  schemaVersion: string
+  generatedAt: string
+  generator: string
+  module: ModuleLlmModuleReference
+  source: ModuleLlmSourceReference | null
+  summary: ModuleLlmContextSummary
+  inputs: ModuleInputDefinition[]
+  outputs: ModuleOutputDefinition[]
+  providers: ModuleProviderRequirement[]
+  resources: ModuleLlmResourceSummary
+  examples: ModuleLlmExampleSummary[]
+  readme: ModuleLlmReadmeSummary
+  navigation: ModuleLlmNavigationLinks
+  warnings: string[]
+}
+
 export interface ModuleExtractionAdminDetail extends ModuleExtractionAdminListItem {
   document: ModuleExtractionDocument | null
+  llmContext: ModuleLlmContextDocument | null
 }
 
 export interface ModuleExtractionAdminPage {
@@ -160,6 +227,13 @@ export function useModuleDocsAdmin() {
     })
   }
 
+  async function regenerateLlmContext(module: Pick<ModuleExtractionAdminListItem, 'namespace' | 'name' | 'provider' | 'version'>): Promise<{ regenerated: boolean, queued: boolean }> {
+    return await $fetch(`/api/admin/module-docs/modules/${pathFor(module)}/regenerate-llm`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+  }
+
   async function queueBackfill(limit = 25): Promise<{ queued: number, modules: ModuleExtractionAdminListItem[] }> {
     return await $fetch('/api/admin/module-docs/backfill', {
       method: 'POST',
@@ -181,6 +255,7 @@ export function useModuleDocsAdmin() {
     listModules,
     getModuleDetail,
     requeueModule,
+    regenerateLlmContext,
     queueBackfill,
     updateConfig,
   }

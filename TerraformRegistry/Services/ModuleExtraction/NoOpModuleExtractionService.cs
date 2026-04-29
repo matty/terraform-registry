@@ -25,4 +25,9 @@ public sealed class NoOpModuleExtractionService : IModuleExtractionService
     {
         return Task.CompletedTask;
     }
+
+    public Task RegenerateLlmContextAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
 }

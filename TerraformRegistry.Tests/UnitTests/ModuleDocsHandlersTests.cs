@@ -46,6 +46,26 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
+    public async Task RegenerateLlmContext_RequiresManagePermission()
+    {
+        var context = CreateContext([Permissions.ModuleDocsRead]);
+
+        var result = await ModuleDocsHandlers.RegenerateLlmContext(
+            "acme",
+            "network",
+            "aws",
+            "1.0.0",
+            Mock.Of<IModuleExtractionService>(),
+            Mock.Of<IDatabaseService>(),
+            Mock.Of<IAuditService>(),
+            Mock.Of<IModuleExtractionConfigService>(),
+            context);
+
+        var status = await ExecuteForStatusCode(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, status);
+    }
+
+    [Fact]
     public async Task UpdateConfig_RequiresConfigurePermission()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
@@ -213,6 +233,91 @@ public class ModuleDocsHandlersTests
         Assert.Equal(7, GetProperty<int>(auditDetails!, "RequestedLimit"));
         Assert.Equal(1, GetProperty<int>(auditDetails!, "Queued"));
         Assert.True(GetProperty<bool>(auditDetails!, "Enabled"));
+    }
+
+    [Fact]
+    public async Task RegenerateLlmContext_WithStoredExtraction_RegeneratesImmediately()
+    {
+        var context = CreateContext([Permissions.ModuleDocsManage]);
+
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.GetModuleExtractionAdminDetailAsync("acme", "network", "aws", "1.0.0"))
+            .ReturnsAsync(new ModuleExtractionAdminDetail
+            {
+                Namespace = "acme",
+                Name = "network",
+                Provider = "aws",
+                Version = "1.0.0"
+            });
+        database.Setup(x => x.GetModuleExtractionAsync("acme", "network", "aws", "1.0.0"))
+            .ReturnsAsync(new ModuleExtractionDocument());
+
+        var extraction = new Mock<IModuleExtractionService>();
+        extraction.Setup(x => x.RegenerateLlmContextAsync(
+                It.Is<ModuleExtractionRequest>(request =>
+                    request.Namespace == "acme" &&
+                    request.Name == "network" &&
+                    request.Provider == "aws" &&
+                    request.Version == "1.0.0"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var result = await ModuleDocsHandlers.RegenerateLlmContext(
+            "acme",
+            "network",
+            "aws",
+            "1.0.0",
+            extraction.Object,
+            database.Object,
+            Mock.Of<IAuditService>(),
+            Mock.Of<IModuleExtractionConfigService>(),
+            context);
+
+        var status = await ExecuteForStatusCode(result);
+        Assert.Equal(StatusCodes.Status200OK, status);
+        extraction.Verify(x => x.RegenerateLlmContextAsync(It.IsAny<ModuleExtractionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        extraction.Verify(x => x.QueueAsync(It.IsAny<ModuleExtractionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RegenerateLlmContext_WithoutStoredExtraction_QueuesFullExtractionWhenEnabled()
+    {
+        var context = CreateContext([Permissions.ModuleDocsManage]);
+
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.GetModuleExtractionAdminDetailAsync("acme", "network", "aws", "1.0.0"))
+            .ReturnsAsync(new ModuleExtractionAdminDetail
+            {
+                Namespace = "acme",
+                Name = "network",
+                Provider = "aws",
+                Version = "1.0.0"
+            });
+        database.Setup(x => x.GetModuleExtractionAsync("acme", "network", "aws", "1.0.0"))
+            .ReturnsAsync((ModuleExtractionDocument?)null);
+
+        var extraction = new Mock<IModuleExtractionService>();
+        extraction.Setup(x => x.QueueAsync(It.IsAny<ModuleExtractionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var config = new Mock<IModuleExtractionConfigService>();
+        config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var result = await ModuleDocsHandlers.RegenerateLlmContext(
+            "acme",
+            "network",
+            "aws",
+            "1.0.0",
+            extraction.Object,
+            database.Object,
+            Mock.Of<IAuditService>(),
+            config.Object,
+            context);
+
+        var status = await ExecuteForStatusCode(result);
+        Assert.Equal(StatusCodes.Status202Accepted, status);
+        extraction.Verify(x => x.QueueAsync(It.IsAny<ModuleExtractionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        extraction.Verify(x => x.RegenerateLlmContextAsync(It.IsAny<ModuleExtractionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static DefaultHttpContext CreateContext(IEnumerable<string> permissions)

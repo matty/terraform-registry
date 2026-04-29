@@ -666,9 +666,12 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT m.metadata, CASE WHEN e.module_id IS NULL THEN 0 ELSE 1 END
+            SELECT m.metadata,
+                   CASE WHEN e.module_id IS NULL THEN 0 ELSE 1 END,
+                   CASE WHEN c.module_id IS NULL THEN 0 ELSE 1 END
             FROM modules m
             LEFT JOIN module_extractions e ON e.module_id = m.id
+            LEFT JOIN module_llm_contexts c ON c.module_id = m.id
             WHERE m.deleted_at IS NULL";
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -677,9 +680,12 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             summary.Total++;
             var metadata = DeserializeModuleMetadata(reader.IsDBNull(0) ? null : reader.GetString(0));
             IncrementStatus(summary, metadata.Extraction?.Status);
+            IncrementLlmStatus(summary, metadata.LlmContext?.Status);
 
             if (Convert.ToInt32(reader.GetValue(1)) == 0)
                 summary.NeverExtracted++;
+            if (Convert.ToInt32(reader.GetValue(2)) == 0)
+                summary.LlmNeverGenerated++;
         }
 
         return summary;
@@ -744,9 +750,10 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.metadata, e.document_json
+            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.metadata, e.document_json, c.document_json
             FROM modules m
             LEFT JOIN module_extractions e ON e.module_id = m.id
+            LEFT JOIN module_llm_contexts c ON c.module_id = m.id
             WHERE m.namespace = $ns
               AND m.name = $name
               AND m.provider = $prov
@@ -763,6 +770,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
 
         var item = MapModuleExtractionAdminListItem(reader);
         var documentJson = reader.IsDBNull(6) ? null : reader.GetString(6);
+        var llmContextJson = reader.IsDBNull(7) ? null : reader.GetString(7);
 
         return new ModuleExtractionAdminDetail
         {
@@ -775,10 +783,17 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             LastAttemptedAt = item.LastAttemptedAt,
             LastSucceededAt = item.LastSucceededAt,
             Error = item.Error,
+            LlmStatus = item.LlmStatus,
+            LlmLastAttemptedAt = item.LlmLastAttemptedAt,
+            LlmLastSucceededAt = item.LlmLastSucceededAt,
+            LlmError = item.LlmError,
             Documentation = item.Documentation,
             Document = string.IsNullOrWhiteSpace(documentJson)
                 ? null
-                : JsonSerializer.Deserialize<ModuleExtractionDocument>(documentJson)
+                : JsonSerializer.Deserialize<ModuleExtractionDocument>(documentJson),
+            LlmContext = string.IsNullOrWhiteSpace(llmContextJson)
+                ? null
+                : JsonSerializer.Deserialize<ModuleLlmContextDocument>(llmContextJson)
         };
     }
 
@@ -849,6 +864,10 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             LastAttemptedAt = metadata.Extraction?.LastAttemptedAt,
             LastSucceededAt = metadata.Extraction?.LastSucceededAt,
             Error = metadata.Extraction?.Error,
+            LlmStatus = metadata.LlmContext?.Status ?? "pending",
+            LlmLastAttemptedAt = metadata.LlmContext?.LastAttemptedAt,
+            LlmLastSucceededAt = metadata.LlmContext?.LastSucceededAt,
+            LlmError = metadata.LlmContext?.Error,
             Documentation = metadata.Documentation
         };
     }
@@ -868,6 +887,25 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
                 break;
             default:
                 summary.Pending++;
+                break;
+        }
+    }
+
+    private static void IncrementLlmStatus(ModuleExtractionAdminSummary summary, string? status)
+    {
+        switch (status)
+        {
+            case "succeeded":
+                summary.LlmSucceeded++;
+                break;
+            case "failed":
+                summary.LlmFailed++;
+                break;
+            case "processing":
+                summary.LlmProcessing++;
+                break;
+            default:
+                summary.LlmPending++;
                 break;
         }
     }

@@ -769,9 +769,12 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         var summary = new ModuleExtractionAdminSummary();
 
         const string sql = @"
-            SELECT m.metadata::text, CASE WHEN e.module_id IS NULL THEN 0 ELSE 1 END
+            SELECT m.metadata::text,
+                   CASE WHEN e.module_id IS NULL THEN 0 ELSE 1 END,
+                   CASE WHEN c.module_id IS NULL THEN 0 ELSE 1 END
             FROM modules m
             LEFT JOIN module_extractions e ON e.module_id = m.id
+            LEFT JOIN module_llm_contexts c ON c.module_id = m.id
             WHERE m.deleted_at IS NULL";
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -783,9 +786,12 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             summary.Total++;
             var metadata = DeserializeModuleMetadata(reader.IsDBNull(0) ? null : reader.GetString(0));
             IncrementStatus(summary, metadata.Extraction?.Status);
+            IncrementLlmStatus(summary, metadata.LlmContext?.Status);
 
             if (Convert.ToInt32(reader.GetValue(1)) == 0)
                 summary.NeverExtracted++;
+            if (Convert.ToInt32(reader.GetValue(2)) == 0)
+                summary.LlmNeverGenerated++;
         }
 
         return summary;
@@ -845,9 +851,10 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         string provider, string version)
     {
         const string sql = @"
-            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.metadata::text, e.document_json::text
+            SELECT m.namespace, m.name, m.provider, m.version, m.description, m.metadata::text, e.document_json::text, c.document_json::text
             FROM modules m
             LEFT JOIN module_extractions e ON e.module_id = m.id
+            LEFT JOIN module_llm_contexts c ON c.module_id = m.id
             WHERE m.namespace = @namespace
               AND m.name = @name
               AND m.provider = @provider
@@ -868,6 +875,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
         var item = MapModuleExtractionAdminListItem(reader);
         var documentJson = reader.IsDBNull(6) ? null : reader.GetString(6);
+        var llmContextJson = reader.IsDBNull(7) ? null : reader.GetString(7);
 
         return new ModuleExtractionAdminDetail
         {
@@ -880,10 +888,17 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             LastAttemptedAt = item.LastAttemptedAt,
             LastSucceededAt = item.LastSucceededAt,
             Error = item.Error,
+            LlmStatus = item.LlmStatus,
+            LlmLastAttemptedAt = item.LlmLastAttemptedAt,
+            LlmLastSucceededAt = item.LlmLastSucceededAt,
+            LlmError = item.LlmError,
             Documentation = item.Documentation,
             Document = string.IsNullOrWhiteSpace(documentJson)
                 ? null
-                : JsonSerializer.Deserialize<ModuleExtractionDocument>(documentJson)
+                : JsonSerializer.Deserialize<ModuleExtractionDocument>(documentJson),
+            LlmContext = string.IsNullOrWhiteSpace(llmContextJson)
+                ? null
+                : JsonSerializer.Deserialize<ModuleLlmContextDocument>(llmContextJson)
         };
     }
 
@@ -962,6 +977,10 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
             LastAttemptedAt = metadata.Extraction?.LastAttemptedAt,
             LastSucceededAt = metadata.Extraction?.LastSucceededAt,
             Error = metadata.Extraction?.Error,
+            LlmStatus = metadata.LlmContext?.Status ?? "pending",
+            LlmLastAttemptedAt = metadata.LlmContext?.LastAttemptedAt,
+            LlmLastSucceededAt = metadata.LlmContext?.LastSucceededAt,
+            LlmError = metadata.LlmContext?.Error,
             Documentation = metadata.Documentation
         };
     }
@@ -981,6 +1000,25 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
                 break;
             default:
                 summary.Pending++;
+                break;
+        }
+    }
+
+    private static void IncrementLlmStatus(ModuleExtractionAdminSummary summary, string? status)
+    {
+        switch (status)
+        {
+            case "succeeded":
+                summary.LlmSucceeded++;
+                break;
+            case "failed":
+                summary.LlmFailed++;
+                break;
+            case "processing":
+                summary.LlmProcessing++;
+                break;
+            default:
+                summary.LlmPending++;
                 break;
         }
     }

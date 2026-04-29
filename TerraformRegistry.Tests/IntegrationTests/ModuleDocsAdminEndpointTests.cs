@@ -120,6 +120,72 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
+    public async Task Detail_IncludesStoredLlmContextAndRegenerateEndpointRefreshesIt()
+    {
+        var client = await CreateModuleDocsAdminClientAsync("module-docs-llm@test.com", "module-docs-llm");
+
+        await SeedModuleAsync(
+            "acme",
+            "network",
+            "aws",
+            "1.0.0",
+            new ModuleExtractionState { Status = "succeeded" },
+            new ModuleLlmContextState { Status = "failed", Error = "stale artifact" });
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var database = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+
+            await database.UpdateModuleDescriptionAsync("acme", "network", "aws", string.Empty);
+
+            await database.UpsertModuleExtractionAsync("acme", "network", "aws", "1.0.0", new ModuleExtractionDocument
+            {
+                Readme = new ModuleReadmeDocument
+                {
+                    Path = "README.md",
+                    Title = "Network Module",
+                    Markdown = "Creates reusable networking primitives."
+                },
+                Inputs =
+                [
+                    new ModuleInputDefinition
+                    {
+                        Name = "name",
+                        Description = "Name prefix",
+                        Required = true,
+                        Type = "string"
+                    }
+                ]
+            });
+
+            await database.UpsertModuleLlmContextAsync("acme", "network", "aws", "1.0.0", new ModuleLlmContextDocument
+            {
+                Summary = new ModuleLlmContextSummary
+                {
+                    OneLine = "outdated"
+                }
+            });
+        }
+
+        var detailResponse = await client.GetAsync("/api/admin/module-docs/modules/acme/network/aws/1.0.0");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        var detail = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("outdated", detail.GetProperty("llmContext").GetProperty("summary").GetProperty("oneLine").GetString());
+
+        var regenerateResponse = await client.PostAsync("/api/admin/module-docs/modules/acme/network/aws/1.0.0/regenerate-llm", null);
+        Assert.Equal(HttpStatusCode.OK, regenerateResponse.StatusCode);
+        var regenerateBody = await regenerateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(regenerateBody.GetProperty("regenerated").GetBoolean());
+        Assert.False(regenerateBody.GetProperty("queued").GetBoolean());
+
+        var refreshedResponse = await client.GetAsync("/api/admin/module-docs/modules/acme/network/aws/1.0.0");
+        Assert.Equal(HttpStatusCode.OK, refreshedResponse.StatusCode);
+        var refreshedDetail = await refreshedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Creates reusable networking primitives.", refreshedDetail.GetProperty("llmContext").GetProperty("summary").GetProperty("oneLine").GetString());
+        Assert.Equal("succeeded", refreshedDetail.GetProperty("llmStatus").GetString());
+    }
+
+    [Fact]
     public async Task Backfill_WhenEnabled_QueuesBoundedModulesAndMarksThemPending()
     {
         var client = await CreateModuleDocsAdminClientAsync("module-docs-backfill@test.com", "module-docs-backfill");
@@ -176,6 +242,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
         string provider,
         string version,
         ModuleExtractionState extraction,
+        ModuleLlmContextState? llmContext = null,
         DateTime? publishedAt = null)
     {
         using var scope = _factory.Services.CreateScope();
@@ -191,7 +258,11 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
             FilePath = $"/tmp/{name}.zip",
             PublishedAt = publishedAt ?? DateTime.UtcNow,
             Dependencies = [],
-            Metadata = new ModuleArtifactMetadata { Extraction = extraction }
+            Metadata = new ModuleArtifactMetadata
+            {
+                Extraction = extraction,
+                LlmContext = llmContext ?? new ModuleLlmContextState { Status = "pending" }
+            }
         });
 
         Assert.True(inserted);

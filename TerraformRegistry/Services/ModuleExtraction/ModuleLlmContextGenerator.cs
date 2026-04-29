@@ -42,6 +42,11 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
             {
                 Title = extraction.Readme?.Title,
                 Summary = ExtractFirstParagraph(extraction.Readme?.Markdown)
+            },
+            Navigation = new ModuleLlmNavigationLinks
+            {
+                HumanUrl = $"/modules/{module.Namespace}/{module.Name}/{module.Provider}",
+                ModuleVersionsUrl = $"/v1/llm/modules/{module.Namespace}/{module.Name}/{module.Provider}"
             }
         };
     }

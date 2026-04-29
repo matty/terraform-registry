@@ -180,6 +180,14 @@ TF_REG_AZURESTORAGE__CONTAINERNAME=modules
 
 When a module is published, the registry queues a background extraction job. The job unpacks the stored archive, runs `terraform-config-inspect --json`, discovers the root README, first-level examples, and first-level submodules, then stores the resulting document in the database and summarizes it in module metadata.
 
+The same workflow also generates a stored LLM-oriented context artifact per published module version. Agents can start at `/llm.txt`, then traverse the authenticated JSON endpoints:
+
+- `GET /v1/llm/modules`
+- `GET /v1/llm/modules/{namespace}/{name}/{provider}`
+- `GET /v1/llm/modules/{namespace}/{name}/{provider}/{version}`
+
+`/llm.txt` is public and only describes navigation. The JSON endpoints require the same bearer-token authentication used for other protected API access, and the per-version response is served from the stored generated artifact rather than being assembled on demand. Operators can inspect and re-generate the stored LLM artifact from the admin module docs UI.
+
 The Docker image includes `terraform-config-inspect`. For local `dotnet run`, either install it first:
 
 ```bash

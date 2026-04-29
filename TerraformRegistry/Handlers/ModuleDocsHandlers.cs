@@ -100,6 +100,58 @@ public static class ModuleDocsHandlers
             new { queued });
     }
 
+    public static async Task<IResult> RegenerateLlmContext(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        IModuleExtractionService extractionService,
+        IDatabaseService databaseService,
+        IAuditService auditService,
+        IModuleExtractionConfigService configService,
+        HttpContext context)
+    {
+        if (!Has(context, Permissions.ModuleDocsManage)) return Forbidden();
+
+        var detail = await databaseService.GetModuleExtractionAdminDetailAsync(@namespace, name, provider, version);
+        if (detail == null) return Results.NotFound(new { error = "Module not found" });
+
+        var request = new ModuleExtractionRequest(@namespace, name, provider, version);
+        var extraction = await databaseService.GetModuleExtractionAsync(@namespace, name, provider, version);
+        var regenerated = false;
+        var queued = false;
+
+        if (extraction != null)
+        {
+            await extractionService.RegenerateLlmContextAsync(request, context.RequestAborted);
+            regenerated = true;
+        }
+        else
+        {
+            var enabled = await configService.IsEnabledAsync(context.RequestAborted);
+            if (!enabled)
+                return Conflict("Module extraction is disabled.");
+
+            queued = await extractionService.QueueAsync(request, context.RequestAborted);
+        }
+
+        context.FireAuditLog(auditService, "module_docs.llm_regenerated", "module",
+            $"{@namespace}/{name}/{provider}/{version}", new
+            {
+                Namespace = @namespace,
+                Name = name,
+                Provider = provider,
+                Version = version,
+                Regenerated = regenerated,
+                Queued = queued
+            });
+
+        return regenerated
+            ? Results.Ok(new { regenerated = true, queued = false })
+            : Results.Accepted($"/api/admin/module-docs/modules/{@namespace}/{name}/{provider}/{version}",
+                new { regenerated = false, queued });
+    }
+
     public static async Task<IResult> Backfill(
         IModuleExtractionService extractionService,
         IModuleExtractionConfigService configService,

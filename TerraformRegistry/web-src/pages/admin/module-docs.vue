@@ -9,6 +9,7 @@ import type {
   ModuleExtractionAdminSummary,
   ModuleExtractionRuntimeConfig,
   ModuleInputDefinition,
+  ModuleLlmContextDocument,
   ModuleOutputDefinition,
   ModuleResourceDefinition,
 } from '~/composables/useModuleDocsAdmin'
@@ -24,6 +25,7 @@ const {
   listModules,
   getModuleDetail,
   requeueModule,
+  regenerateLlmContext,
   queueBackfill,
   updateConfig,
 } = useModuleDocsAdmin()
@@ -43,9 +45,11 @@ const isDetailLoading = ref(false)
 const isConfigUpdating = ref(false)
 const isBackfilling = ref(false)
 const requeueKey = ref<string | null>(null)
+const regenerateLlmKey = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 const showRawJson = ref(false)
+const showLlmJson = ref(false)
 
 const statusFilter = ref('')
 const searchText = ref('')
@@ -77,6 +81,16 @@ const stats = computed(() => {
     { label: 'Failed', value: current?.failed ?? 0, icon: 'i-lucide-alert-triangle', color: 'text-red-400', bg: 'bg-red-500/10', ring: 'ring-red-500/20' },
     { label: 'Pending', value: current?.pending ?? 0, icon: 'i-lucide-clock-3', color: 'text-amber-400', bg: 'bg-amber-500/10', ring: 'ring-amber-500/20' },
     { label: 'Never', value: current?.neverExtracted ?? 0, icon: 'i-lucide-circle-dashed', color: 'text-neutral-400', bg: 'bg-neutral-500/10', ring: 'ring-neutral-500/20' },
+  ]
+})
+
+const llmStats = computed(() => {
+  const current = summary.value
+  return [
+    { label: 'LLM Ready', value: current?.llmSucceeded ?? 0, icon: 'i-lucide-bot', color: 'text-cyan-400', bg: 'bg-cyan-500/10', ring: 'ring-cyan-500/20' },
+    { label: 'LLM Failed', value: current?.llmFailed ?? 0, icon: 'i-lucide-badge-alert', color: 'text-rose-400', bg: 'bg-rose-500/10', ring: 'ring-rose-500/20' },
+    { label: 'LLM Pending', value: current?.llmPending ?? 0, icon: 'i-lucide-hourglass', color: 'text-amber-400', bg: 'bg-amber-500/10', ring: 'ring-amber-500/20' },
+    { label: 'LLM Missing', value: current?.llmNeverGenerated ?? 0, icon: 'i-lucide-file-x-2', color: 'text-neutral-400', bg: 'bg-neutral-500/10', ring: 'ring-neutral-500/20' },
   ]
 })
 
@@ -134,6 +148,10 @@ function formatDocumentJson(document: ModuleExtractionDocument): string {
   return JSON.stringify(document, null, 2)
 }
 
+function formatLlmJson(document: ModuleLlmContextDocument): string {
+  return JSON.stringify(document, null, 2)
+}
+
 const fetchSummary = async () => {
   const result = await getSummary()
   summary.value = result.summary
@@ -174,6 +192,8 @@ const fetchDashboard = async () => {
 const selectModule = async (module: ModuleExtractionAdminListItem) => {
   isDetailLoading.value = true
   errorMessage.value = null
+  showRawJson.value = false
+  showLlmJson.value = false
   try {
     selectedDetail.value = await getModuleDetail(module)
   }
@@ -283,6 +303,29 @@ const handleRequeue = async (module: ModuleExtractionAdminListItem) => {
   }
 }
 
+const handleRegenerateLlm = async (module: ModuleExtractionAdminListItem) => {
+  if (!canManage.value) return
+
+  regenerateLlmKey.value = moduleKey(module)
+  errorMessage.value = null
+  successMessage.value = null
+  try {
+    const result = await regenerateLlmContext(module)
+    successMessage.value = result.regenerated
+      ? 'LLM context regenerated'
+      : (result.queued ? 'Module queued for extraction before LLM generation' : 'LLM context was not regenerated')
+    await fetchDashboard()
+    await selectModule(module)
+  }
+  catch (error) {
+    console.error('Failed to regenerate module LLM context', error)
+    errorMessage.value = extractErrorMessage(error, 'Failed to regenerate LLM context')
+  }
+  finally {
+    regenerateLlmKey.value = null
+  }
+}
+
 onMounted(() => {
   fetchDashboard()
 })
@@ -308,7 +351,7 @@ onMounted(() => {
             Module Docs
           </h1>
           <p class="page-header-subtitle">
-            Extraction queue, runtime state, and generated module documentation
+            Extraction queue, LLM context state, and generated module documentation
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -396,6 +439,31 @@ onMounted(() => {
         <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <div
             v-for="stat in stats"
+            :key="stat.label"
+            class="docs-card rounded-xl border border-neutral-800/60 p-4"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-medium uppercase text-neutral-500">
+                  {{ stat.label }}
+                </p>
+                <p class="mt-1 text-2xl font-semibold tabular-nums text-neutral-100">
+                  {{ stat.value.toLocaleString() }}
+                </p>
+              </div>
+              <div
+                class="flex h-10 w-10 items-center justify-center rounded-lg ring-1"
+                :class="[stat.bg, stat.ring, stat.color]"
+              >
+                <UIcon :name="stat.icon" class="text-xl" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
+          <div
+            v-for="stat in llmStats"
             :key="stat.label"
             class="docs-card rounded-xl border border-neutral-800/60 p-4"
           >
@@ -604,6 +672,7 @@ onMounted(() => {
                     <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
                       <span>Attempt: {{ formatShortDate(module.lastAttemptedAt) }}</span>
                       <span>Success: {{ formatShortDate(module.lastSucceededAt) }}</span>
+                      <span>LLM: {{ statusLabel(module.llmStatus) }}</span>
                       <span v-if="module.documentation">
                         {{ module.documentation.inputCount }} inputs / {{ module.documentation.outputCount }} outputs / {{ module.documentation.exampleCount }} examples
                       </span>
@@ -615,6 +684,12 @@ onMounted(() => {
                       :class="statusClass(module.status)"
                     >
                       {{ statusLabel(module.status) }}
+                    </span>
+                    <span
+                      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
+                      :class="statusClass(module.llmStatus)"
+                    >
+                      LLM {{ statusLabel(module.llmStatus) }}
                     </span>
                     <UButton
                       v-if="canManage"
@@ -631,6 +706,9 @@ onMounted(() => {
                 </div>
                 <p v-if="module.error" class="mt-3 rounded border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
                   {{ module.error }}
+                </p>
+                <p v-if="module.llmError" class="mt-3 rounded border border-cyan-900/50 bg-cyan-950/20 px-3 py-2 text-xs text-cyan-200">
+                  LLM: {{ module.llmError }}
                 </p>
               </div>
             </div>
@@ -689,6 +767,21 @@ onMounted(() => {
                   @click="handleRequeue(selectedDetail)"
                 />
               </div>
+              <div
+                v-if="selectedDetail && canManage"
+                class="mt-3"
+              >
+                <UButton
+                  icon="i-lucide-bot"
+                  color="neutral"
+                  variant="outline"
+                  size="xs"
+                  :loading="regenerateLlmKey === moduleKey(selectedDetail)"
+                  @click="handleRegenerateLlm(selectedDetail)"
+                >
+                  Regenerate LLM
+                </UButton>
+              </div>
             </div>
 
             <div v-if="isDetailLoading" class="py-12 text-center">
@@ -721,9 +814,22 @@ onMounted(() => {
                 >
                   {{ statusLabel(selectedDetail.status) }}
                 </span>
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
+                  :class="statusClass(selectedDetail.llmStatus)"
+                >
+                  LLM {{ statusLabel(selectedDetail.llmStatus) }}
+                </span>
                 <span class="text-xs text-neutral-500">
                   Generated: {{ formatDate(selectedDetail.document?.generatedAt ?? null) }}
                 </span>
+                <span class="text-xs text-neutral-500">
+                  LLM: {{ formatDate(selectedDetail.llmContext?.generatedAt ?? null) }}
+                </span>
+              </div>
+
+              <div v-if="selectedDetail.llmError" class="mb-5 rounded-lg border border-cyan-900/50 bg-cyan-950/20 p-3 text-sm text-cyan-200">
+                {{ selectedDetail.llmError }}
               </div>
 
               <div v-if="!selectedDetail.document" class="rounded-lg border border-neutral-800 bg-neutral-950/40 p-5 text-sm text-neutral-400">
@@ -731,6 +837,91 @@ onMounted(() => {
               </div>
 
               <div v-else class="space-y-6">
+                <section class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-neutral-100">
+                      LLM Context
+                    </h3>
+                    <span class="text-xs text-neutral-500">
+                      {{ selectedDetail.llmContext ? selectedDetail.llmContext.schemaVersion : 'not generated' }}
+                    </span>
+                  </div>
+                  <div v-if="!selectedDetail.llmContext" class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-4 text-sm text-neutral-400">
+                    No LLM context artifact is stored for this version.
+                  </div>
+                  <div v-else class="space-y-3">
+                    <div class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-4">
+                      <p class="text-sm text-neutral-100">
+                        {{ selectedDetail.llmContext.summary.oneLine || 'No curated summary' }}
+                      </p>
+                      <div class="mt-3 flex flex-wrap gap-2">
+                        <span
+                          v-for="capability in selectedDetail.llmContext.summary.capabilities"
+                          :key="capability"
+                          class="rounded-full bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200 ring-1 ring-cyan-500/20"
+                        >
+                          {{ capability }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                      <div class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-3">
+                        <p class="text-xs uppercase text-neutral-500">
+                          Inputs / Outputs
+                        </p>
+                        <p class="mt-2 text-sm text-neutral-100">
+                          {{ selectedDetail.llmContext.inputs.length }} / {{ selectedDetail.llmContext.outputs.length }}
+                        </p>
+                      </div>
+                      <div class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-3">
+                        <p class="text-xs uppercase text-neutral-500">
+                          Resource Types
+                        </p>
+                        <p class="mt-2 text-sm text-neutral-100">
+                          {{ selectedDetail.llmContext.resources.managed.length }} managed / {{ selectedDetail.llmContext.resources.data.length }} data
+                        </p>
+                      </div>
+                    </div>
+                    <div v-if="selectedDetail.llmContext.navigation.humanUrl || selectedDetail.llmContext.navigation.moduleVersionsUrl" class="flex flex-wrap gap-2">
+                      <NuxtLink
+                        v-if="selectedDetail.llmContext.navigation.humanUrl"
+                        :to="selectedDetail.llmContext.navigation.humanUrl"
+                        class="text-xs text-cyan-300 hover:text-cyan-200"
+                      >
+                        Human docs
+                      </NuxtLink>
+                      <a
+                        v-if="selectedDetail.llmContext.navigation.moduleVersionsUrl"
+                        :href="selectedDetail.llmContext.navigation.moduleVersionsUrl"
+                        target="_blank"
+                        rel="noreferrer"
+                        class="text-xs text-cyan-300 hover:text-cyan-200"
+                      >
+                        LLM versions endpoint
+                      </a>
+                    </div>
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <h4 class="text-sm font-semibold text-neutral-100">
+                          LLM JSON
+                        </h4>
+                        <UButton
+                          :label="showLlmJson ? 'Hide' : 'View raw JSON'"
+                          :icon="showLlmJson ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                          color="neutral"
+                          variant="ghost"
+                          size="xs"
+                          @click="showLlmJson = !showLlmJson"
+                        />
+                      </div>
+                      <pre
+                        v-if="showLlmJson"
+                        class="docs-json max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 text-xs text-neutral-300"
+                      >{{ formatLlmJson(selectedDetail.llmContext) }}</pre>
+                    </div>
+                  </div>
+                </section>
+
                 <section v-if="selectedDetail.document.readme" class="space-y-2">
                   <div class="flex items-center gap-2">
                     <UIcon name="i-lucide-book-open" class="text-neutral-500" />
