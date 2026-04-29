@@ -6,7 +6,7 @@ namespace TerraformRegistry.Services;
 
 public sealed class ProviderRegistryService : IProviderRegistryService
 {
-    private static readonly HashSet<string> AllowedProtocols = new(StringComparer.Ordinal) { "5.0", "5.1", "6.0" };
+    private static readonly HashSet<int> SupportedProtocolMajors = [5, 6];
     private readonly ILogger<ProviderRegistryService> _logger;
     private readonly IProviderRepository _repository;
     private readonly IProviderArtifactStorage _storage;
@@ -177,7 +177,7 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     public Task<bool> DeleteProviderAsync(string @namespace, string type)
     {
         ValidateCoordinate(@namespace, type);
-        return _repository.DeleteProviderAsync(@namespace, type);
+        return DeleteProviderAndArtifactsAsync(@namespace, type);
     }
 
     public Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string @namespace)
@@ -206,10 +206,22 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         });
     }
 
-    public Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId)
+    public async Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId)
     {
         ValidateProviderSegment(@namespace, "provider namespace");
-        return _repository.RevokeGpgKeyAsync(@namespace, keyId);
+        var key = await _repository.GetGpgKeyAsync(@namespace, keyId);
+        if (key == null)
+        {
+            return false;
+        }
+
+        if (await _repository.ProviderGpgKeyIsReferencedByActiveVersionsAsync(@namespace, keyId))
+        {
+            throw new InvalidOperationException(
+                $"Provider GPG key {keyId} is used by active provider versions and cannot be revoked until those versions are deleted.");
+        }
+
+        return await _repository.RevokeGpgKeyAsync(@namespace, keyId);
     }
 
     public async Task<ProviderVersion> CreateVersionAsync(string @namespace, string type, CreateProviderVersionRequest request)
@@ -245,7 +257,8 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     public Task<bool> DeleteVersionAsync(string @namespace, string type, string version)
     {
         ValidateCoordinate(@namespace, type);
-        return _repository.DeleteProviderVersionAsync(@namespace, type, version);
+        ValidateVersion(version);
+        return DeleteVersionAndArtifactsAsync(@namespace, type, version);
     }
 
     public async Task<ProviderPlatform> CreatePlatformAsync(string @namespace, string type, string version,
@@ -292,6 +305,7 @@ public sealed class ProviderRegistryService : IProviderRegistryService
             return false;
         }
 
+        await using var packageBuffer = await CopyToReplayableStreamAsync(package, cancellationToken);
         await using var shasums = await _storage.OpenReadAsync(providerVersion.ShasumsStoragePath, cancellationToken);
         if (shasums == null)
         {
@@ -305,7 +319,7 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         }
 
         var validation = await _validator.ValidatePackageAsync(type, version, os, arch, platform.Filename, platform.Shasum,
-            package, shasums, signature, gpgKey.AsciiArmor, cancellationToken);
+            packageBuffer, shasums, signature, gpgKey.AsciiArmor, cancellationToken);
         if (!validation.Valid)
         {
             _logger.LogWarning("Provider package validation failed for {Namespace}/{Type}/{Version}/{Os}/{Arch}: {Error}",
@@ -313,15 +327,82 @@ public sealed class ProviderRegistryService : IProviderRegistryService
             return false;
         }
 
-        if (package.CanSeek) package.Position = 0;
-        var saveResult = await _storage.SaveAsync(PackagePath(@namespace, type, version, os, arch, platform.Filename), package, cancellationToken);
+        packageBuffer.Position = 0;
+        var saveResult = await _storage.SaveAsync(PackagePath(@namespace, type, version, os, arch, platform.Filename), packageBuffer, cancellationToken);
         return await _repository.SetPlatformPackagePathAsync(platform.Id, saveResult.StoragePath, saveResult.SizeBytes);
     }
 
     public Task<bool> DeletePlatformAsync(string @namespace, string type, string version, string os, string arch)
     {
         ValidateCoordinate(@namespace, type);
-        return _repository.DeleteProviderPlatformAsync(@namespace, type, version, os, arch);
+        ValidateVersion(version);
+        ValidateProviderSegment(os, "provider platform os");
+        ValidateProviderSegment(arch, "provider platform architecture");
+        return DeletePlatformAndArtifactsAsync(@namespace, type, version, os, arch);
+    }
+
+    private static async Task<MemoryStream> CopyToReplayableStreamAsync(Stream source, CancellationToken cancellationToken)
+    {
+        if (source.CanSeek)
+        {
+            source.Position = 0;
+        }
+
+        var buffer = new MemoryStream();
+        await source.CopyToAsync(buffer, cancellationToken);
+        buffer.Position = 0;
+        return buffer;
+    }
+
+    private async Task<bool> DeleteProviderAndArtifactsAsync(string @namespace, string type)
+    {
+        var paths = await _repository.GetProviderArtifactStoragePathsAsync(@namespace, type, null, null, null);
+        var deleted = await _repository.DeleteProviderAsync(@namespace, type);
+        if (deleted)
+        {
+            await DeleteArtifactsAsync(paths);
+        }
+
+        return deleted;
+    }
+
+    private async Task<bool> DeleteVersionAndArtifactsAsync(string @namespace, string type, string version)
+    {
+        var paths = await _repository.GetProviderArtifactStoragePathsAsync(@namespace, type, version, null, null);
+        var deleted = await _repository.DeleteProviderVersionAsync(@namespace, type, version);
+        if (deleted)
+        {
+            await DeleteArtifactsAsync(paths);
+        }
+
+        return deleted;
+    }
+
+    private async Task<bool> DeletePlatformAndArtifactsAsync(string @namespace, string type, string version, string os, string arch)
+    {
+        var paths = await _repository.GetProviderArtifactStoragePathsAsync(@namespace, type, version, os, arch);
+        var deleted = await _repository.DeleteProviderPlatformAsync(@namespace, type, version, os, arch);
+        if (deleted)
+        {
+            await DeleteArtifactsAsync(paths);
+        }
+
+        return deleted;
+    }
+
+    private async Task DeleteArtifactsAsync(IReadOnlyList<string> storagePaths)
+    {
+        foreach (var storagePath in storagePaths.Distinct(StringComparer.Ordinal))
+        {
+            try
+            {
+                await _storage.DeleteAsync(storagePath, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete provider artifact {StoragePath}", storagePath);
+            }
+        }
     }
 
     private async Task<ProviderVersion> RequireProviderVersionAsync(string @namespace, string type, string version)
@@ -362,9 +443,29 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         if (protocols.Length == 0)
             throw new ArgumentException("At least one provider protocol is required.", nameof(protocols));
 
-        var unsupported = protocols.FirstOrDefault(protocol => !AllowedProtocols.Contains(protocol));
-        if (unsupported != null)
-            throw new ArgumentException($"Unsupported provider protocol '{unsupported}'. Supported protocols: 5.0, 5.1, 6.0.", nameof(protocols));
+        foreach (var protocol in protocols)
+        {
+            if (!TryParseProviderProtocol(protocol, out var major, out _) || !SupportedProtocolMajors.Contains(major))
+            {
+                throw new ArgumentException(
+                    $"Unsupported provider protocol '{protocol}'. Supported provider protocol majors are 5 and 6 in MAJOR.MINOR format.",
+                    nameof(protocols));
+            }
+        }
+    }
+
+    private static bool TryParseProviderProtocol(string protocol, out int major, out int minor)
+    {
+        major = 0;
+        minor = 0;
+
+        var parts = protocol.Split('.', StringSplitOptions.TrimEntries);
+        return parts.Length == 2 &&
+               int.TryParse(parts[0], out major) &&
+               int.TryParse(parts[1], out minor) &&
+               major >= 0 &&
+               minor >= 0 &&
+               string.Equals(protocol, $"{major}.{minor}", StringComparison.Ordinal);
     }
 
     private static void ValidateSha256(string shasum)

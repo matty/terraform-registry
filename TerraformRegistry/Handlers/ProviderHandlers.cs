@@ -46,6 +46,9 @@ public static class ProviderHandlers
         if (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
             return ErrorResponseExtensions.Conflict(ex.Message);
 
+        if (ex.Message.Contains("active provider versions", StringComparison.OrdinalIgnoreCase))
+            return ErrorResponseExtensions.Conflict(ex.Message);
+
         if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
             return ErrorResponseExtensions.NotFound(ex.Message);
 
@@ -75,11 +78,10 @@ public static class ProviderHandlers
         var invalid = ValidateVersionAndPlatform(@namespace, type, version, os, arch);
         if (invalid != null) return invalid;
 
-        var versions = await providerService.GetVersionsAsync(@namespace, type);
-        var versionEntry = versions?.Versions.FirstOrDefault(v => string.Equals(v.Version, version, StringComparison.Ordinal));
-        if (versionEntry == null) return ErrorResponseExtensions.NotFound("Provider version not found");
+        var platforms = await providerService.GetManagementPlatformsAsync(@namespace, type, version);
+        if (platforms == null) return ErrorResponseExtensions.NotFound("Provider version not found");
 
-        var platform = versionEntry.Platforms.FirstOrDefault(p =>
+        var platform = platforms.Platforms.FirstOrDefault(p =>
             string.Equals(p.Os, os, StringComparison.Ordinal) &&
             string.Equals(p.Arch, arch, StringComparison.Ordinal));
         return platform == null ? ErrorResponseExtensions.NotFound("Provider platform not found") : null;
@@ -294,8 +296,15 @@ public static class ProviderHandlers
         var missing = await EnsureProviderExists(@namespace, type, providerService);
         if (missing != null) return missing;
 
-        var revoked = await providerService.RevokeGpgKeyAsync(@namespace, keyId);
-        return revoked ? Results.NoContent() : ErrorResponseExtensions.NotFound("Provider GPG key not found");
+        try
+        {
+            var revoked = await providerService.RevokeGpgKeyAsync(@namespace, keyId);
+            return revoked ? Results.NoContent() : ErrorResponseExtensions.NotFound("Provider GPG key not found");
+        }
+        catch (InvalidOperationException ex) when (HandleInvalidOperation(ex) is { } result)
+        {
+            return result;
+        }
     }
 
     public static async Task<IResult> ListVersions(

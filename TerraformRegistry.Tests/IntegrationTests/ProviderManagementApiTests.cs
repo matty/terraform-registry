@@ -86,6 +86,25 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
+    public async Task CreateVersion_WithDocumentedProtocolMinorVersion_ReturnsCreated()
+    {
+        var client = await CreatePublisherClientAsync("provider-version-52@example.com", "provider-version-52");
+        var ns = NewNamespace();
+        await CreateProviderAndGpgKeyAsync(client, ns);
+
+        var response = await client.PostAsJsonAsync($"/api/providers/{ns}/example/versions", new CreateProviderVersionRequest
+        {
+            Version = "1.0.0",
+            Protocols = ["5.2"],
+            KeyId = "test-key"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("5.2", json.GetProperty("protocols")[0].GetString());
+    }
+
+    [Fact]
     public async Task CreateVersion_WithUnsupportedProtocol_ReturnsBadRequest()
     {
         var client = await CreatePublisherClientAsync("provider-bad-protocol@example.com", "provider-bad-protocol");
@@ -175,6 +194,33 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
+    public async Task ProtocolVersions_HidesReleaseUntilShasumsSignatureAndPackageAreUploaded()
+    {
+        var client = await CreatePublisherClientAsync("provider-protocol-gating@example.com", "provider-protocol-gating");
+        var ns = NewNamespace();
+        await CreateProviderVersionAsync(client, ns);
+        await CreatePlatformAsync(client, ns);
+
+        var beforeShasums = await client.GetAsync($"/v1/providers/{ns}/example/versions");
+        Assert.Equal(HttpStatusCode.NotFound, beforeShasums.StatusCode);
+
+        await UploadShasumsAndSignatureAsync(client, ns);
+        var beforePackage = await client.GetAsync($"/v1/providers/{ns}/example/versions");
+        Assert.Equal(HttpStatusCode.NotFound, beforePackage.StatusCode);
+
+        await MarkPlatformPackageUploadedAsync(ns);
+        var complete = await client.GetAsync($"/v1/providers/{ns}/example/versions");
+
+        Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
+        var json = await complete.Content.ReadFromJsonAsync<JsonElement>();
+        var version = Assert.Single(json.GetProperty("versions").EnumerateArray());
+        Assert.Equal("1.0.0", version.GetProperty("version").GetString());
+        var platform = Assert.Single(version.GetProperty("platforms").EnumerateArray());
+        Assert.Equal("linux", platform.GetProperty("os").GetString());
+        Assert.Equal("amd64", platform.GetProperty("arch").GetString());
+    }
+
+    [Fact]
     public async Task AddGpgKey_WithoutKeysPermission_ReturnsForbidden()
     {
         var client = await CreateClientWithPermissionsAsync(
@@ -187,6 +233,18 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
         var response = await client.PostAsJsonAsync($"/api/providers/{ns}/example/gpg-keys", NewGpgKeyRequest());
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RevokeGpgKey_UsedByActiveVersion_ReturnsConflict()
+    {
+        var client = await CreatePublisherClientAsync("provider-revoke-key@example.com", "provider-revoke-key");
+        var ns = NewNamespace();
+        await CreateProviderVersionAsync(client, ns);
+
+        var response = await client.DeleteAsync($"/api/providers/{ns}/example/gpg-keys/test-key");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
     [Fact]

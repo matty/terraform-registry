@@ -134,7 +134,15 @@ public sealed class SqliteProviderRepository : IProviderRepository
                 FROM provider_versions pv
                 INNER JOIN providers p ON p.id = pv.provider_id
                 WHERE p.namespace = $namespace AND p.type = $type
-                  AND p.deleted_at IS NULL AND pv.deleted_at IS NULL";
+                  AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
+                  AND NULLIF(TRIM(pv.shasums_storage_path), '') IS NOT NULL
+                  AND NULLIF(TRIM(pv.shasums_signature_storage_path), '') IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM provider_platforms pp
+                      WHERE pp.provider_version_id = pv.id
+                        AND NULLIF(TRIM(pp.package_storage_path), '') IS NOT NULL
+                  )";
             command.Parameters.AddWithValue("$namespace", @namespace);
             command.Parameters.AddWithValue("$type", type);
 
@@ -289,6 +297,60 @@ public sealed class SqliteProviderRepository : IProviderRepository
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string @namespace, string type, string? version, string? os, string? arch)
+    {
+        await using var connection = await OpenConnectionAsync();
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+
+        await using (var versionCommand = connection.CreateCommand())
+        {
+            versionCommand.CommandText = @"
+                SELECT pv.shasums_storage_path, pv.shasums_signature_storage_path
+                FROM provider_versions pv
+                INNER JOIN providers p ON p.id = pv.provider_id
+                WHERE p.namespace = $namespace AND p.type = $type
+                  AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
+                  AND ($version IS NULL OR pv.version = $version)";
+            versionCommand.Parameters.AddWithValue("$namespace", @namespace);
+            versionCommand.Parameters.AddWithValue("$type", type);
+            versionCommand.Parameters.AddWithValue("$version", DbValue(version));
+
+            await using var reader = await versionCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                AddStoragePath(paths, ReadNullableString(reader, 0));
+                AddStoragePath(paths, ReadNullableString(reader, 1));
+            }
+        }
+
+        await using (var platformCommand = connection.CreateCommand())
+        {
+            platformCommand.CommandText = @"
+                SELECT pp.package_storage_path
+                FROM provider_platforms pp
+                INNER JOIN provider_versions pv ON pv.id = pp.provider_version_id
+                INNER JOIN providers p ON p.id = pv.provider_id
+                WHERE p.namespace = $namespace AND p.type = $type
+                  AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
+                  AND ($version IS NULL OR pv.version = $version)
+                  AND ($os IS NULL OR pp.os = $os)
+                  AND ($arch IS NULL OR pp.arch = $arch)";
+            platformCommand.Parameters.AddWithValue("$namespace", @namespace);
+            platformCommand.Parameters.AddWithValue("$type", type);
+            platformCommand.Parameters.AddWithValue("$version", DbValue(version));
+            platformCommand.Parameters.AddWithValue("$os", DbValue(os));
+            platformCommand.Parameters.AddWithValue("$arch", DbValue(arch));
+
+            await using var reader = await platformCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                AddStoragePath(paths, ReadNullableString(reader, 0));
+            }
+        }
+
+        return paths.OrderBy(path => path, StringComparer.Ordinal).ToList();
     }
 
     public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version)
@@ -481,6 +543,26 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return key;
     }
 
+    public async Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string @namespace, string keyId)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT 1
+            FROM provider_versions pv
+            INNER JOIN providers p ON p.id = pv.provider_id
+            WHERE p.namespace = $namespace
+              AND pv.key_id = $keyId
+              AND p.deleted_at IS NULL
+              AND pv.deleted_at IS NULL
+            LIMIT 1";
+        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$keyId", keyId);
+
+        var result = await command.ExecuteScalarAsync();
+        return result != null;
+    }
+
     public async Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
@@ -532,6 +614,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             SELECT os, arch
             FROM provider_platforms
             WHERE provider_version_id = $versionId
+              AND NULLIF(TRIM(package_storage_path), '') IS NOT NULL
             ORDER BY os, arch";
         command.Parameters.AddWithValue("$versionId", versionId.ToString());
 
@@ -664,6 +747,14 @@ public sealed class SqliteProviderRepository : IProviderRepository
 
     private static string? ReadNullableString(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    private static void AddStoragePath(HashSet<string> paths, string? storagePath)
+    {
+        if (!string.IsNullOrWhiteSpace(storagePath))
+        {
+            paths.Add(storagePath);
+        }
+    }
 
     private static DateTime? ReadNullableDateTime(SqliteDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : DateTime.Parse(reader.GetString(ordinal)).ToUniversalTime();

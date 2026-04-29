@@ -17,6 +17,7 @@ public interface IProviderRepository
     Task<bool> SetVersionShasumsPathAsync(Guid versionId, string storagePath);
     Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath);
     Task<bool> DeleteProviderVersionAsync(string @namespace, string type, string version);
+    Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string @namespace, string type, string? version, string? os, string? arch);
 
     Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version);
     Task<ProviderPlatform?> GetProviderPlatformAsync(string @namespace, string type, string version, string os, string arch);
@@ -27,6 +28,7 @@ public interface IProviderRepository
     Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string @namespace);
     Task<ProviderGpgKey?> GetGpgKeyAsync(string @namespace, string keyId);
     Task<ProviderGpgKey> AddGpgKeyAsync(ProviderGpgKey key);
+    Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string @namespace, string keyId);
     Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId);
 
     Task RecordProviderDownloadAsync(Guid? providerId, string @namespace, string type, string version, string os,
