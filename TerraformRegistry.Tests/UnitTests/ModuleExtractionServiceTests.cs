@@ -61,8 +61,47 @@ public class ModuleExtractionServiceTests
             .Setup(x => x.InspectAsync(tempRoot, It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
+        var module = new Module
+        {
+            Id = "acme/network/aws/1.2.3",
+            Owner = "acme",
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.2.3",
+            PublishedAt = "2026-04-29T12:00:00Z",
+            Versions = ["1.2.3"],
+            Root = "/",
+            Submodules = [],
+            Providers = new Dictionary<string, string>(),
+            Description = "Network module"
+        };
+
+        var llmContext = new ModuleLlmContextDocument
+        {
+            Module = new ModuleLlmModuleReference
+            {
+                Namespace = "acme",
+                Name = "network",
+                Provider = "aws",
+                Version = "1.2.3"
+            },
+            Summary = new ModuleLlmContextSummary
+            {
+                OneLine = "Network module"
+            }
+        };
+
+        var generator = new Mock<IModuleLlmContextGenerator>();
+        generator
+            .Setup(x => x.Generate(module, document))
+            .Returns(llmContext);
+
         var metadataUpdates = new List<ModuleArtifactMetadata>();
         var database = new Mock<IDatabaseService>();
+        database
+            .Setup(x => x.GetModuleAsync("acme", "network", "aws", "1.2.3"))
+            .ReturnsAsync(module);
         database
             .Setup(x => x.UpdateModuleMetadataAsync(
                 "acme",
@@ -83,6 +122,7 @@ public class ModuleExtractionServiceTests
             database.Object,
             workspaceFactory.Object,
             inspector.Object,
+            generator.Object,
             Mock.Of<IModuleExtractionConfigService>(),
             NullLogger<ModuleExtractionService>.Instance);
 
@@ -96,12 +136,20 @@ public class ModuleExtractionServiceTests
             "1.2.3",
             document,
             null), Times.Once);
+        database.Verify(x => x.UpsertModuleLlmContextAsync(
+            "acme",
+            "network",
+            "aws",
+            "1.2.3",
+            llmContext,
+            null), Times.Once);
 
         Assert.Collection(metadataUpdates,
             processing => Assert.Equal("processing", processing.Extraction.Status),
             succeeded =>
             {
                 Assert.Equal("succeeded", succeeded.Extraction.Status);
+                Assert.Equal("succeeded", succeeded.LlmContext.Status);
                 Assert.Equal("README.md", succeeded.Documentation!.PrimaryReadmePath);
                 Assert.Equal(1, succeeded.Documentation.InputCount);
                 Assert.Equal(1, succeeded.Documentation.OutputCount);
@@ -135,6 +183,8 @@ public class ModuleExtractionServiceTests
             .Setup(x => x.InspectAsync(tempRoot, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("tool missing"));
 
+        var generator = new Mock<IModuleLlmContextGenerator>(MockBehavior.Strict);
+
         var metadataUpdates = new List<ModuleArtifactMetadata>();
         var database = new Mock<IDatabaseService>();
         database
@@ -157,6 +207,7 @@ public class ModuleExtractionServiceTests
             database.Object,
             workspaceFactory.Object,
             inspector.Object,
+            generator.Object,
             Mock.Of<IModuleExtractionConfigService>(),
             NullLogger<ModuleExtractionService>.Instance);
 

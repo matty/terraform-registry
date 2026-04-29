@@ -16,6 +16,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
     private readonly IDatabaseService _databaseService;
     private readonly IModuleExtractionConfigService _configService;
     private readonly ITerraformModuleInspector _inspector;
+    private readonly IModuleLlmContextGenerator _llmContextGenerator;
     private readonly ILogger<ModuleExtractionService> _logger;
     private readonly IModuleService _moduleService;
     private readonly IArchiveWorkspaceFactory _workspaceFactory;
@@ -25,6 +26,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         IDatabaseService databaseService,
         IArchiveWorkspaceFactory workspaceFactory,
         ITerraformModuleInspector inspector,
+        IModuleLlmContextGenerator llmContextGenerator,
         IModuleExtractionConfigService configService,
         ILogger<ModuleExtractionService> logger)
     {
@@ -32,6 +34,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         _databaseService = databaseService;
         _workspaceFactory = workspaceFactory;
         _inspector = inspector;
+        _llmContextGenerator = llmContextGenerator;
         _configService = configService;
         _logger = logger;
     }
@@ -106,6 +109,16 @@ public sealed class ModuleExtractionService : IModuleExtractionService
 
             await using var workspace = await _workspaceFactory.CreateAsync(packageStream, cancellationToken);
             var document = await _inspector.InspectAsync(workspace.RootPath, cancellationToken);
+            var module = await _databaseService.GetModuleAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version);
+
+            if (module == null)
+                throw new InvalidOperationException("Module metadata was not found.");
+
+            var llmContext = _llmContextGenerator.Generate(module, document);
 
             await _databaseService.UpsertModuleExtractionAsync(
                 request.Namespace,
@@ -113,6 +126,13 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 request.Provider,
                 request.Version,
                 document);
+
+            await _databaseService.UpsertModuleLlmContextAsync(
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version,
+                llmContext);
 
             await MarkSucceededAsync(request, document);
         }
@@ -142,6 +162,11 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 metadata.Extraction.LastAttemptedAt = now;
                 metadata.Extraction.LastUpdatedAt = now;
                 metadata.Extraction.Error = null;
+                metadata.LlmContext ??= new ModuleLlmContextState();
+                metadata.LlmContext.Status = "processing";
+                metadata.LlmContext.LastAttemptedAt = now;
+                metadata.LlmContext.LastUpdatedAt = now;
+                metadata.LlmContext.Error = null;
             });
     }
 
@@ -180,6 +205,12 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 metadata.Extraction.LastSucceededAt = now;
                 metadata.Extraction.LastUpdatedAt = now;
                 metadata.Extraction.Error = null;
+                metadata.LlmContext ??= new ModuleLlmContextState();
+                metadata.LlmContext.Status = "succeeded";
+                metadata.LlmContext.LastAttemptedAt ??= now;
+                metadata.LlmContext.LastSucceededAt = now;
+                metadata.LlmContext.LastUpdatedAt = now;
+                metadata.LlmContext.Error = null;
             });
     }
 
@@ -200,6 +231,10 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                     metadata.Extraction.Status = "failed";
                     metadata.Extraction.LastUpdatedAt = now;
                     metadata.Extraction.Error = Truncate(exception.Message, 2048);
+                    metadata.LlmContext ??= new ModuleLlmContextState();
+                    metadata.LlmContext.Status = "failed";
+                    metadata.LlmContext.LastUpdatedAt = now;
+                    metadata.LlmContext.Error = Truncate(exception.Message, 2048);
                 });
         }
         catch (Exception metadataException)

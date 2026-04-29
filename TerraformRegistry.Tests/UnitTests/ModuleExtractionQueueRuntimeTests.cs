@@ -112,6 +112,7 @@ public class ModuleExtractionQueueRuntimeTests
             database ?? Mock.Of<IDatabaseService>(),
             Mock.Of<IArchiveWorkspaceFactory>(),
             Mock.Of<ITerraformModuleInspector>(),
+            Mock.Of<IModuleLlmContextGenerator>(),
             config,
             NullLogger<ModuleExtractionService>.Instance);
     }
