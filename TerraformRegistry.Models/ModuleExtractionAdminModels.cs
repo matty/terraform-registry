@@ -7,6 +7,11 @@ public sealed class ModuleExtractionAdminSummary
     public int Pending { get; set; }
     public int Processing { get; set; }
     public int NeverExtracted { get; set; }
+    public int LlmSucceeded { get; set; }
+    public int LlmFailed { get; set; }
+    public int LlmPending { get; set; }
+    public int LlmProcessing { get; set; }
+    public int LlmNeverGenerated { get; set; }
     public int Total { get; set; }
 }
 

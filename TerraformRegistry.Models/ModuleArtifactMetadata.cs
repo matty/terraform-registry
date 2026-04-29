@@ -9,4 +9,5 @@ public class ModuleArtifactMetadata
     public List<ModuleSubmodule> Submodules { get; set; } = [];
     public ModuleDocumentationSummary? Documentation { get; set; }
     public ModuleExtractionState Extraction { get; set; } = new() { Status = "pending" };
+    public ModuleLlmContextState LlmContext { get; set; } = new() { Status = "pending" };
 }
