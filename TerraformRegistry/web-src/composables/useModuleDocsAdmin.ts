@@ -168,12 +168,6 @@ export function useModuleDocsAdmin() {
     })
   }
 
-  async function getConfig(): Promise<ModuleExtractionRuntimeConfig> {
-    return await $fetch('/api/admin/module-docs/config', {
-      headers: getAuthHeaders(),
-    })
-  }
-
   async function updateConfig(enabled: boolean): Promise<ModuleExtractionRuntimeConfig> {
     return await $fetch('/api/admin/module-docs/config', {
       method: 'PUT',
@@ -188,7 +182,6 @@ export function useModuleDocsAdmin() {
     getModuleDetail,
     requeueModule,
     queueBackfill,
-    getConfig,
     updateConfig,
   }
 }

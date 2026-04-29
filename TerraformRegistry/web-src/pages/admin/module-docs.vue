@@ -45,6 +45,7 @@ const isBackfilling = ref(false)
 const requeueKey = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
+const showRawJson = ref(false)
 
 const statusFilter = ref('')
 const searchText = ref('')
@@ -96,7 +97,7 @@ function statusClass(status: string): string {
     processing: 'bg-blue-500/15 text-blue-300 ring-blue-500/25',
     never_extracted: 'bg-neutral-500/15 text-neutral-300 ring-neutral-500/25',
   }
-  return map[status] ?? map.pending
+  return map[status] ?? 'bg-neutral-500/15 text-neutral-300 ring-neutral-500/25'
 }
 
 function formatDate(value: string | null): string {
@@ -289,6 +290,7 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col h-full">
+    <!-- Mobile menu button -->
     <div class="lg:hidden px-4 pt-4">
       <UButton
         icon="i-lucide-menu"
@@ -298,6 +300,7 @@ onMounted(() => {
       />
     </div>
 
+    <!-- Page Header -->
     <div class="page-header">
       <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
@@ -332,6 +335,7 @@ onMounted(() => {
     </div>
     <div class="page-divider" />
 
+    <!-- Body -->
     <div class="flex-1 overflow-y-auto px-6 py-8">
       <div v-if="!canRead" class="max-w-3xl rounded-lg border border-neutral-800 bg-neutral-900/40 p-8">
         <div class="flex items-start gap-4">
@@ -349,12 +353,13 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-else class="max-w-7xl space-y-6">
+      <div v-else class="max-w-6xl space-y-6">
+        <!-- Error Message -->
         <div
           v-if="errorMessage"
-          class="flex items-center gap-3 rounded-lg border border-red-800/50 bg-red-900/20 p-4"
+          class="p-4 bg-red-900/20 border border-red-800/50 rounded-xl flex items-center gap-3 backdrop-blur-sm"
         >
-          <UIcon name="i-lucide-alert-circle" class="shrink-0 text-xl text-red-500" />
+          <UIcon name="i-lucide-alert-circle" class="text-red-500 text-xl shrink-0" />
           <p class="text-sm text-red-300">
             {{ errorMessage }}
           </p>
@@ -368,11 +373,12 @@ onMounted(() => {
           />
         </div>
 
+        <!-- Success Message -->
         <div
           v-if="successMessage"
-          class="flex items-center gap-3 rounded-lg border border-green-800/50 bg-green-900/20 p-4"
+          class="p-4 bg-green-900/20 border border-green-800/50 rounded-xl flex items-center gap-3 backdrop-blur-sm"
         >
-          <UIcon name="i-lucide-check-circle-2" class="shrink-0 text-xl text-green-500" />
+          <UIcon name="i-lucide-check-circle-2" class="text-green-500 text-xl shrink-0" />
           <p class="text-sm text-green-300">
             {{ successMessage }}
           </p>
@@ -386,11 +392,12 @@ onMounted(() => {
           />
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <!-- Stat Cards -->
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <div
             v-for="stat in stats"
             :key="stat.label"
-            class="rounded-lg border border-neutral-800 bg-neutral-900/40 p-4"
+            class="docs-card rounded-xl border border-neutral-800/60 p-4"
           >
             <div class="flex items-center justify-between gap-3">
               <div>
@@ -411,8 +418,9 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-          <div class="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
+        <!-- Runtime + Queue cards -->
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="docs-card rounded-xl border border-neutral-800/60 p-5">
             <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 class="text-sm font-semibold text-neutral-100">
@@ -424,30 +432,21 @@ onMounted(() => {
                   <span>Updated: <strong class="font-medium text-neutral-300">{{ formatShortDate(config?.updatedAt ?? null) }}</strong></span>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
-                <UButton
-                  v-if="canConfigure"
-                  :icon="extractionEnabled ? 'i-lucide-power-off' : 'i-lucide-power'"
-                  :label="extractionEnabled ? 'Disable' : 'Enable'"
-                  :color="extractionEnabled ? 'error' : 'success'"
-                  variant="soft"
-                  size="sm"
-                  :loading="isConfigUpdating"
-                  @click="setExtractionEnabled(!extractionEnabled)"
-                />
-                <span
-                  v-else
-                  class="inline-flex items-center gap-1.5 rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-400"
-                >
-                  <UIcon name="i-lucide-lock" class="text-sm" />
-                  Configure locked
-                </span>
-              </div>
+              <UButton
+                v-if="canConfigure"
+                :icon="extractionEnabled ? 'i-lucide-power-off' : 'i-lucide-power'"
+                :label="extractionEnabled ? 'Disable' : 'Enable'"
+                :color="extractionEnabled ? 'error' : 'success'"
+                variant="soft"
+                size="sm"
+                :loading="isConfigUpdating"
+                @click="setExtractionEnabled(!extractionEnabled)"
+              />
             </div>
           </div>
 
-          <div class="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5">
-            <div class="flex items-center justify-between gap-4">
+          <div class="docs-card rounded-xl border border-neutral-800/60 p-5">
+            <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div>
                 <h2 class="text-sm font-semibold text-neutral-100">
                   Queue
@@ -456,16 +455,19 @@ onMounted(() => {
                   {{ summary?.total?.toLocaleString() ?? 0 }} module versions tracked
                 </p>
               </div>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model.number="backfillLimit"
-                  type="number"
-                  min="1"
-                  max="100"
-                  class="docs-number-input w-20"
-                  :disabled="!canManage || !extractionEnabled"
-                  @blur="clampBackfillLimit"
-                >
+              <div class="flex items-end gap-2">
+                <label class="flex flex-col gap-1.5">
+                  <span class="text-xs font-medium uppercase text-neutral-500">Limit</span>
+                  <input
+                    v-model.number="backfillLimit"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="docs-number-input w-24"
+                    :disabled="!canManage || !extractionEnabled"
+                    @blur="clampBackfillLimit"
+                  >
+                </label>
                 <UButton
                   icon="i-lucide-list-plus"
                   label="Backfill"
@@ -481,9 +483,11 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Modules list + detail panel -->
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-          <div class="rounded-lg border border-neutral-800 bg-neutral-900/40">
-            <div class="border-b border-neutral-800 p-5">
+          <!-- Modules list card -->
+          <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden">
+            <div class="border-b border-neutral-800/60 p-5">
               <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <h2 class="text-sm font-semibold text-neutral-100">
@@ -495,8 +499,8 @@ onMounted(() => {
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
                   <label class="flex flex-col gap-1.5">
-                    <span class="text-xs font-medium uppercase text-neutral-500">Status</span>
-                    <select v-model="statusFilter" class="docs-select min-w-44" @change="applyFilters">
+                    <span class="text-xs font-medium uppercase tracking-wider text-neutral-400">Status</span>
+                    <select v-model="statusFilter" class="docs-select min-w-44">
                       <option
                         v-for="option in statusOptions"
                         :key="option.value"
@@ -507,20 +511,25 @@ onMounted(() => {
                     </select>
                   </label>
                   <label class="flex flex-col gap-1.5">
-                    <span class="text-xs font-medium uppercase text-neutral-500">Search</span>
-                    <input
-                      v-model="searchText"
-                      class="docs-input min-w-56"
-                      placeholder="namespace, name, provider"
-                      @keyup.enter="applyFilters"
-                    >
+                    <span class="text-xs font-medium uppercase tracking-wider text-neutral-400">Search</span>
+                    <div class="relative">
+                      <UIcon
+                        name="i-lucide-search"
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-neutral-500 pointer-events-none"
+                      />
+                      <input
+                        v-model="searchText"
+                        class="docs-input min-w-56 w-full pl-8"
+                        placeholder="namespace, name, provider"
+                        @keyup.enter="applyFilters"
+                      >
+                    </div>
                   </label>
                   <div class="flex gap-2">
                     <UButton
                       icon="i-lucide-search"
                       label="Apply"
-                      color="neutral"
-                      variant="outline"
+                      color="primary"
                       size="sm"
                       @click="applyFilters"
                     />
@@ -537,30 +546,45 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="isLoading" class="divide-y divide-neutral-800/70">
-              <div v-for="i in 6" :key="i" class="p-4">
-                <div class="h-4 w-48 animate-pulse rounded bg-neutral-800" />
-                <div class="mt-3 h-3 w-80 max-w-full animate-pulse rounded bg-neutral-800/70" />
-              </div>
+            <!-- Loading -->
+            <div v-if="isLoading" class="py-12 text-center">
+              <UIcon
+                name="i-lucide-loader-2"
+                class="animate-spin text-3xl text-primary-400"
+              />
             </div>
 
+            <!-- Empty -->
             <div
               v-else-if="modules.length === 0"
-              class="flex flex-col items-center justify-center py-16 text-center"
+              class="flex flex-col items-center justify-center py-16 px-6 text-center"
             >
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-neutral-800/60 text-neutral-500">
-                <UIcon name="i-lucide-file-search" class="text-2xl" />
+              <div class="w-16 h-16 rounded-full bg-neutral-800/60 flex items-center justify-center mb-5">
+                <UIcon name="i-lucide-file-search" class="text-3xl text-neutral-600" />
               </div>
-              <h3 class="text-sm font-medium text-neutral-300">
+              <h3 class="text-base font-medium text-neutral-300 mb-1.5">
                 No modules found
               </h3>
+              <p class="text-sm text-neutral-500 max-w-sm">
+                {{ activeFilterCount > 0 ? 'No modules match your current filters. Try adjusting or clearing them.' : 'Modules will appear here once they are tracked by the extraction queue.' }}
+              </p>
+              <UButton
+                v-if="activeFilterCount > 0"
+                label="Clear filters"
+                variant="outline"
+                color="neutral"
+                size="sm"
+                class="mt-4"
+                @click="clearFilters"
+              />
             </div>
 
-            <div v-else class="divide-y divide-neutral-800/70">
-              <button
+            <!-- List -->
+            <div v-else class="divide-y divide-neutral-800/60">
+              <div
                 v-for="module in modules"
                 :key="moduleKey(module)"
-                class="block w-full px-5 py-4 text-left transition-colors hover:bg-neutral-800/30"
+                class="px-5 py-4 cursor-pointer transition-colors hover:bg-neutral-800/30"
                 :class="selectedKey === moduleKey(module) ? 'bg-neutral-800/45' : ''"
                 @click="selectModule(module)"
               >
@@ -608,10 +632,11 @@ onMounted(() => {
                 <p v-if="module.error" class="mt-3 rounded border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
                   {{ module.error }}
                 </p>
-              </button>
+              </div>
             </div>
 
-            <div class="flex items-center justify-between border-t border-neutral-800 px-5 py-4">
+            <!-- Pagination -->
+            <div class="flex items-center justify-between border-t border-neutral-800/60 px-5 py-4">
               <p class="text-xs text-neutral-500">
                 Page {{ currentPage }} of {{ totalPages }}
               </p>
@@ -638,8 +663,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="rounded-lg border border-neutral-800 bg-neutral-900/40 xl:sticky xl:top-6">
-            <div class="border-b border-neutral-800 p-5">
+          <!-- Detail panel -->
+          <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden xl:sticky xl:top-6">
+            <div class="border-b border-neutral-800/60 p-5">
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <h2 class="text-sm font-semibold text-neutral-100">
@@ -665,22 +691,26 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="isDetailLoading" class="space-y-4 p-5">
-              <div class="h-5 w-48 animate-pulse rounded bg-neutral-800" />
-              <div class="h-24 animate-pulse rounded bg-neutral-800/60" />
-              <div class="h-24 animate-pulse rounded bg-neutral-800/60" />
+            <div v-if="isDetailLoading" class="py-12 text-center">
+              <UIcon
+                name="i-lucide-loader-2"
+                class="animate-spin text-3xl text-primary-400"
+              />
             </div>
 
             <div
               v-else-if="!selectedDetail"
-              class="flex flex-col items-center justify-center px-8 py-16 text-center"
+              class="flex flex-col items-center justify-center py-16 px-6 text-center"
             >
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-neutral-800/60 text-neutral-500">
-                <UIcon name="i-lucide-mouse-pointer-2" class="text-2xl" />
+              <div class="w-16 h-16 rounded-full bg-neutral-800/60 flex items-center justify-center mb-5">
+                <UIcon name="i-lucide-mouse-pointer-2" class="text-3xl text-neutral-600" />
               </div>
-              <h3 class="text-sm font-medium text-neutral-300">
+              <h3 class="text-base font-medium text-neutral-300 mb-1.5">
                 Select a module
               </h3>
+              <p class="text-sm text-neutral-500 max-w-sm">
+                Choose a module from the list to view its extracted documentation.
+              </p>
             </div>
 
             <div v-else class="max-h-[calc(100vh-18rem)] overflow-y-auto p-5">
@@ -884,10 +914,23 @@ onMounted(() => {
                 </section>
 
                 <section class="space-y-3">
-                  <h3 class="text-sm font-semibold text-neutral-100">
-                    Document JSON
-                  </h3>
-                  <pre class="docs-json max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 text-xs text-neutral-300">{{ formatDocumentJson(selectedDetail.document) }}</pre>
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-neutral-100">
+                      Document JSON
+                    </h3>
+                    <UButton
+                      :label="showRawJson ? 'Hide' : 'View raw JSON'"
+                      :icon="showRawJson ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+                      color="neutral"
+                      variant="ghost"
+                      size="xs"
+                      @click="showRawJson = !showRawJson"
+                    />
+                  </div>
+                  <pre
+                    v-if="showRawJson"
+                    class="docs-json max-h-80 overflow-auto rounded-lg border border-neutral-800 bg-neutral-950/60 p-4 text-xs text-neutral-300"
+                  >{{ formatDocumentJson(selectedDetail.document) }}</pre>
                 </section>
               </div>
             </div>
@@ -899,24 +942,37 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.docs-card {
+  background: linear-gradient(145deg, rgba(23, 23, 23, 0.6), rgba(15, 15, 15, 0.8));
+  backdrop-filter: blur(8px);
+}
+
 .docs-input,
 .docs-select,
 .docs-number-input {
   background: rgba(38, 38, 38, 0.8);
-  border: 1px solid rgba(64, 64, 64, 0.65);
+  border: 1px solid rgba(64, 64, 64, 0.6);
   border-radius: 0.5rem;
   color: #e5e5e5;
   font-size: 0.875rem;
   min-height: 2rem;
   padding: 0.375rem 0.75rem;
+  transition: all 150ms;
 }
 
 .docs-input:focus,
 .docs-select:focus,
 .docs-number-input:focus {
-  border-color: rgba(161, 161, 170, 0.75);
-  box-shadow: 0 0 0 2px rgba(161, 161, 170, 0.25);
   outline: none;
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
+}
+
+.docs-input:disabled,
+.docs-select:disabled,
+.docs-number-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .docs-select option {
