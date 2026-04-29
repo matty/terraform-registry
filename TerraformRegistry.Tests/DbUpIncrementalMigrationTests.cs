@@ -273,6 +273,24 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration015_CreatesModuleLlmContextsTable()
+    {
+        MigrateUpTo(15, _connectionString);
+
+        var tables = GetTables(_connection);
+        Assert.Contains("module_llm_contexts", tables);
+
+        var columns = GetColumns(_connection, "module_llm_contexts");
+        foreach (var column in new[] { "module_id", "schema_version", "generated_at", "document_json", "source_checksum", "created_at", "updated_at" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        var indexes = GetIndexes(_connection);
+        Assert.Contains("idx_module_llm_contexts_updated_at", indexes);
+    }
+
+    [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
         MigrateUpTo(10, _connectionString);

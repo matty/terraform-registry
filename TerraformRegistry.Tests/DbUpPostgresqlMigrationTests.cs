@@ -343,6 +343,29 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration016_CreatesModuleLlmContextsTable()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        MigrateUpTo(16, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        var tables = GetTables(conn);
+        Assert.Contains("module_llm_contexts", tables);
+
+        var columns = GetColumns(conn, "module_llm_contexts");
+        foreach (var column in new[] { "module_id", "schema_version", "generated_at", "document_json", "source_checksum", "created_at", "updated_at" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        var indexes = GetIndexes(conn);
+        Assert.Contains("idx_module_llm_contexts_updated_at", indexes);
+    }
+
+    [Fact]
     public async Task FullMigration_DataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
@@ -488,7 +511,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(14, journalCount);
+        Assert.Equal(15, journalCount);
     }
 
     [Fact]
@@ -531,7 +554,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(14, journalCount);
+        Assert.Equal(15, journalCount);
     }
 
     private string CreateFreshDatabase()

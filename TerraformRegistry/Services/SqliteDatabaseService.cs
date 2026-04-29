@@ -542,6 +542,61 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT c.document_json
+            FROM module_llm_contexts c
+            JOIN modules m ON m.id = c.module_id
+            WHERE m.namespace = $ns AND m.name = $name AND m.provider = $prov AND m.version = $ver";
+        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$prov", provider);
+        cmd.Parameters.AddWithValue("$ver", version);
+
+        var json = (string?)await cmd.ExecuteScalarAsync();
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);
+    }
+
+    public async Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version,
+        ModuleLlmContextDocument document, string? sourceChecksum = null)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var now = DateTime.UtcNow.ToString("o");
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO module_llm_contexts (module_id, schema_version, generated_at, document_json, source_checksum, created_at, updated_at)
+            SELECT id, $schemaVersion, $generatedAt, $document, $checksum, $now, $now
+            FROM modules
+            WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL
+            ON CONFLICT(module_id) DO UPDATE SET
+                schema_version = excluded.schema_version,
+                generated_at = excluded.generated_at,
+                document_json = excluded.document_json,
+                source_checksum = excluded.source_checksum,
+                updated_at = excluded.updated_at";
+        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$prov", provider);
+        cmd.Parameters.AddWithValue("$ver", version);
+        cmd.Parameters.AddWithValue("$schemaVersion", document.SchemaVersion);
+        cmd.Parameters.AddWithValue("$generatedAt", document.GeneratedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$document", JsonSerializer.Serialize(document));
+        cmd.Parameters.AddWithValue("$checksum", (object?)sourceChecksum ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$now", now);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
         Action<ModuleArtifactMetadata> mutate)
     {

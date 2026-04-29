@@ -634,6 +634,66 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         await command.ExecuteNonQueryAsync();
     }
 
+    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name,
+        string provider, string version)
+    {
+        const string sql = @"
+            SELECT c.document_json::text
+            FROM module_llm_contexts c
+            JOIN modules m ON m.id = c.module_id
+            WHERE m.namespace = @namespace
+              AND m.name = @name
+              AND m.provider = @provider
+              AND m.version = @version";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+
+        var json = (string?)await command.ExecuteScalarAsync();
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);
+    }
+
+    public async Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version,
+        ModuleLlmContextDocument document, string? sourceChecksum = null)
+    {
+        const string sql = @"
+            INSERT INTO module_llm_contexts (module_id, schema_version, generated_at, document_json, source_checksum, created_at, updated_at)
+            SELECT id, @schemaVersion, @generatedAt, @document, @checksum, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND deleted_at IS NULL
+            ON CONFLICT (module_id) DO UPDATE SET
+                schema_version = EXCLUDED.schema_version,
+                generated_at = EXCLUDED.generated_at,
+                document_json = EXCLUDED.document_json,
+                source_checksum = EXCLUDED.source_checksum,
+                updated_at = CURRENT_TIMESTAMP";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@schemaVersion", document.SchemaVersion);
+        command.Parameters.AddWithValue("@generatedAt", document.GeneratedAt);
+        command.Parameters.AddWithValue("@document", JsonSerializer.Serialize(document)).NpgsqlDbType = NpgsqlDbType.Jsonb;
+        command.Parameters.AddWithValue("@checksum", (object?)sourceChecksum ?? DBNull.Value);
+
+        await command.ExecuteNonQueryAsync();
+    }
+
     public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
         Action<ModuleArtifactMetadata> mutate)
     {

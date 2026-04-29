@@ -236,6 +236,37 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpsertModuleLlmContext_PersistsStoredArtifact()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var module = MakeModule(version: "7.0.0");
+        await svc.AddModuleAsync(module);
+
+        var document = new ModuleLlmContextDocument
+        {
+            Module = new ModuleLlmModuleReference
+            {
+                Namespace = "hashicorp",
+                Name = "vpc",
+                Provider = "aws",
+                Version = "7.0.0"
+            },
+            Summary = new ModuleLlmContextSummary
+            {
+                OneLine = "Creates AWS VPC networking primitives."
+            }
+        };
+
+        await svc.UpsertModuleLlmContextAsync("hashicorp", "vpc", "aws", "7.0.0", document);
+        var stored = await svc.GetModuleLlmContextAsync("hashicorp", "vpc", "aws", "7.0.0");
+
+        Assert.NotNull(stored);
+        Assert.Equal("Creates AWS VPC networking primitives.", stored!.Summary.OneLine);
+    }
+
+    [Fact]
     public async Task RemoveModule_DeletesRow()
     {
         var svc = CreateService(_connectionString);

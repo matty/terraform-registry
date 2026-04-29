@@ -65,6 +65,8 @@ public interface IDatabaseService
 
     Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name, string provider, string version);
     Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version, ModuleExtractionDocument document, string? sourceChecksum = null);
+    Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name, string provider, string version);
+    Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version, ModuleLlmContextDocument document, string? sourceChecksum = null);
     Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version, Action<ModuleArtifactMetadata> mutate);
     Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit);
     Task<ModuleExtractionAdminSummary> GetModuleExtractionAdminSummaryAsync();
