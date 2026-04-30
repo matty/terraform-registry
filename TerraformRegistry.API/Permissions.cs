@@ -14,6 +14,12 @@ public static class Permissions
     public const string ModulesRestore = "modules.restore";
     public const string ModulesPurge = "modules.purge";
     public const string ModulesDescription = "modules.description";
+    public const string ProvidersRead = "providers.read";
+    public const string ProvidersPublish = "providers.publish";
+    public const string ProvidersDelete = "providers.delete";
+    public const string ProvidersPurge = "providers.purge";
+    public const string ProvidersKeysManage = "providers.keys.manage";
+    public const string ProvidersDescription = "providers.description";
     public const string WebhooksManage = "webhooks.manage";
     public const string VcsManage = "vcs.manage";
     public const string ApiKeysManage = "api_keys.manage";
@@ -29,7 +35,10 @@ public static class Permissions
     public static readonly string[] All =
     [
         ModulesRead, ModulesUpload, ModulesDelete, ModulesRestore,
-        ModulesPurge, ModulesDescription, WebhooksManage, VcsManage,
+        ModulesPurge, ModulesDescription,
+        ProvidersRead, ProvidersPublish, ProvidersDelete, ProvidersPurge,
+        ProvidersKeysManage, ProvidersDescription,
+        WebhooksManage, VcsManage,
         ApiKeysManage, ApiKeysShared, AnalyticsView,
         ModuleDocsRead, ModuleDocsManage, ModuleDocsConfigure,
         AdminRoles, AdminUsers, AdminAudit
@@ -39,6 +48,7 @@ public static class Permissions
     [
         ModulesRead, ModulesUpload, ModulesDelete, ModulesRestore,
         ModulesDescription,
+        ProvidersRead,
         ApiKeysManage, AnalyticsView
     ];
 }

@@ -51,6 +51,11 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("roles", tables);
         Assert.Contains("user_roles", tables);
         Assert.Contains("audit_logs", tables);
+        Assert.Contains("providers", tables);
+        Assert.Contains("provider_versions", tables);
+        Assert.Contains("provider_platforms", tables);
+        Assert.Contains("provider_gpg_keys", tables);
+        Assert.Contains("provider_downloads", tables);
         Assert.Contains("SchemaVersions", tables);
     }
 
@@ -117,8 +122,8 @@ public class DbUpMigratorTests : IDisposable
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var count = (long)cmd.ExecuteScalar()!;
 
-        // Should have exactly 14 SQLite scripts, not double
-        Assert.Equal(14L, count);
+        // Should have exactly 15 SQLite scripts, not double
+        Assert.Equal(15L, count);
     }
 
     [Fact]
@@ -174,11 +179,11 @@ public class DbUpMigratorTests : IDisposable
         var migrator = new DbUpMigrator(_logger);
         migrator.Migrate("sqlite", _connectionString);
 
-        // Journal should have exactly 14 entries (2 bootstrapped + 12 executed)
+        // Journal should have exactly 15 entries (2 bootstrapped + 13 executed)
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var journalCount = (long)cmd.ExecuteScalar()!;
-        Assert.Equal(14L, journalCount);
+        Assert.Equal(15L, journalCount);
 
         // Legacy schema_version table should be dropped
         using var svCmd = _connection.CreateCommand();
@@ -198,6 +203,11 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("webhooks", tables);
         Assert.Contains("vcs_connections", tables);
         Assert.Contains("vcs_sources", tables);
+        Assert.Contains("providers", tables);
+        Assert.Contains("provider_versions", tables);
+        Assert.Contains("provider_platforms", tables);
+        Assert.Contains("provider_gpg_keys", tables);
+        Assert.Contains("provider_downloads", tables);
     }
 
     [Fact]

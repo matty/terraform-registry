@@ -103,6 +103,8 @@ public class AzureBlobModuleService : ModuleService
                 _containerName);
             throw; // Re-throw as this is a critical failure for the service's operation.
         }
+
+        LoadExistingModulesAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -170,10 +172,18 @@ public class AzureBlobModuleService : ModuleService
 
             sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-            // Generate the SAS token URI that includes the full URL
-            var sasToken = blobClient.GenerateSasUri(sasBuilder);
-
-            return sasToken.ToString();
+            try
+            {
+                var sasToken = blobClient.GenerateSasUri(sasBuilder);
+                return sasToken.ToString();
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.LogWarning(
+                    "Blob client for {Namespace}/{Name}/{Provider}/{Version} cannot generate SAS URIs directly. Falling back to blob URI.",
+                    @namespace, name, provider, version);
+                return blobClient.Uri.ToString();
+            }
         }
         catch (Exception ex)
         {
@@ -319,7 +329,7 @@ public class AzureBlobModuleService : ModuleService
     ///     2. It ensures consistency between what's in blob storage and what's in the database
     ///     3. It helps with migration scenarios when moving from one database to another
     /// </remarks>
-    private async void LoadExistingModules()
+    private async Task LoadExistingModulesAsync()
     {
         try
         {
@@ -338,7 +348,7 @@ public class AzureBlobModuleService : ModuleService
 
                     ModuleStorage? module = null;
 
-                    if (properties.Value.Metadata.Count > 0)
+                    if (properties.Value.Metadata?.Count > 0)
                     {
                         // Extract module information from metadata (preferred method)
                         var metadata = properties.Value.Metadata;
