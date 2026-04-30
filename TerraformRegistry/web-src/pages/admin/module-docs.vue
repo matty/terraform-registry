@@ -348,10 +348,10 @@ onMounted(() => {
       <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 class="page-header-title">
-            Module Docs
+            Documentation
           </h1>
           <p class="page-header-subtitle">
-            Extraction queue, LLM context state, and generated module documentation
+            Generated documentation operations, LLM context state, and documentation quality controls
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -435,6 +435,17 @@ onMounted(() => {
           />
         </div>
 
+        <div class="rounded-xl border border-neutral-800/60 bg-neutral-950/25 p-5">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-lg font-semibold text-neutral-100">
+              Modules
+            </h2>
+            <p class="text-sm text-neutral-500">
+              Extracted documentation, queue health, and LLM-generated docs for published modules.
+            </p>
+          </div>
+        </div>
+
         <!-- Stat Cards -->
         <div class="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <div
@@ -491,9 +502,9 @@ onMounted(() => {
           <div class="docs-card rounded-xl border border-neutral-800/60 p-5">
             <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <h2 class="text-sm font-semibold text-neutral-100">
-                  Runtime
-                </h2>
+                  <h3 class="text-sm font-semibold text-neutral-100">
+                    Runtime
+                  </h3>
                 <div class="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs text-neutral-500">
                   <span>Startup: <strong class="font-medium text-neutral-300">{{ config?.startupEnabled ? 'enabled' : 'disabled' }}</strong></span>
                   <span>Override: <strong class="font-medium text-neutral-300">{{ config?.hasRuntimeOverride ? 'yes' : 'no' }}</strong></span>
@@ -516,9 +527,9 @@ onMounted(() => {
           <div class="docs-card rounded-xl border border-neutral-800/60 p-5">
             <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div>
-                <h2 class="text-sm font-semibold text-neutral-100">
-                  Queue
-                </h2>
+                  <h3 class="text-sm font-semibold text-neutral-100">
+                    Queue
+                  </h3>
                 <p class="mt-2 text-xs text-neutral-500">
                   {{ summary?.total?.toLocaleString() ?? 0 }} module versions tracked
                 </p>
@@ -747,7 +758,7 @@ onMounted(() => {
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <h2 class="text-sm font-semibold text-neutral-100">
-                    Documentation
+                    Module Documentation
                   </h2>
                   <p v-if="selectedDetail" class="mt-1 truncate font-mono text-xs text-neutral-500">
                     {{ moduleKey(selectedDetail) }}

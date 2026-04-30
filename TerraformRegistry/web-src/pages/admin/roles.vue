@@ -115,7 +115,7 @@ const permissionCategories = [
     ],
   },
   {
-    label: 'Module Docs',
+    label: 'Documentation',
     icon: 'i-lucide-file-search',
     color: 'teal',
     bgColor: 'bg-teal-500/10',
