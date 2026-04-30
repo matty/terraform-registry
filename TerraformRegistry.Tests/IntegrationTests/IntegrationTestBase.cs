@@ -39,10 +39,16 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         var randomSuffix = Path.GetRandomFileName().Replace(".", "");
         var moduleStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"modules/{randomSuffix}");
+        var providerStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"providers/{randomSuffix}");
         if (!string.IsNullOrEmpty(moduleStoragePath) && Directory.Exists(moduleStoragePath))
         {
             Directory.Delete(moduleStoragePath, true);
             _output.WriteLine($"Cleared directory: {moduleStoragePath}");
+        }
+        if (Directory.Exists(providerStoragePath))
+        {
+            Directory.Delete(providerStoragePath, true);
+            _output.WriteLine($"Cleared directory: {providerStoragePath}");
         }
 
         _factory = new WebApplicationFactory<Program>()
@@ -58,6 +64,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                         ["StorageProvider"] = "local",
                         ["BaseUrl"] = "http://localhost:5000",
                         ["ModuleStoragePath"] = moduleStoragePath,
+                        ["ProviderStoragePath"] = providerStoragePath,
                         ["AuthorizationToken"] = _authToken,
                         ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"
                     });

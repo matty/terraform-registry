@@ -13,8 +13,8 @@ public class ServiceDiscovery
     [JsonPropertyName("login.v1")]
     public TerraformLoginDiscovery LoginV1 { get; set; } = new();
 
-    // [JsonPropertyName("providers.v1")]
-    // public string ProvidersV1 { get; set; } = "/v1/providers/";
+    [JsonPropertyName("providers.v1")]
+    public string ProvidersV1 { get; set; } = "/v1/providers/";
 }
 
 public class TerraformLoginDiscovery

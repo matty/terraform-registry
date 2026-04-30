@@ -29,4 +29,15 @@ public class StaticTokenAuthorizationTests(ITestOutputHelper output) : Integrati
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task StaticToken_CanAccessProviderProtocolRoutes()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        var response = await client.GetAsync("/v1/providers/Acme/example/versions");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

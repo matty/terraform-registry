@@ -21,6 +21,12 @@ const mainLinks = [
     to: "/",
   },
   {
+    label: "Providers",
+    icon: "i-lucide-plug",
+    to: "/providers",
+    permission: "providers.read",
+  },
+  {
     label: "Analytics",
     icon: "i-lucide-bar-chart-3",
     to: "/analytics",
@@ -50,6 +56,10 @@ const adminLinks = [
 
 const visibleAdminLinks = computed(() =>
   adminLinks.filter(link => hasPermission(link.permission))
+);
+
+const visibleMainLinks = computed(() =>
+  mainLinks.filter(link => !link.permission || hasPermission(link.permission))
 );
 
 const isActive = (path: string) => {
@@ -110,7 +120,7 @@ const toggleAdmin = () => {
           </p>
           <div class="space-y-0.5">
             <NuxtLink
-              v-for="link in mainLinks"
+              v-for="link in visibleMainLinks"
               :key="link.to"
               :to="link.to"
               :class="[
@@ -256,7 +266,7 @@ const toggleAdmin = () => {
               </p>
               <div class="space-y-0.5">
                 <NuxtLink
-                  v-for="link in mainLinks"
+                  v-for="link in visibleMainLinks"
                   :key="link.to"
                   :to="link.to"
                   :class="[
