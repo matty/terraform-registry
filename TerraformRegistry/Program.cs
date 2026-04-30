@@ -14,6 +14,7 @@ using TerraformRegistry.Migrations;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
 using TerraformRegistry.Services.Publishing;
+using TerraformRegistry.S3;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -78,6 +79,9 @@ builder.Services.AddSingleton<IModuleService>(provider =>
         case "azure":
             return new AzureBlobModuleService(config, db,
                 provider.GetRequiredService<ILogger<AzureBlobModuleService>>());
+        case "s3":
+            return new S3ModuleService(config, db,
+                provider.GetRequiredService<ILogger<S3ModuleService>>());
         case "local":
             var storagePath = config["ModuleStoragePath"];
             if (string.IsNullOrEmpty(storagePath))
@@ -334,6 +338,8 @@ if (authToken == "default-auth-token"
     && !app.Environment.IsEnvironment("Test"))
     throw new InvalidOperationException(
         "AuthorizationToken is set to the default placeholder value. Configure a unique secret before running outside Development/Test.");
+
+app.Services.GetRequiredService<IModuleService>();
 
 app.UseHttpsRedirection();
 

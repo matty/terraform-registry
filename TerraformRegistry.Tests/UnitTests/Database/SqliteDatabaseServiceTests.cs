@@ -207,6 +207,121 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RemoveModuleExact_OnlyDeletesMatchingRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var published = new DateTime(2024, 4, 1, 12, 34, 56, DateTimeKind.Utc);
+        var mod = MakeModule(version: "3.1.0", desc: "exact-desc", publishedAt: published, deps: ["a", "b"]);
+        await svc.AddModuleAsync(mod);
+
+        var wrongPublishedAt = MakeModule(
+            version: "3.1.0",
+            desc: "exact-desc",
+            publishedAt: published.AddSeconds(1),
+            deps: ["a", "b"]);
+
+        Assert.False(await svc.RemoveModuleExactAsync(wrongPublishedAt));
+        Assert.NotNull(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+
+        Assert.True(await svc.RemoveModuleExactAsync(mod));
+        Assert.Null(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
+    public async Task RemoveModuleExact_DeletesSnapshotFetchedFromDatabase()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(
+            version: "3.2.0",
+            publishedAt: new DateTime(2024, 4, 1, 12, 34, 56, DateTimeKind.Utc));
+        await svc.AddModuleAsync(mod);
+
+        var fetched = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+
+        Assert.NotNull(fetched);
+        Assert.True(await svc.RemoveModuleExactAsync(fetched!));
+        Assert.Null(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
+    public async Task ReplaceModuleExact_UpdatesSnapshotFetchedFromDatabase()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(
+            version: "3.3.0",
+            desc: "old-desc",
+            filePath: "/modules/vpc/3.3.0-old.zip",
+            publishedAt: new DateTime(2024, 4, 1, 12, 34, 56, DateTimeKind.Utc),
+            deps: ["a"]);
+        await svc.AddModuleAsync(mod);
+
+        var fetched = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(fetched);
+
+        var replacement = MakeModule(
+            version: "3.3.0",
+            desc: "new-desc",
+            filePath: "/modules/vpc/3.3.0-new.zip",
+            publishedAt: new DateTime(2024, 4, 1, 12, 35, 56, DateTimeKind.Utc),
+            deps: ["a", "b"]);
+
+        Assert.True(await svc.ReplaceModuleExactAsync(fetched!, replacement));
+
+        var updated = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(updated);
+        Assert.Equal("new-desc", updated!.Description);
+        Assert.Equal("/modules/vpc/3.3.0-new.zip", updated.FilePath);
+        Assert.Equal(new DateTime(2024, 4, 1, 12, 35, 56, DateTimeKind.Utc), updated.PublishedAt);
+        Assert.Equal(["a", "b"], updated.Dependencies);
+    }
+
+    [Fact]
+    public async Task RemoveDeletedModule_DeletesOnlySoftDeletedRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "3.4.0");
+        await svc.AddModuleAsync(mod);
+        Assert.True(await svc.SoftDeleteModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+
+        Assert.True(await svc.RemoveDeletedModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+        Assert.Null(await svc.GetModuleStorageIncludingDeletedAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
+    public async Task AddDeletedModule_AddsSoftDeletedRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "3.5.0");
+
+        Assert.True(await svc.AddDeletedModuleAsync(mod));
+        Assert.Null(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+        Assert.NotNull(await svc.GetModuleStorageIncludingDeletedAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
+    public async Task RemoveDeletedModule_ReturnsFalseForActiveRow()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(version: "3.6.0");
+        await svc.AddModuleAsync(mod);
+
+        Assert.False(await svc.RemoveDeletedModuleAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+        Assert.NotNull(await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version));
+    }
+
+    [Fact]
     public async Task GetModule_ReturnsNullAfterSoftDelete()
     {
         var svc = CreateService(_connectionString);

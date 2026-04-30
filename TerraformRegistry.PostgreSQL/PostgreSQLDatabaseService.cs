@@ -385,6 +385,195 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         }
     }
 
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage module)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND description = @description
+              AND storage_path = @storagePath
+              AND published_at = @publishedAt
+              AND dependencies = @dependencies
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", module.Namespace);
+            command.Parameters.AddWithValue("@name", module.Name);
+            command.Parameters.AddWithValue("@provider", module.Provider);
+            command.Parameters.AddWithValue("@version", module.Version);
+            command.Parameters.AddWithValue("@description", module.Description);
+            command.Parameters.AddWithValue("@storagePath", module.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("@dependencies",
+                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from database",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    public async Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND deleted_at IS NOT NULL";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("@name", name);
+            command.Parameters.AddWithValue("@provider", provider);
+            command.Parameters.AddWithValue("@version", version);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error removing deleted module row {Namespace}/{Name}/{Provider}/{Version} from database",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage module)
+    {
+        var sql = @"
+            INSERT INTO modules (
+                namespace,
+                name,
+                provider,
+                version,
+                description,
+                storage_path,
+                published_at,
+                dependencies,
+                deleted_at
+            )
+            VALUES (
+                @namespace,
+                @name,
+                @provider,
+                @version,
+                @description,
+                @storagePath,
+                @publishedAt,
+                @dependencies,
+                @deletedAt
+            )";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", module.Namespace);
+            command.Parameters.AddWithValue("@name", module.Name);
+            command.Parameters.AddWithValue("@provider", module.Provider);
+            command.Parameters.AddWithValue("@version", module.Version);
+            command.Parameters.AddWithValue("@description", module.Description);
+            command.Parameters.AddWithValue("@storagePath", module.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("@dependencies",
+                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            _logger.LogInformation("Deleted module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error adding deleted module row {Namespace}/{Name}/{Provider}/{Version} to database",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    public async Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule)
+    {
+        var sql = @"
+            UPDATE modules
+            SET description = @newDescription,
+                storage_path = @newStoragePath,
+                published_at = @newPublishedAt,
+                dependencies = @newDependencies
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND description = @description
+              AND storage_path = @storagePath
+              AND published_at = @publishedAt
+              AND dependencies = @dependencies
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@namespace", existingModule.Namespace);
+            command.Parameters.AddWithValue("@name", existingModule.Name);
+            command.Parameters.AddWithValue("@provider", existingModule.Provider);
+            command.Parameters.AddWithValue("@version", existingModule.Version);
+            command.Parameters.AddWithValue("@description", existingModule.Description);
+            command.Parameters.AddWithValue("@storagePath", existingModule.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", existingModule.PublishedAt);
+            command.Parameters.AddWithValue("@dependencies",
+                    existingModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(existingModule.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@newDescription", newModule.Description);
+            command.Parameters.AddWithValue("@newStoragePath", newModule.FilePath);
+            command.Parameters.AddWithValue("@newPublishedAt", newModule.PublishedAt);
+            command.Parameters.AddWithValue("@newDependencies",
+                    newModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(newModule.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error replacing exact module row {Namespace}/{Name}/{Provider}/{Version} in database",
+                existingModule.Namespace, existingModule.Name, existingModule.Provider, existingModule.Version);
+            return false;
+        }
+    }
+
     public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
     {
         var sql = @"UPDATE modules SET deleted_at = @deletedAt 
