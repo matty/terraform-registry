@@ -46,4 +46,34 @@ public class ModuleLlmContextGeneratorTests
         Assert.Single(context.Providers);
         Assert.Equal("hashicorp", context.Module.Namespace);
     }
+
+    [Fact]
+    public void ModuleLlmContextGenerator_UsesConfiguredBaseUrlForGeneratedNavigationLinks()
+    {
+        var extraction = new ModuleExtractionDocument();
+        var module = new Module
+        {
+            Id = "acme/network/aws/1.0.0",
+            Owner = "acme",
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.0.0",
+            PublishedAt = "2026-04-30T12:00:00Z",
+            Versions = ["1.0.0"],
+            Root = "/",
+            Submodules = [],
+            Providers = new Dictionary<string, string>(),
+            Description = "Network module"
+        };
+
+        var generator = new ModuleLlmContextGenerator("https://registry.example.com/");
+
+        var context = generator.Generate(module, extraction);
+
+        Assert.Equal("https://registry.example.com/modules/acme/network/aws", context.Source!.RegistryUrl);
+        Assert.Equal("https://registry.example.com/modules/acme/network/aws", context.Navigation.HumanUrl);
+        Assert.Equal("https://registry.example.com/v1/llm/modules/acme/network/aws", context.Navigation.ModuleVersionsUrl);
+        Assert.Equal("https://registry.example.com/api/admin/module-docs/modules/acme/network/aws/1.0.0", context.Navigation.RawExtractionUrl);
+    }
 }

@@ -1,12 +1,33 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Configuration;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services.ModuleExtraction;
 
 public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerator
 {
+    private readonly string? _baseUrl;
+
+    public ModuleLlmContextGenerator()
+    {
+    }
+
+    public ModuleLlmContextGenerator(IConfiguration configuration)
+        : this(configuration["BaseUrl"])
+    {
+    }
+
+    public ModuleLlmContextGenerator(string? baseUrl)
+    {
+        _baseUrl = NormalizeBaseUrl(baseUrl);
+    }
+
     public ModuleLlmContextDocument Generate(Module module, ModuleExtractionDocument extraction)
     {
+        var modulePath = $"/modules/{module.Namespace}/{module.Name}/{module.Provider}";
+        var moduleVersionsPath = $"/v1/llm/modules/{module.Namespace}/{module.Name}/{module.Provider}";
+        var rawExtractionPath = $"/api/admin/module-docs/modules/{module.Namespace}/{module.Name}/{module.Provider}/{module.Version}";
+
         return new ModuleLlmContextDocument
         {
             Module = new ModuleLlmModuleReference
@@ -18,6 +39,7 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
             },
             Source = new ModuleLlmSourceReference
             {
+                RegistryUrl = BuildAbsoluteUrl(modulePath),
                 PublishedAt = module.PublishedAt
             },
             Summary = new ModuleLlmContextSummary
@@ -45,10 +67,21 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
             },
             Navigation = new ModuleLlmNavigationLinks
             {
-                HumanUrl = $"/modules/{module.Namespace}/{module.Name}/{module.Provider}",
-                ModuleVersionsUrl = $"/v1/llm/modules/{module.Namespace}/{module.Name}/{module.Provider}"
+                HumanUrl = BuildAbsoluteUrl(modulePath),
+                ModuleVersionsUrl = BuildAbsoluteUrl(moduleVersionsPath),
+                RawExtractionUrl = BuildAbsoluteUrl(rawExtractionPath)
             }
         };
+    }
+
+    private string BuildAbsoluteUrl(string path)
+    {
+        return _baseUrl == null ? path : $"{_baseUrl}{path}";
+    }
+
+    private static string? NormalizeBaseUrl(string? baseUrl)
+    {
+        return string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');
     }
 
     private static string? BuildOneLineSummary(Module module, ModuleExtractionDocument extraction)
