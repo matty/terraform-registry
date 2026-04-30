@@ -26,10 +26,12 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
         using var jsonDoc = JsonDocument.Parse(content);
         var actualJson = new
         {
-            modules_v1 = jsonDoc.RootElement.GetProperty("modules.v1").GetString()
+            modules_v1 = jsonDoc.RootElement.GetProperty("modules.v1").GetString(),
+            providers_v1 = jsonDoc.RootElement.GetProperty("providers.v1").GetString()
         };
 
         Assert.Equal(expectedJson.modules_v1, actualJson.modules_v1);
+        Assert.Equal("/v1/providers/", actualJson.providers_v1);
     }
 
     [Fact]
@@ -44,6 +46,7 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
         var root = jsonDoc.RootElement;
 
         Assert.Equal("/v1/modules/", root.GetProperty("modules.v1").GetString());
+        Assert.Equal("/v1/providers/", root.GetProperty("providers.v1").GetString());
 
         var login = root.GetProperty("login.v1");
         Assert.Equal("terraform-cli", login.GetProperty("client").GetString());

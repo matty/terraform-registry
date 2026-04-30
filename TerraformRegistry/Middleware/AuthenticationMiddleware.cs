@@ -16,7 +16,7 @@ public class AuthenticationMiddleware(
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
     private const string SessionCookieName = "tf-session";
-    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/vcs/sources", "/api/vcs/connections", "/api/admin"];
+    private static readonly string[] ProtectedPathPrefixes = ["/v1/", "/api/keys", "/api/analytics", "/api/providers", "/api/vcs/sources", "/api/vcs/connections", "/api/admin"];
     private static readonly string[] StaticTokenPathPrefixes = ["/v1/"];
     private static readonly string[] StaticTokenPermissions =
     [
@@ -25,7 +25,13 @@ public class AuthenticationMiddleware(
         Permissions.ModulesDelete,
         Permissions.ModulesRestore,
         Permissions.ModulesPurge,
-        Permissions.ModulesDescription
+        Permissions.ModulesDescription,
+        Permissions.ProvidersRead,
+        Permissions.ProvidersPublish,
+        Permissions.ProvidersDelete,
+        Permissions.ProvidersPurge,
+        Permissions.ProvidersKeysManage,
+        Permissions.ProvidersDescription
     ];
 
     public async Task InvokeAsync(HttpContext context)
