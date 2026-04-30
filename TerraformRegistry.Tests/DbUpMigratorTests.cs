@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Moq;
 using TerraformRegistry.Migrations;
+using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Tests;
 
@@ -51,6 +52,57 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("user_roles", tables);
         Assert.Contains("audit_logs", tables);
         Assert.Contains("SchemaVersions", tables);
+    }
+
+    [Fact]
+    public async Task Migrate_FreshSqliteDatabase_AppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
+    {
+        var migrator = new DbUpMigrator(_logger);
+
+        migrator.Migrate("sqlite", _connectionString);
+
+        Assert.Equal(
+            GetEmbeddedScriptNames(".Scripts.SQLite."),
+            GetSqliteJournalScriptNames(_connection));
+
+        var columns = GetSqliteColumns(_connection, "vcs_sources");
+        foreach (var column in new[] { "tag_pattern", "last_published_version", "last_sync_status", "last_sync_at", "last_sync_error" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        Assert.Contains("idx_vcs_sources_module_lookup", GetSqliteIndexes(_connection));
+
+        await SeedSqliteUserAndConnectionAsync(_connection);
+
+        var connectionId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var service = new SqliteVcsSourceService(_connectionString);
+        var created = await service.CreateVcsSourceAsync(
+            "user-1",
+            "hashicorp",
+            "consul",
+            "aws",
+            "hashicorp",
+            "terraform-aws-consul",
+            connectionId);
+
+        var persisted = await service.GetByModuleAsync("hashicorp", "consul", "aws");
+
+        Assert.NotNull(persisted);
+        Assert.Equal(created.Id, persisted.Id);
+        Assert.Equal("v*", persisted.TagPattern);
+        Assert.Equal("never", persisted.LastSyncStatus);
+        Assert.Null(persisted.LastPublishedVersion);
+        Assert.Null(persisted.LastSyncAt);
+        Assert.Null(persisted.LastSyncError);
+
+        var updated = await service.UpdateSyncStateAsync(created.Id, "succeeded", "1.2.3", null);
+
+        Assert.NotNull(updated);
+        Assert.Equal("succeeded", updated.LastSyncStatus);
+        Assert.Equal("1.2.3", updated.LastPublishedVersion);
+        Assert.NotNull(updated.LastSyncAt);
+        Assert.Null(updated.LastSyncError);
     }
 
     [Fact]
@@ -154,5 +206,72 @@ public class DbUpMigratorTests : IDisposable
         var migrator = new DbUpMigrator(_logger);
 
         Assert.Throws<ArgumentException>(() => migrator.Migrate("mysql", "fake-connection"));
+    }
+
+    private static List<string> GetEmbeddedScriptNames(string providerFolder)
+    {
+        return typeof(DbUpMigrator).Assembly
+            .GetManifestResourceNames()
+            .Where(name => name.Contains(providerFolder, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> GetSqliteJournalScriptNames(SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT ScriptName FROM SchemaVersions";
+        using var reader = cmd.ExecuteReader();
+
+        var scriptNames = new List<string>();
+        while (reader.Read())
+        {
+            scriptNames.Add(reader.GetString(0));
+        }
+
+        return scriptNames
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static List<string> GetSqliteColumns(SqliteConnection connection, string tableName)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({tableName})";
+        using var reader = cmd.ExecuteReader();
+
+        var columns = new List<string>();
+        while (reader.Read())
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        return columns;
+    }
+
+    private static List<string> GetSqliteIndexes(SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'";
+        using var reader = cmd.ExecuteReader();
+
+        var indexes = new List<string>();
+        while (reader.Read())
+        {
+            indexes.Add(reader.GetString(0));
+        }
+
+        return indexes;
+    }
+
+    private static async Task SeedSqliteUserAndConnectionAsync(SqliteConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('11111111-1111-1111-1111-111111111111', 'GitHub Main', 'github', 'secret123', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+        await cmd.ExecuteNonQueryAsync();
     }
 }

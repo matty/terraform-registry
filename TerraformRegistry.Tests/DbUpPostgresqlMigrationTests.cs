@@ -4,6 +4,7 @@ using DotNet.Testcontainers.Builders;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using TerraformRegistry.Migrations;
+using TerraformRegistry.PostgreSQL;
 
 namespace TerraformRegistry.Tests;
 
@@ -300,6 +301,48 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration013_AddsVcsSourceSyncStateColumnsToExistingSources()
+    {
+        var connectionString = CreateFreshDatabase();
+        MigrateUpTo(11, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'GitHub Main', 'github', 'secret123', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
+            VALUES ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+        await cmd.ExecuteNonQueryAsync();
+
+        MigrateUpTo(13, connectionString);
+
+        var columns = GetColumns(conn, "vcs_sources");
+        foreach (var column in new[] { "tag_pattern", "last_published_version", "last_sync_status", "last_sync_at", "last_sync_error" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        Assert.Contains("idx_vcs_sources_module_lookup", GetIndexes(conn));
+
+        cmd.CommandText = @"
+            SELECT tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error
+            FROM vcs_sources
+            WHERE id = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'";
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("v*", reader.GetString(0));
+        Assert.True(await reader.IsDBNullAsync(1));
+        Assert.Equal("never", reader.GetString(2));
+        Assert.True(await reader.IsDBNullAsync(3));
+        Assert.True(await reader.IsDBNullAsync(4));
+    }
+
+    [Fact]
     public async Task Migration014_CreatesModuleExtractionsTable()
     {
         var connectionString = CreateFreshDatabase();
@@ -366,11 +409,67 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migrate_FreshPostgresDatabase_AppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
+    {
+        var connectionString = CreateFreshDatabase();
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
+        var migrator = new DbUpMigrator(logger);
+
+        migrator.Migrate("postgres", connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        Assert.Equal(
+            GetEmbeddedScriptNames(".Scripts.PostgreSQL."),
+            await GetPostgresJournalScriptNamesAsync(conn));
+
+        var columns = GetColumns(conn, "vcs_sources");
+        foreach (var column in new[] { "tag_pattern", "last_published_version", "last_sync_status", "last_sync_at", "last_sync_error" })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        Assert.Contains("idx_vcs_sources_module_lookup", GetIndexes(conn));
+
+        await SeedPostgresUserAndConnectionAsync(conn);
+
+        var connectionId = Guid.Parse("b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
+        var service = new PostgreSqlVcsSourceService(connectionString);
+        var created = await service.CreateVcsSourceAsync(
+            "user-1",
+            "hashicorp",
+            "consul",
+            "aws",
+            "hashicorp",
+            "terraform-aws-consul",
+            connectionId);
+
+        var persisted = await service.GetByModuleAsync("hashicorp", "consul", "aws");
+
+        Assert.NotNull(persisted);
+        Assert.Equal(created.Id, persisted.Id);
+        Assert.Equal("v*", persisted.TagPattern);
+        Assert.Equal("never", persisted.LastSyncStatus);
+        Assert.Null(persisted.LastPublishedVersion);
+        Assert.Null(persisted.LastSyncAt);
+        Assert.Null(persisted.LastSyncError);
+
+        var updated = await service.UpdateSyncStateAsync(created.Id, "succeeded", "1.2.3", null);
+
+        Assert.NotNull(updated);
+        Assert.Equal("succeeded", updated.LastSyncStatus);
+        Assert.Equal("1.2.3", updated.LastPublishedVersion);
+        Assert.NotNull(updated.LastSyncAt);
+        Assert.Null(updated.LastSyncError);
+    }
+
+    [Fact]
     public async Task FullMigration_DataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
 
-        MigrateUpTo(11, connectionString);
+        MigrateUpTo(13, connectionString);
 
         await using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
@@ -420,7 +519,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         // Insert a vcs source (with connection_id FK)
         cmd.CommandText = @"
             INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
-            VALUES (gen_random_uuid(), 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+            VALUES ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
         await cmd.ExecuteNonQueryAsync();
 
         // Insert a role (UUID, TEXT[] for permissions, BOOLEAN)
@@ -453,6 +552,16 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         cmd.CommandText = "SELECT COUNT(*) FROM module_downloads";
         var downloadCount = (long)(await cmd.ExecuteScalarAsync())!;
         Assert.Equal(2, downloadCount);
+
+        cmd.CommandText = @"
+            SELECT tag_pattern, last_sync_status
+            FROM vcs_sources
+            WHERE id = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'";
+        await using var syncStateReader = await cmd.ExecuteReaderAsync();
+
+        Assert.True(await syncStateReader.ReadAsync());
+        Assert.Equal("v*", syncStateReader.GetString(0));
+        Assert.Equal("never", syncStateReader.GetString(1));
     }
 
     [Fact]
@@ -638,5 +747,42 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
             indexes.Add(reader.GetString(0));
         }
         return indexes;
+    }
+
+    private static List<string> GetEmbeddedScriptNames(string providerFolder)
+    {
+        return typeof(DbUpMigrator).Assembly
+            .GetManifestResourceNames()
+            .Where(name => name.Contains(providerFolder, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static async Task<List<string>> GetPostgresJournalScriptNamesAsync(NpgsqlConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT scriptname FROM schemaversions";
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        var scriptNames = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            scriptNames.Add(reader.GetString(0));
+        }
+
+        return scriptNames
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static async Task SeedPostgresUserAndConnectionAsync(NpgsqlConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'GitHub Main', 'github', 'secret123', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+        await cmd.ExecuteNonQueryAsync();
     }
 }

@@ -237,6 +237,45 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration012_AddsVcsSourceSyncStateColumnsToExistingSources()
+    {
+        MigrateUpTo(10, _connectionString);
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('conn-1', 'GitHub Main', 'github', 'secret123', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
+            VALUES ('src-1', 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'conn-1', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+        cmd.ExecuteNonQuery();
+
+        MigrateUpTo(12, _connectionString);
+
+        var columns = GetColumns(_connection, "vcs_sources");
+        foreach (var col in new[] { "tag_pattern", "last_published_version", "last_sync_status", "last_sync_at", "last_sync_error" })
+        {
+            Assert.Contains(col, columns);
+        }
+
+        Assert.Contains("idx_vcs_sources_module_lookup", GetIndexes(_connection));
+
+        cmd.CommandText = @"
+            SELECT tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error
+            FROM vcs_sources
+            WHERE id = 'src-1'";
+        using var reader = cmd.ExecuteReader();
+
+        Assert.True(reader.Read());
+        Assert.Equal("v*", reader.GetString(0));
+        Assert.True(reader.IsDBNull(1));
+        Assert.Equal("never", reader.GetString(2));
+        Assert.True(reader.IsDBNull(3));
+        Assert.True(reader.IsDBNull(4));
+    }
+
+    [Fact]
     public void Migration013_AddsModuleMetadataAndCreatesModuleExtractionsTable()
     {
         MigrateUpTo(13, _connectionString);
@@ -293,7 +332,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     [Fact]
     public void FullMigration_DataOperationsSucceed()
     {
-        MigrateUpTo(10, _connectionString);
+        MigrateUpTo(15, _connectionString);
 
         using var cmd = _connection.CreateCommand();
 
@@ -369,6 +408,16 @@ public class DbUpIncrementalMigrationTests : IDisposable
         {
             Assert.True(count >= 1, $"Expected at least 1 row in {table}, got {count}");
         }
+
+        cmd.CommandText = @"
+            SELECT tag_pattern, last_sync_status
+            FROM vcs_sources
+            WHERE id = 'src-1'";
+        using var syncStateReader = cmd.ExecuteReader();
+
+        Assert.True(syncStateReader.Read());
+        Assert.Equal("v*", syncStateReader.GetString(0));
+        Assert.Equal("never", syncStateReader.GetString(1));
     }
 
     private static void MigrateUpTo(int scriptNumber, string connectionString)
