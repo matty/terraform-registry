@@ -800,20 +800,16 @@ public class S3ModuleService : ModuleService
         IReadOnlyList<string> objectKeys,
         string currentFilePath)
     {
-        foreach (var objectKey in objectKeys)
+        foreach (var objectKey in objectKeys.Where(objectKey =>
+                     !string.Equals(objectKey, currentFilePath, StringComparison.Ordinal)))
         {
-            if (!string.Equals(objectKey, currentFilePath, StringComparison.Ordinal))
-            {
-                yield return objectKey;
-            }
+            yield return objectKey;
         }
 
-        foreach (var objectKey in objectKeys)
+        foreach (var objectKey in objectKeys.Where(objectKey =>
+                     string.Equals(objectKey, currentFilePath, StringComparison.Ordinal)))
         {
-            if (string.Equals(objectKey, currentFilePath, StringComparison.Ordinal))
-            {
-                yield return objectKey;
-            }
+            yield return objectKey;
         }
     }
 

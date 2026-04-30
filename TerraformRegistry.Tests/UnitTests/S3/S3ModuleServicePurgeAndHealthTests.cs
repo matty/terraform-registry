@@ -54,7 +54,7 @@ public class S3ModuleServicePurgeAndHealthTests
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync(value: null);
 
         var service = CreateService();
 
@@ -565,7 +565,7 @@ public class S3ModuleServicePurgeAndHealthTests
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync(value: null);
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
             .ReturnsAsync(module);
@@ -616,7 +616,7 @@ public class S3ModuleServicePurgeAndHealthTests
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync(value: null);
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
             .ReturnsAsync(module);
@@ -664,7 +664,7 @@ public class S3ModuleServicePurgeAndHealthTests
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync(value: null);
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
             .ReturnsAsync(module);
@@ -705,7 +705,8 @@ public class S3ModuleServicePurgeAndHealthTests
 
         var result = await service.CheckStorageAsync();
 
-        Assert.Equal((true, (string?)null), result);
+        Assert.True(result.Healthy);
+        Assert.Null(result.Reason);
     }
 
     [Fact]

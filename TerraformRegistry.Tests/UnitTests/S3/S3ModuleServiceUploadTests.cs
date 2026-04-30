@@ -27,7 +27,7 @@ public class S3ModuleServiceUploadTests
 
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync(value: null);
     }
 
     private static IConfiguration CreateConfiguration()
