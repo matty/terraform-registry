@@ -31,6 +31,8 @@ public class AzureBlobModuleServiceConstructorTests
                 c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
                     It.IsAny<BlobContainerEncryptionScopeOptions>(), It.IsAny<CancellationToken>()))
             .Returns(Mock.Of<Response<BlobContainerInfo>>());
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+            .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
 
     private IConfiguration CreateConfiguration(Dictionary<string, string?>? azureStorageSettings)
@@ -180,5 +182,49 @@ public class AzureBlobModuleServiceConstructorTests
             It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to create or verify blob container")),
             testException,
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
+    [Fact]
+    public void Constructor_Synchronizes_Existing_Blobs_Into_Database()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            { "ContainerName", _containerName },
+            { "SasTokenExpiryMinutes", "5" }
+        };
+        var configuration = CreateConfiguration(settings);
+
+        var blobName = "acme/network-aws-1.10.0.zip";
+        var blobItem = BlobsModelFactory.BlobItem(blobName, false, null, null, null);
+        var page = Page<BlobItem>.FromValues([blobItem], null, Mock.Of<Response>());
+        var blobs = AsyncPageable<BlobItem>.FromPages([page]);
+
+        var mockBlobClient = new Mock<BlobClient>();
+        var properties = BlobsModelFactory.BlobProperties(lastModified: DateTimeOffset.UtcNow, metadata: new Dictionary<string, string>());
+        mockBlobClient.Setup(b => b.GetPropertiesAsync(null, default))
+            .ReturnsAsync(Response.FromValue(properties, Mock.Of<Response>()));
+
+        _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName))
+            .Returns(_mockBlobContainerClient.Object);
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+            .Returns(blobs);
+        _mockBlobContainerClient.Setup(c => c.GetBlobClient(blobName))
+            .Returns(mockBlobClient.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("acme", "network", "aws", "1.10.0"))
+            .ReturnsAsync(null);
+        _mockDatabaseService.Setup(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()))
+            .ReturnsAsync(true);
+
+        var service = new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
+            _mockBlobServiceClient.Object);
+
+        Assert.NotNull(service);
+        _mockDatabaseService.Verify(db => db.AddModuleAsync(It.Is<TerraformRegistry.Models.ModuleStorage>(m =>
+            m.Namespace == "acme" &&
+            m.Name == "network" &&
+            m.Provider == "aws" &&
+            m.Version == "1.10.0" &&
+            m.FilePath == blobName
+        )), Times.Once);
     }
 }
