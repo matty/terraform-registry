@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
@@ -230,7 +231,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Version = reader.GetString(3),
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
-            PublishedAt = DateTime.Parse(reader.GetString(6)),
+            PublishedAt = ParseStoredDateTime(reader.GetString(6)),
             Dependencies = deps,
             Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
@@ -302,6 +303,175 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         {
             _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from SQLite",
                 module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage module)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = $ns
+              AND name = $name
+              AND provider = $prov
+              AND version = $ver
+              AND description = $desc
+              AND storage_path = $path
+              AND published_at = $published
+              AND dependencies = $deps
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", module.Namespace);
+            cmd.Parameters.AddWithValue("$name", module.Name);
+            cmd.Parameters.AddWithValue("$prov", module.Provider);
+            cmd.Parameters.AddWithValue("$ver", module.Version);
+            cmd.Parameters.AddWithValue("$desc", module.Description);
+            cmd.Parameters.AddWithValue("$path", module.FilePath);
+            cmd.Parameters.AddWithValue("$published", module.PublishedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$deps",
+                module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies));
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from SQLite",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    public async Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version)
+    {
+        var sql = @"
+            DELETE FROM modules
+            WHERE namespace = $ns
+              AND name = $name
+              AND provider = $prov
+              AND version = $ver
+              AND deleted_at IS NOT NULL";
+
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", @namespace);
+            cmd.Parameters.AddWithValue("$name", name);
+            cmd.Parameters.AddWithValue("$prov", provider);
+            cmd.Parameters.AddWithValue("$ver", version);
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error removing deleted module row {Namespace}/{Name}/{Provider}/{Version} from SQLite",
+                @namespace, name, provider, version);
+            return false;
+        }
+    }
+
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage module)
+    {
+        var sql = @"
+            INSERT INTO modules (
+                namespace, name, provider, version, description, storage_path, published_at, dependencies, deleted_at
+            ) VALUES (
+                $ns, $name, $prov, $ver, $desc, $path, $published, $deps, $deletedAt
+            )";
+
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", module.Namespace);
+            cmd.Parameters.AddWithValue("$name", module.Name);
+            cmd.Parameters.AddWithValue("$prov", module.Provider);
+            cmd.Parameters.AddWithValue("$ver", module.Version);
+            cmd.Parameters.AddWithValue("$desc", module.Description);
+            cmd.Parameters.AddWithValue("$path", module.FilePath);
+            cmd.Parameters.AddWithValue("$published", module.PublishedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$deps",
+                module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies));
+            cmd.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o"));
+
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
+        {
+            _logger.LogInformation("Deleted module {Namespace}/{Name}/{Provider}/{Version} already exists in SQLite",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error adding deleted module row {Namespace}/{Name}/{Provider}/{Version} to SQLite",
+                module.Namespace, module.Name, module.Provider, module.Version);
+            return false;
+        }
+    }
+
+    public async Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule)
+    {
+        var sql = @"
+            UPDATE modules
+            SET description = $newDesc,
+                storage_path = $newPath,
+                published_at = $newPublished,
+                dependencies = $newDeps
+            WHERE namespace = $ns
+              AND name = $name
+              AND provider = $prov
+              AND version = $ver
+              AND description = $desc
+              AND storage_path = $path
+              AND published_at = $published
+              AND dependencies = $deps
+              AND deleted_at IS NULL";
+
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Parameters.AddWithValue("$ns", existingModule.Namespace);
+            cmd.Parameters.AddWithValue("$name", existingModule.Name);
+            cmd.Parameters.AddWithValue("$prov", existingModule.Provider);
+            cmd.Parameters.AddWithValue("$ver", existingModule.Version);
+            cmd.Parameters.AddWithValue("$desc", existingModule.Description);
+            cmd.Parameters.AddWithValue("$path", existingModule.FilePath);
+            cmd.Parameters.AddWithValue("$published", existingModule.PublishedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$deps",
+                existingModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(existingModule.Dependencies));
+            cmd.Parameters.AddWithValue("$newDesc", newModule.Description);
+            cmd.Parameters.AddWithValue("$newPath", newModule.FilePath);
+            cmd.Parameters.AddWithValue("$newPublished", newModule.PublishedAt.ToString("o"));
+            cmd.Parameters.AddWithValue("$newDeps",
+                newModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(newModule.Dependencies));
+
+            var rows = await cmd.ExecuteNonQueryAsync();
+            return rows > 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error replacing exact module row {Namespace}/{Name}/{Provider}/{Version} in SQLite",
+                existingModule.Namespace, existingModule.Name, existingModule.Provider, existingModule.Version);
             return false;
         }
     }
@@ -459,7 +629,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Version = reader.GetString(3),
             Description = reader.GetString(4),
             FilePath = reader.GetString(5),
-            PublishedAt = DateTime.Parse(reader.GetString(6)),
+            PublishedAt = ParseStoredDateTime(reader.GetString(6)),
             Dependencies = deps,
             Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
@@ -925,10 +1095,15 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
             Version = reader.GetString(3),
             Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
             FilePath = reader.GetString(5),
-            PublishedAt = DateTime.Parse(reader.GetString(6)),
+            PublishedAt = ParseStoredDateTime(reader.GetString(6)),
             Dependencies = deps,
             Metadata = DeserializeModuleMetadata(reader.GetString(8))
         };
+    }
+
+    private static DateTime ParseStoredDateTime(string value)
+    {
+        return DateTime.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 
     private sealed class ModuleRow

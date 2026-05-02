@@ -14,6 +14,7 @@ COPY TerraformRegistry.AzureBlob/TerraformRegistry.AzureBlob.csproj TerraformReg
 COPY TerraformRegistry.Models/TerraformRegistry.Models.csproj TerraformRegistry.Models/
 COPY TerraformRegistry.Migrations/TerraformRegistry.Migrations.csproj TerraformRegistry.Migrations/
 COPY TerraformRegistry.PostgreSQL/TerraformRegistry.PostgreSQL.csproj TerraformRegistry.PostgreSQL/
+COPY TerraformRegistry.S3/TerraformRegistry.S3.csproj TerraformRegistry.S3/
 COPY TerraformRegistry.Tests/TerraformRegistry.Tests.csproj TerraformRegistry.Tests/
 
 # Restore using the solution file

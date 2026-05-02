@@ -38,6 +38,26 @@ public interface IDatabaseService
     Task<bool> RemoveModuleAsync(ModuleStorage module);
 
     /// <summary>
+    ///     Removes a module row only when its stored metadata matches the provided module
+    /// </summary>
+    Task<bool> RemoveModuleExactAsync(ModuleStorage module);
+
+    /// <summary>
+    ///     Removes a module row only when it is currently soft-deleted
+    /// </summary>
+    Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
+    ///     Adds a module row directly in the soft-deleted state
+    /// </summary>
+    Task<bool> AddDeletedModuleAsync(ModuleStorage module);
+
+    /// <summary>
+    ///     Replaces a module row only when its stored metadata matches the expected current module
+    /// </summary>
+    Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule);
+
+    /// <summary>
     ///     Soft deletes a module by setting deleted_at timestamp
     /// </summary>
     Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version);

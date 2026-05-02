@@ -96,4 +96,5 @@ public class SecurityStartupTests
             Directory.Delete(tempDir, recursive: true);
         }
     }
+
 }
