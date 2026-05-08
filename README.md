@@ -15,13 +15,13 @@ A lightweight, feature-rich private Terraform module registry implementation.
 - Manual portal upload for users with `modules.upload`
 - GitHub-linked module publishing, tag backfill, and webhook sync for users with `vcs.manage`
 - Async module documentation extraction from uploaded packages
-- Local filesystem and Azure Blob Storage support
+- Local filesystem, Azure Blob Storage, and S3-compatible storage for modules and provider artifacts
 - PostgreSQL database
 - Docker-ready deployment
 
 ## Current Scope
 
-This project is focused on private Terraform **modules**. It does not currently implement the Terraform provider registry protocol (`providers.v1`), provider package distribution, provider checksums, or signing-key endpoints. Provider registry support is a separate roadmap item.
+This project supports private Terraform **modules** and Terraform **providers**. Service discovery advertises `modules.v1`, `providers.v1`, and Terraform CLI `login.v1`.
 
 Module publishing is supported through:
 
@@ -29,6 +29,8 @@ Module publishing is supported through:
 - manual upload in the web UI for users with `modules.upload`
 - GitHub repository linking and tag backfill for users with `vcs.manage`
 - GitHub webhook auto-publish for linked repositories
+
+Provider publishing is supported through authenticated management endpoints for provider metadata, GPG keys, checksums, signatures, and platform packages. Terraform CLI provider installs use the standard `providers.v1` protocol.
 
 ## Quick Start
 
@@ -38,6 +40,7 @@ Module publishing is supported through:
 # Run with local storage
 docker run -p 5131:80 \
   -v ./modules:/app/modules \
+  -v ./providers:/app/providers \
   -e TF_REG_PORT=80 \
   -e TF_REG_BASEURL=http://localhost:5131 \
   -e TF_REG_AUTHORIZATIONTOKEN=your-secure-token \
@@ -72,6 +75,13 @@ Visit `http://localhost:5131` to access the web interface!
 - `GET /api/vcs/sources/module/{namespace}/{name}/{provider}` - Get linked VCS source for a module (auth required)
 - `POST /api/vcs/sources/{id}/sync` - Manually sync a linked GitHub source (auth required)
 
+### Provider Operations
+
+- `GET /v1/providers/{namespace}/{type}/versions` - Get installable provider versions
+- `GET /v1/providers/{namespace}/{type}/{version}/download/{os}/{arch}` - Get provider package metadata and signed artifact URLs
+- `GET /api/providers` - Manage provider records (auth required)
+- `POST /api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}/package` - Upload provider platform packages (auth required)
+
 ### Documentation
 
 - `GET /swagger` - Interactive API documentation (when enabled)
@@ -98,8 +108,10 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_DATABASERETRY__INITIALDELAYSECONDS`              | Initial delay before first retry (exponential backoff) | `2`                                                           | No                  | `5`                                                                   |
 | `TF_REG_DATABASERETRY__MAXDELAYSECONDS`                  | Maximum delay between retries                       | `30`                                                             | No                  | `60`                                                                  |
 | **Storage Settings**                                     |                                                     |                                                                  |                     |
-| `TF_REG_STORAGEPROVIDER`                                 | Storage type (`local`/`azure`)                      | `local`                                                          | No                  | `azure`                                                               |
+| `TF_REG_STORAGEPROVIDER`                                 | Storage type (`local`/`azure`/`s3`)                 | `local`                                                          | No                  | `s3`                                                                  |
 | `TF_REG_MODULESTORAGEPATH`                               | Local storage path                                  | `modules`                                                        | If using local      | `/data/modules`                                                       |
+| `TF_REG_PROVIDERSTORAGEPATH`                             | Local provider artifact storage path                | `providers`                                                      | If using local      | `/data/providers`                                                     |
+| `TF_REG_PROVIDERARTIFACTURLEXPIRYMINUTES`                | Local provider artifact download token expiry       | `10`                                                             | No                  | `15`                                                                  |
 | **Module Documentation Extraction**                      |                                                     |                                                                  |                     |                                                                       |
 | `TF_REG_MODULEEXTRACTION__ENABLED`                       | Extract module inputs, outputs, providers, examples, and README metadata after publish | `true`                                                           | No                  | `false`                                                              |
 | `TF_REG_MODULEEXTRACTION__TOOLPATH`                      | Path to `terraform-config-inspect`                  | `terraform-config-inspect`                                       | If enabled          | `/usr/local/bin/terraform-config-inspect`                             |
@@ -111,6 +123,15 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_AZURESTORAGE__ACCOUNTNAME`                       | Storage account name                                | -                                                                | If using Azure      | `mystorageaccount`                                                    |
 | `TF_REG_AZURESTORAGE__CONTAINERNAME`                     | Blob container name                                 | `modules`                                                        | If using Azure      | `terraform-modules`                                                   |
 | `TF_REG_AZURESTORAGE__SASTOKENEXPIRYMINUTES`             | SAS token expiry                                    | `5`                                                              | No                  | `10`                                                                  |
+| **S3 Storage Settings**                                  |                                                     |                                                                  |                     |
+| `TF_REG_S3__BUCKETNAME`                                  | S3 bucket name                                      | -                                                                | If using S3         | `terraform-registry-artifacts`                                        |
+| `TF_REG_S3__REGION`                                      | S3 region                                           | -                                                                | If using S3         | `eu-west-2`                                                           |
+| `TF_REG_S3__SERVICEURL`                                  | S3-compatible endpoint URL                          | -                                                                | S3-compatible stores | `https://s3.example.com`                                             |
+| `TF_REG_S3__FORCEPATHSTYLE`                              | Use path-style bucket addressing                    | `false`                                                          | S3-compatible stores | `true`                                                              |
+| `TF_REG_S3__ACCESSKEYID`                                 | Explicit S3 access key                              | AWS SDK default credentials                                      | No                  | `AKIA...`                                                             |
+| `TF_REG_S3__SECRETACCESSKEY`                             | Explicit S3 secret key                              | AWS SDK default credentials                                      | No                  | `...`                                                                 |
+| `TF_REG_S3__SESSIONTOKEN`                                | Explicit S3 session token                           | AWS SDK default credentials                                      | No                  | `...`                                                                 |
+| `TF_REG_S3__PRESIGNEDURLEXPIRYMINUTES`                   | S3 pre-signed download URL expiry                   | `5`                                                              | No                  | `10`                                                                  |
 | **OIDC Authentication Settings**                         |                                                     |                                                                  |                     |
 | `TF_REG_OIDC__JWTSECRETKEY`                              | JWT signing key for portal sessions (min 32 chars)  | -                                                                | Yes                 | `<unique-generated-secret-32-chars-min>`                              |
 | `TF_REG_OIDC__JWTEXPIRYHOURS`                            | JWT token expiration time (hours)                   | `24`                                                             | No                  | `48`                                                                  |
@@ -135,6 +156,8 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_DEVAUTHBYPASS__EMAIL`                            | Dev user email when bypassing auth                  | `dev@localhost`                                                  | No                  |                                                                       |
 | `TF_REG_DEVAUTHBYPASS__NAME`                             | Dev user display name when bypassing auth           | `Dev User`                                                       | No                  |                                                                       |
 
+For Azure Blob Storage and S3-compatible storage, one configured container or bucket stores both module archives and provider artifacts. Provider artifact objects are stored under a `providers/` prefix; the registry stores relative artifact paths in the database. Local storage keeps modules and provider artifacts in separate roots through `ModuleStoragePath` and `ProviderStoragePath`.
+
 ## Security Notes
 
 - `AuthorizationToken` / `TF_REG_AUTHORIZATIONTOKEN` must be set to a unique secret outside `Development` and `Test`.
@@ -152,6 +175,7 @@ TF_REG_DATABASEPROVIDER=sqlite
 TF_REG_SQLITE__CONNECTIONSTRING="Data Source=terraform.db"
 TF_REG_STORAGEPROVIDER=local
 TF_REG_MODULESTORAGEPATH=./modules
+TF_REG_PROVIDERSTORAGEPATH=./providers
 ```
 
 #### Production (PostgreSQL + Local)
@@ -162,6 +186,7 @@ TF_REG_DATABASEPROVIDER=postgres
 TF_REG_POSTGRESQL__CONNECTIONSTRING=Host=db;Database=registry;...
 TF_REG_STORAGEPROVIDER=local
 TF_REG_MODULESTORAGEPATH=/data/modules
+TF_REG_PROVIDERSTORAGEPATH=/data/providers
 ```
 
 #### Cloud (PostgreSQL + Azure)
@@ -174,6 +199,17 @@ TF_REG_STORAGEPROVIDER=azure
 TF_REG_AZURESTORAGE__CONNECTIONSTRING=DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net
 TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount
 TF_REG_AZURESTORAGE__CONTAINERNAME=modules
+```
+
+#### Cloud (PostgreSQL + S3)
+
+```bash
+# PostgreSQL database + S3 storage for modules and provider artifacts
+TF_REG_DATABASEPROVIDER=postgres
+TF_REG_POSTGRESQL__CONNECTIONSTRING=Host=db.example.com;Database=registry;...
+TF_REG_STORAGEPROVIDER=s3
+TF_REG_S3__BUCKETNAME=terraform-registry-artifacts
+TF_REG_S3__REGION=eu-west-2
 ```
 
 ### Module Documentation Extraction
@@ -275,6 +311,7 @@ Manual credentials fallback:
 host "registry.company.com" {
   services = {
     "modules.v1" = "/v1/modules/"
+    "providers.v1" = "/v1/providers/"
   }
 
   credentials {
@@ -330,6 +367,10 @@ curl https://registry.company.com/v1/modules
 
 # Check specific module
 curl https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3
+
+# Check readiness details with component storage checks
+curl -H "Authorization: Bearer your-auth-token" \
+  "https://registry.company.com/ready?detail=true"
 ```
 
 ## Development
@@ -338,7 +379,7 @@ curl https://registry.company.com/v1/modules/myorg/vpc/aws/1.2.3
 
 - .NET 10 SDK
 - PostgreSQL (optional, for database testing)
-- Azure Storage Emulator (optional, for Azure testing)
+- Azure Storage Emulator or S3-compatible storage (optional, for cloud storage testing)
 
 ### Run Locally
 
