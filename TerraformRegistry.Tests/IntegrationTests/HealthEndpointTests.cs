@@ -28,6 +28,7 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
         Assert.Contains("ready", body);
         Assert.DoesNotContain("database", body);
         Assert.DoesNotContain("storage", body);
+        Assert.DoesNotContain("providerArtifactStorage", body);
     }
 
     [Fact]
@@ -42,6 +43,7 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("database", body);
         Assert.Contains("storage", body);
+        Assert.Contains("providerArtifactStorage", body);
     }
 
     [Fact]
@@ -53,5 +55,6 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
         var body = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("database", body);
         Assert.DoesNotContain("storage", body);
+        Assert.DoesNotContain("providerArtifactStorage", body);
     }
 }

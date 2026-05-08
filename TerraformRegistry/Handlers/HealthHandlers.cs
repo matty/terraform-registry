@@ -16,16 +16,19 @@ public static class HealthHandlers
     public static async Task<IResult> HandleReady(
         IDatabaseService dbService,
         IModuleService moduleService,
+        IProviderArtifactStorage providerArtifactStorage,
         HttpContext context,
         IConfiguration configuration)
     {
         var dbTask = dbService.CheckConnectionAsync();
         var storageTask = moduleService.CheckStorageAsync();
-        await Task.WhenAll(dbTask, storageTask);
+        var providerStorageTask = providerArtifactStorage.CheckStorageAsync(context.RequestAborted);
+        await Task.WhenAll(dbTask, storageTask, providerStorageTask);
 
         var dbHealthy = await dbTask;
         var (storageHealthy, storageReason) = await storageTask;
-        var isReady = dbHealthy && storageHealthy;
+        var (providerStorageHealthy, providerStorageReason) = await providerStorageTask;
+        var isReady = dbHealthy && storageHealthy && providerStorageHealthy;
 
         var wantDetail = string.Equals(
             context.Request.Query["detail"].FirstOrDefault(),
@@ -49,6 +52,11 @@ public static class HealthHandlers
                     {
                         status = storageHealthy ? "healthy" : "unhealthy",
                         reason = storageReason
+                    },
+                    providerArtifactStorage = new
+                    {
+                        status = providerStorageHealthy ? "healthy" : "unhealthy",
+                        reason = providerStorageReason
                     }
                 }
             };

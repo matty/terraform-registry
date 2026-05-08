@@ -30,6 +30,7 @@ builder.Services.Configure<ModuleExtractionOptions>(builder.Configuration.GetSec
 builder.Services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
 builder.Services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
 builder.Services.AddSingleton<WebhookPinnedConnectionHelper>();
+builder.Services.AddSingleton<IS3ClientFactory, S3ClientFactory>();
 
 // Register DbUpMigrator and IInitializableDb for database initialization
 builder.Services.AddSingleton<DbUpMigrator>();
@@ -96,7 +97,9 @@ builder.Services.AddSingleton<IModuleService>(provider =>
                 provider.GetRequiredService<ILogger<AzureBlobModuleService>>());
         case "s3":
             return new S3ModuleService(config, db,
-                provider.GetRequiredService<ILogger<S3ModuleService>>());
+                provider.GetRequiredService<ILogger<S3ModuleService>>(),
+                null,
+                provider.GetRequiredService<IS3ClientFactory>());
         case "local":
             var storagePath = config["ModuleStoragePath"];
             if (string.IsNullOrEmpty(storagePath))
@@ -124,6 +127,11 @@ builder.Services.AddSingleton<IProviderArtifactStorage>(provider =>
         "azure" => new AzureBlobProviderArtifactStorage(
             config,
             provider.GetRequiredService<ILogger<AzureBlobProviderArtifactStorage>>()),
+        "s3" => new S3ProviderArtifactStorage(
+            config,
+            provider.GetRequiredService<ILogger<S3ProviderArtifactStorage>>(),
+            null,
+            provider.GetRequiredService<IS3ClientFactory>()),
         "local" => new LocalProviderArtifactStorage(
             config["ProviderStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "providers"),
             TimeSpan.FromMinutes(expiryMinutes),
@@ -483,8 +491,8 @@ app.MapGet("/health", HealthHandlers.HandleHealth)
     .WithDescription("Liveness probe")
     .Produces(200);
 
-app.MapGet("/ready", (IDatabaseService dbService, IModuleService moduleService, HttpContext context, IConfiguration config) =>
-        HealthHandlers.HandleReady(dbService, moduleService, context, config))
+app.MapGet("/ready", (IDatabaseService dbService, IModuleService moduleService, IProviderArtifactStorage providerArtifactStorage, HttpContext context, IConfiguration config) =>
+        HealthHandlers.HandleReady(dbService, moduleService, providerArtifactStorage, context, config))
     .WithTags("Health")
     .WithDescription("Readiness probe — use ?detail=true with auth for component details")
     .Produces(200)
