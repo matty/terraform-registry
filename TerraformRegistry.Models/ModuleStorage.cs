@@ -14,4 +14,5 @@ public class ModuleStorage
     public required string FilePath { get; set; }
     public DateTime PublishedAt { get; set; } = DateTime.UtcNow;
     public required List<string> Dependencies { get; set; }
+    public ModuleArtifactMetadata Metadata { get; set; } = new();
 }

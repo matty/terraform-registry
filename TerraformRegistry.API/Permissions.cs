@@ -25,6 +25,9 @@ public static class Permissions
     public const string ApiKeysManage = "api_keys.manage";
     public const string ApiKeysShared = "api_keys.shared";
     public const string AnalyticsView = "analytics.view";
+    public const string ModuleDocsRead = "module_docs.read";
+    public const string ModuleDocsManage = "module_docs.manage";
+    public const string ModuleDocsConfigure = "module_docs.configure";
     public const string AdminRoles = "admin.roles";
     public const string AdminUsers = "admin.users";
     public const string AdminAudit = "admin.audit";
@@ -37,6 +40,7 @@ public static class Permissions
         ProvidersKeysManage, ProvidersDescription,
         WebhooksManage, VcsManage,
         ApiKeysManage, ApiKeysShared, AnalyticsView,
+        ModuleDocsRead, ModuleDocsManage, ModuleDocsConfigure,
         AdminRoles, AdminUsers, AdminAudit
     ];
 

@@ -26,6 +26,7 @@ builder.Configuration
 // Register database retry options
 builder.Services.Configure<DatabaseRetryOptions>(builder.Configuration.GetSection("DatabaseRetry"));
 builder.Services.Configure<WebhookSecurityOptions>(builder.Configuration.GetSection("WebhookSecurity"));
+builder.Services.Configure<ModuleExtractionOptions>(builder.Configuration.GetSection("ModuleExtraction"));
 builder.Services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
 builder.Services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
 builder.Services.AddSingleton<WebhookPinnedConnectionHelper>();
@@ -65,6 +66,20 @@ builder.Services.AddSingleton<IDatabaseService>(provider =>
         default:
             throw new Exception($"Invalid database provider specified: '{databaseProvider}'. Check configuration.");
     }
+});
+
+builder.Services.AddSingleton<IRuntimeSettingsService>(provider =>
+{
+    var config = provider.GetRequiredService<IConfiguration>();
+    var databaseProvider = config["DatabaseProvider"]?.ToLower() ?? "sqlite";
+    return databaseProvider switch
+    {
+        "postgres" => new PostgreSqlRuntimeSettingsService(
+            config["PostgreSQL:ConnectionString"]
+            ?? throw new InvalidOperationException("PostgreSQL connection string is missing for runtime settings service.")),
+        "sqlite" => new SqliteRuntimeSettingsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+        _ => throw new Exception($"Invalid database provider: '{databaseProvider}'")
+    };
 });
 
 // Register module storage service using DI factory
@@ -231,7 +246,16 @@ builder.Services.AddSingleton<IVcsConnectionService>(provider =>
     };
 });
 
-builder.Services.AddSingleton<IModuleExtractionService, NoOpModuleExtractionService>();
+builder.Services.AddSingleton<IArchiveWorkspaceFactory, ArchiveWorkspaceFactory>();
+builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+builder.Services.AddSingleton<ReadmeDiscoveryService>();
+builder.Services.AddSingleton<ExampleDiscoveryService>();
+builder.Services.AddSingleton<SubmoduleDiscoveryService>();
+builder.Services.AddSingleton<ITerraformModuleInspector, TerraformConfigInspectRunner>();
+builder.Services.AddSingleton<IModuleLlmContextGenerator, ModuleLlmContextGenerator>();
+builder.Services.AddSingleton<IModuleExtractionConfigService, ModuleExtractionConfigService>();
+builder.Services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
+builder.Services.AddHostedService<ModuleExtractionHostedService>();
 builder.Services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 builder.Services.AddSingleton<GitHubVcsService>();
 builder.Services.AddSingleton<IGitHubVcsService>(provider => provider.GetRequiredService<GitHubVcsService>());
@@ -598,6 +622,48 @@ app.MapGet("/api/admin/users/{userId}/roles", (string userId, IPermissionService
 app.MapPost("/api/admin/users/{userId}/roles", (string userId, IPermissionService permService, IAuditService auditService, HttpContext context, HttpRequest request) => AdminHandlers.AssignUserRole(userId, permService, auditService, context, request)).WithTags("Admin");
 app.MapDelete("/api/admin/users/{userId}/roles/{roleId}", (string userId, Guid roleId, IPermissionService permService, IRoleService roleService, IAuditService auditService, HttpContext context) => AdminHandlers.RemoveUserRole(userId, roleId, permService, roleService, auditService, context)).WithTags("Admin");
 
+// Admin - Module Docs
+app.MapGet("/api/admin/module-docs/summary",
+        (IDatabaseService dbService, IModuleExtractionConfigService configService, HttpContext context) =>
+            ModuleDocsHandlers.GetSummary(dbService, configService, context))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/modules",
+        (IDatabaseService dbService, HttpContext context, string? status, string? q, int limit = 50, int offset = 0) =>
+            ModuleDocsHandlers.ListModules(dbService, context, status, q, limit, offset))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IDatabaseService dbService, HttpContext context) =>
+            ModuleDocsHandlers.GetModuleDetail(@namespace, name, provider, version, dbService, context))
+    .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}/regenerate-llm",
+        (string @namespace, string name, string provider, string version, IModuleExtractionService extractionService,
+                IDatabaseService dbService, IAuditService auditService, IModuleExtractionConfigService configService,
+                HttpContext context) =>
+            ModuleDocsHandlers.RegenerateLlmContext(@namespace, name, provider, version, extractionService, dbService,
+                auditService, configService, context))
+    .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/modules/{namespace}/{name}/{provider}/{version}/requeue",
+        (string @namespace, string name, string provider, string version, IModuleExtractionService extractionService,
+                IDatabaseService dbService, IAuditService auditService, IModuleExtractionConfigService configService,
+                HttpContext context) =>
+            ModuleDocsHandlers.Requeue(@namespace, name, provider, version, extractionService, dbService, auditService,
+                configService, context))
+    .WithTags("Module Docs");
+app.MapPost("/api/admin/module-docs/backfill",
+        (IModuleExtractionService extractionService, IModuleExtractionConfigService configService,
+                IAuditService auditService, HttpContext context, HttpRequest request) =>
+            ModuleDocsHandlers.Backfill(extractionService, configService, auditService, context, request))
+    .WithTags("Module Docs");
+app.MapGet("/api/admin/module-docs/config",
+        (IModuleExtractionConfigService configService, HttpContext context) =>
+            ModuleDocsHandlers.GetConfig(configService, context))
+    .WithTags("Module Docs");
+app.MapPut("/api/admin/module-docs/config",
+        (IModuleExtractionConfigService configService, IAuditService auditService, HttpContext context,
+                HttpRequest request) =>
+            ModuleDocsHandlers.UpdateConfig(configService, auditService, context, request))
+    .WithTags("Module Docs");
+
 // VCS source CRUD endpoints (auth handled by middleware via /api/vcs/sources prefix)
 app.MapGet("/api/vcs/sources", (IVcsSourceService vcsService, HttpContext context) =>
         VcsHandlers.ListVcsSources(vcsService, context))
@@ -672,6 +738,35 @@ app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",
     .WithTags("Modules")
     .WithDescription("Gets all versions of a specific module")
     .Produces<ModuleVersions>();
+
+app.MapGet("/llm.txt", (IConfiguration configuration) => LlmHandlers.GetGuide(configuration))
+    .WithTags("LLM")
+    .WithDescription("Provides LLM discovery guidance");
+
+app.MapGet("/v1/llm/modules",
+        (IModuleService moduleService, IConfiguration configuration, HttpContext context, string? q, int offset = 0,
+                int limit = 50) =>
+            LlmHandlers.ListModules(moduleService, configuration, context, q, offset, limit))
+    .WithTags("LLM")
+    .WithDescription("Lists modules for authenticated LLM discovery")
+    .Produces<ModuleLlmIndexResponse>();
+
+app.MapGet("/v1/llm/modules/{namespace}/{name}/{provider}",
+        (string @namespace, string name, string provider, IModuleService moduleService, IDatabaseService dbService,
+                IConfiguration configuration, HttpContext context) =>
+            LlmHandlers.GetModuleVersions(@namespace, name, provider, moduleService, dbService, configuration, context))
+    .WithTags("LLM")
+    .WithDescription("Lists module versions and LLM readiness for authenticated clients")
+    .Produces<ModuleLlmModuleVersionsResponse>();
+
+app.MapGet("/v1/llm/modules/{namespace}/{name}/{provider}/{version}",
+        (string @namespace, string name, string provider, string version, IDatabaseService dbService,
+                HttpContext context) =>
+            LlmHandlers.GetModuleContext(@namespace, name, provider, version, dbService, context))
+    .WithTags("LLM")
+    .WithDescription("Returns the stored LLM context for a module version")
+    .Produces<ModuleLlmContextDocument>()
+    .ProducesProblem(409);
 
 app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download", (string @namespace, string name,
             string provider, string version, IModuleService moduleService, IDatabaseService dbService, HttpContext context) =>

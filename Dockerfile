@@ -1,3 +1,7 @@
+FROM golang:1.25-alpine AS terraform-config-inspect
+ARG TERRAFORM_CONFIG_INSPECT_VERSION=latest
+RUN GOBIN=/out go install github.com/hashicorp/terraform-config-inspect@${TERRAFORM_CONFIG_INSPECT_VERSION}
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /app
 
@@ -27,9 +31,11 @@ RUN dotnet publish TerraformRegistry.csproj -c Release -o /app/publish /p:UseApp
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 WORKDIR /app
+ENV TF_REG_Sqlite__ConnectionString="Data Source=/data/terraform.db"
 COPY --from=publish /app/publish .
-# Create modules directory
-RUN mkdir -p /app/modules
+COPY --from=terraform-config-inspect /out/terraform-config-inspect /usr/local/bin/terraform-config-inspect
+RUN mkdir -p /app/modules /data && chown app:app /app/modules /data
 # Create web directory and copy static files
 COPY TerraformRegistry/web /app/web
+USER app
 ENTRYPOINT ["dotnet", "TerraformRegistry.dll"]

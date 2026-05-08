@@ -31,6 +31,11 @@ public class ModulePublishCoordinatorTests
             .ReturnsAsync(true);
 
         var extraction = new Mock<IModuleExtractionService>();
+        extraction
+            .Setup(x => x.QueueAsync(
+                new ModuleExtractionRequest("acme", "network", "aws", "1.2.3"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         var audit = new Mock<IAuditService>();
         var webhookService = new Mock<IWebhookService>();
         webhookService
@@ -75,7 +80,9 @@ public class ModulePublishCoordinatorTests
         }, CancellationToken.None);
 
         Assert.True(published);
-        extraction.Verify(x => x.Queue(new ModuleExtractionRequest("acme", "network", "aws", "1.2.3")), Times.Once);
+        extraction.Verify(x => x.QueueAsync(
+            new ModuleExtractionRequest("acme", "network", "aws", "1.2.3"),
+            It.IsAny<CancellationToken>()), Times.Once);
         audit.Verify(x => x.LogAsync(
             "user-123",
             "module.published",

@@ -34,4 +34,6 @@ public class Module
     [JsonPropertyName("providers")] public required Dictionary<string, string> Providers { get; set; }
 
     [JsonPropertyName("download_url")] public string? DownloadUrl { get; set; }
+
+    [JsonPropertyName("metadata")] public ModuleArtifactMetadata? Metadata { get; set; }
 }

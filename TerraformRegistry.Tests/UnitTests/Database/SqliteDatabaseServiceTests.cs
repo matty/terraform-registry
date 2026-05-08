@@ -191,6 +191,82 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpsertModuleExtraction_PersistsDocumentAndUpdatesMetadata()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var module = MakeModule(version: "6.0.0");
+        await svc.AddModuleAsync(module);
+
+        var document = new ModuleExtractionDocument
+        {
+            Readme = new ModuleReadmeDocument
+            {
+                Path = "README.md",
+                Title = "Network Module",
+                Markdown = "# Network Module"
+            },
+            Inputs = [new ModuleInputDefinition { Name = "name", Required = true, Type = "string" }],
+            Outputs = [new ModuleOutputDefinition { Name = "vpc_id" }],
+            Examples = [new ModuleExampleDefinition { Name = "basic", Path = "examples/basic" }]
+        };
+
+        await svc.UpsertModuleExtractionAsync("hashicorp", "vpc", "aws", "6.0.0", document);
+        await svc.UpdateModuleMetadataAsync("hashicorp", "vpc", "aws", "6.0.0", metadata =>
+        {
+            metadata.Documentation = new ModuleDocumentationSummary
+            {
+                PrimaryReadmePath = "README.md",
+                InputCount = 1,
+                OutputCount = 1,
+                ExampleCount = 1
+            };
+            metadata.Extraction = new ModuleExtractionState { Status = "succeeded" };
+        });
+
+        var stored = await svc.GetModuleExtractionAsync("hashicorp", "vpc", "aws", "6.0.0");
+        var moduleDetail = await svc.GetModuleAsync("hashicorp", "vpc", "aws", "6.0.0");
+
+        Assert.NotNull(stored);
+        Assert.Equal("README.md", stored!.Readme!.Path);
+        Assert.NotNull(moduleDetail);
+        Assert.Equal("succeeded", moduleDetail!.Metadata!.Extraction.Status);
+        Assert.Equal(1, moduleDetail.Metadata.Documentation!.ExampleCount);
+    }
+
+    [Fact]
+    public async Task UpsertModuleLlmContext_PersistsStoredArtifact()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var module = MakeModule(version: "7.0.0");
+        await svc.AddModuleAsync(module);
+
+        var document = new ModuleLlmContextDocument
+        {
+            Module = new ModuleLlmModuleReference
+            {
+                Namespace = "hashicorp",
+                Name = "vpc",
+                Provider = "aws",
+                Version = "7.0.0"
+            },
+            Summary = new ModuleLlmContextSummary
+            {
+                OneLine = "Creates AWS VPC networking primitives."
+            }
+        };
+
+        await svc.UpsertModuleLlmContextAsync("hashicorp", "vpc", "aws", "7.0.0", document);
+        var stored = await svc.GetModuleLlmContextAsync("hashicorp", "vpc", "aws", "7.0.0");
+
+        Assert.NotNull(stored);
+        Assert.Equal("Creates AWS VPC networking primitives.", stored!.Summary.OneLine);
+    }
+
+    [Fact]
     public async Task RemoveModule_DeletesRow()
     {
         var svc = CreateService(_connectionString);

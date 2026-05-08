@@ -115,6 +115,22 @@ const permissionCategories = [
     ],
   },
   {
+    label: 'Documentation',
+    icon: 'i-lucide-file-search',
+    color: 'teal',
+    bgColor: 'bg-teal-500/10',
+    borderColor: 'border-teal-500/20',
+    iconColor: 'text-teal-400',
+    headerBg: 'bg-teal-500/5',
+    pillActive: 'bg-teal-500/20 border-teal-400/50 text-teal-300',
+    dotColor: 'bg-teal-400',
+    permissions: [
+      { value: 'module_docs.read', label: 'Read' },
+      { value: 'module_docs.manage', label: 'Manage' },
+      { value: 'module_docs.configure', label: 'Configure' },
+    ],
+  },
+  {
     label: 'Admin',
     icon: 'i-lucide-shield',
     color: 'red',

@@ -242,4 +242,85 @@ public class S3ModuleServiceDownloadTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_Returns_Null_When_Module_Is_Not_In_Database()
+    {
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
+            .ReturnsAsync(value: null);
+
+        var service = CreateService();
+
+        var result = await service.OpenModulePackageStreamAsync("ns", "name", "aws", "1.0.0");
+
+        Assert.Null(result);
+        _mockDatabaseService.Verify(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"), Times.Once);
+        _mockS3Client.Verify(x => x.GetObjectAsync(It.IsAny<GetObjectRequest>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_Returns_Null_When_Object_Is_Missing_In_S3()
+    {
+        var moduleStorage = CreateModuleStorage();
+
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+
+        _mockS3Client
+            .Setup(x => x.GetObjectAsync(
+                It.Is<GetObjectRequest>(request =>
+                    request.BucketName == "modules" &&
+                    request.Key == moduleStorage.FilePath),
+                default))
+            .ThrowsAsync(new AmazonS3Exception("Not found")
+            {
+                StatusCode = HttpStatusCode.NotFound
+            });
+
+        var service = CreateService();
+
+        var result = await service.OpenModulePackageStreamAsync("ns", "name", "aws", "1.0.0");
+
+        Assert.Null(result);
+        _mockS3Client.Verify(x => x.GetObjectAsync(
+            It.Is<GetObjectRequest>(request =>
+                request.BucketName == "modules" &&
+                request.Key == moduleStorage.FilePath),
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_Returns_Object_Stream_When_Module_And_Object_Exist()
+    {
+        var moduleStorage = CreateModuleStorage();
+        await using var objectStream = new MemoryStream([1, 2, 3]);
+
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+
+        _mockS3Client
+            .Setup(x => x.GetObjectAsync(
+                It.Is<GetObjectRequest>(request =>
+                    request.BucketName == "modules" &&
+                    request.Key == moduleStorage.FilePath),
+                default))
+            .ReturnsAsync(new GetObjectResponse
+            {
+                ResponseStream = objectStream
+            });
+
+        var service = CreateService();
+
+        await using var result = await service.OpenModulePackageStreamAsync("ns", "name", "aws", "1.0.0");
+
+        Assert.Same(objectStream, result);
+        _mockS3Client.Verify(x => x.GetObjectAsync(
+            It.Is<GetObjectRequest>(request =>
+                request.BucketName == "modules" &&
+                request.Key == moduleStorage.FilePath),
+            default), Times.Once);
+    }
 }

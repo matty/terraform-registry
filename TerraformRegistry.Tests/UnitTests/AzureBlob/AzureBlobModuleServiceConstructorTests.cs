@@ -211,7 +211,7 @@ public class AzureBlobModuleServiceConstructorTests
         _mockBlobContainerClient.Setup(c => c.GetBlobClient(blobName))
             .Returns(mockBlobClient.Object);
         _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("acme", "network", "aws", "1.10.0"))
-            .ReturnsAsync(value: null);
+            .ReturnsAsync((TerraformRegistry.Models.ModuleStorage?)null);
         _mockDatabaseService.Setup(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()))
             .ReturnsAsync(true);
 

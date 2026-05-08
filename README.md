@@ -14,6 +14,7 @@ A lightweight, feature-rich private Terraform module registry implementation.
 - Terraform CLI authentication via `terraform login` and per-user API keys
 - Manual portal upload for users with `modules.upload`
 - GitHub-linked module publishing, tag backfill, and webhook sync for users with `vcs.manage`
+- Async module documentation extraction from uploaded packages
 - Local filesystem and Azure Blob Storage support
 - PostgreSQL database
 - Docker-ready deployment
@@ -99,6 +100,12 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | **Storage Settings**                                     |                                                     |                                                                  |                     |
 | `TF_REG_STORAGEPROVIDER`                                 | Storage type (`local`/`azure`)                      | `local`                                                          | No                  | `azure`                                                               |
 | `TF_REG_MODULESTORAGEPATH`                               | Local storage path                                  | `modules`                                                        | If using local      | `/data/modules`                                                       |
+| **Module Documentation Extraction**                      |                                                     |                                                                  |                     |                                                                       |
+| `TF_REG_MODULEEXTRACTION__ENABLED`                       | Extract module inputs, outputs, providers, examples, and README metadata after publish | `true`                                                           | No                  | `false`                                                              |
+| `TF_REG_MODULEEXTRACTION__TOOLPATH`                      | Path to `terraform-config-inspect`                  | `terraform-config-inspect`                                       | If enabled          | `/usr/local/bin/terraform-config-inspect`                             |
+| `TF_REG_MODULEEXTRACTION__TIMEOUTSECONDS`                | Per-module extraction timeout                       | `15`                                                             | No                  | `30`                                                                  |
+| `TF_REG_MODULEEXTRACTION__TEMPROOT`                      | Temporary archive extraction directory              | OS temp directory                                                | No                  | `/tmp/terraform-registry-extraction`                                  |
+| `TF_REG_MODULEEXTRACTION__STARTUPBACKFILLBATCHSIZE`      | Existing modules queued for extraction at startup   | `25`                                                             | No                  | `0`                                                                   |
 | **Azure Storage Settings**                               |                                                     |                                                                  |                     |
 | `TF_REG_AZURESTORAGE__CONNECTIONSTRING`                  | Azure connection string                             | -                                                                | If using Azure      | `DefaultEndpointsProtocol=https;...`                                  |
 | `TF_REG_AZURESTORAGE__ACCOUNTNAME`                       | Storage account name                                | -                                                                | If using Azure      | `mystorageaccount`                                                    |
@@ -167,6 +174,30 @@ TF_REG_STORAGEPROVIDER=azure
 TF_REG_AZURESTORAGE__CONNECTIONSTRING=DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=...;EndpointSuffix=core.windows.net
 TF_REG_AZURESTORAGE__ACCOUNTNAME=mystorageaccount
 TF_REG_AZURESTORAGE__CONTAINERNAME=modules
+```
+
+### Module Documentation Extraction
+
+When a module is published, the registry queues a background extraction job. The job unpacks the stored archive, runs `terraform-config-inspect --json`, discovers the root README, first-level examples, and first-level submodules, then stores the resulting document in the database and summarizes it in module metadata.
+
+The same workflow also generates a stored LLM-oriented context artifact per published module version. Agents can start at `/llm.txt`, then traverse the authenticated JSON endpoints:
+
+- `GET /v1/llm/modules`
+- `GET /v1/llm/modules/{namespace}/{name}/{provider}`
+- `GET /v1/llm/modules/{namespace}/{name}/{provider}/{version}`
+
+`/llm.txt` is public and only describes navigation. The JSON endpoints require the same bearer-token authentication used for other protected API access, and the per-version response is served from the stored generated artifact rather than being assembled on demand. Operators can inspect and re-generate the stored LLM artifact from the admin module docs UI.
+
+The Docker image includes `terraform-config-inspect`. For local `dotnet run`, either install it first:
+
+```bash
+go install github.com/hashicorp/terraform-config-inspect@latest
+```
+
+or disable extraction while developing:
+
+```bash
+TF_REG_MODULEEXTRACTION__ENABLED=false
 ```
 
 ## Docker Deployment

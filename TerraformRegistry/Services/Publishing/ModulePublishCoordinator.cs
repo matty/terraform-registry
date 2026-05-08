@@ -33,11 +33,25 @@ public sealed class ModulePublishCoordinator(
             request.Version,
             request.Description);
 
-        extractionService.Queue(new ModuleExtractionRequest(
-            request.Namespace,
-            request.Name,
-            request.Provider,
-            request.Version));
+        try
+        {
+            await extractionService.QueueAsync(new ModuleExtractionRequest(
+                    request.Namespace,
+                    request.Name,
+                    request.Provider,
+                    request.Version),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "Failed to queue extraction for module {Namespace}/{Name}/{Provider}/{Version}",
+                request.Namespace,
+                request.Name,
+                request.Provider,
+                request.Version);
+        }
 
         _ = auditService.LogAsync(
             request.ActorUserId,

@@ -83,6 +83,17 @@ public interface IDatabaseService
     /// </summary>
     Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
 
+    Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name, string provider, string version);
+    Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version, ModuleExtractionDocument document, string? sourceChecksum = null);
+    Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name, string provider, string version);
+    Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version, ModuleLlmContextDocument document, string? sourceChecksum = null);
+    Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version, Action<ModuleArtifactMetadata> mutate);
+    Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit);
+    Task<ModuleExtractionAdminSummary> GetModuleExtractionAdminSummaryAsync();
+    Task<ModuleExtractionAdminPage> ListModuleExtractionsAdminAsync(ModuleExtractionAdminQuery query);
+    Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(string @namespace, string name, string provider, string version);
+    Task<IReadOnlyList<ModuleStorage>> ListModulesForExtractionBackfillAsync(int limit);
+
     // User & API Key Methods
     Task<IReadOnlyList<User>> GetUsersByEmailCaseInsensitiveAsync(string email);
     Task<User?> GetUserByEmailAsync(string email);

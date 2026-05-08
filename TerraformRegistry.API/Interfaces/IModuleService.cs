@@ -28,6 +28,11 @@ public interface IModuleService
     Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider, string version);
 
     /// <summary>
+    ///     Opens the stored module package for internal processing
+    /// </summary>
+    Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider, string version);
+
+    /// <summary>
     ///     Uploads a new module
     /// </summary>
     Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,

@@ -64,6 +64,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                         ["StorageProvider"] = "local",
                         ["BaseUrl"] = "http://localhost:5000",
                         ["ModuleStoragePath"] = moduleStoragePath,
+                        ["ModuleExtraction:Enabled"] = "false",
                         ["ProviderStoragePath"] = providerStoragePath,
                         ["AuthorizationToken"] = _authToken,
                         ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"
@@ -90,6 +91,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                 });
 
                 builder.UseEnvironment("Test");
+                ConfigureTestApp(builder);
             });
 
         var testOutputConsumer = Consume.RedirectStdoutAndStderrToStream(
@@ -121,6 +123,10 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         _loggerProvider = new XunitLoggerProvider(_output, (_, _) => true);
 
         _client = _factory.CreateClient();
+    }
+
+    protected virtual void ConfigureTestApp(IWebHostBuilder builder)
+    {
     }
 
     protected async Task<HttpClient> CreateClientWithPermissionsAsync(string email, string providerId,

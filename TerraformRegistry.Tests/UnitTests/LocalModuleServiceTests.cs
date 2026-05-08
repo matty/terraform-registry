@@ -233,6 +233,33 @@ public class LocalModuleServiceTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_ReturnsStoredZipContent()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var namespacePath = Path.Combine(_testModulePath, "ns");
+        Directory.CreateDirectory(namespacePath);
+        var filePath = Path.Combine(namespacePath, "name-provider-1.0.0.zip");
+        await File.WriteAllBytesAsync(filePath, [0x50, 0x4B, 0x03, 0x04]);
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = filePath,
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+
+        await using var stream = await service.OpenModulePackageStreamAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.NotNull(stream);
+        Assert.Equal(4, stream!.Length);
+    }
+
     // Helper to expose protected method for testing
     private class TestableLocalModuleService : LocalModuleService
     {

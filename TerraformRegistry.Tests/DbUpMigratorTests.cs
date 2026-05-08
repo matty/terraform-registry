@@ -122,8 +122,8 @@ public class DbUpMigratorTests : IDisposable
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var count = (long)cmd.ExecuteScalar()!;
 
-        // Should have exactly 12 SQLite scripts, not double
-        Assert.Equal(12L, count);
+        // Should have exactly 15 SQLite scripts, not double
+        Assert.Equal(15L, count);
     }
 
     [Fact]
@@ -179,11 +179,11 @@ public class DbUpMigratorTests : IDisposable
         var migrator = new DbUpMigrator(_logger);
         migrator.Migrate("sqlite", _connectionString);
 
-        // Journal should have exactly 12 entries (2 bootstrapped + 10 executed)
+        // Journal should have exactly 15 entries (2 bootstrapped + 13 executed)
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var journalCount = (long)cmd.ExecuteScalar()!;
-        Assert.Equal(12L, journalCount);
+        Assert.Equal(15L, journalCount);
 
         // Legacy schema_version table should be dropped
         using var svCmd = _connection.CreateCommand();

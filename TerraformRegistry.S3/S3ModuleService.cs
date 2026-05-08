@@ -167,6 +167,49 @@ public class S3ModuleService : ModuleService
         }
     }
 
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+        string version)
+    {
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        if (moduleStorage == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var response = await _s3Client.GetObjectAsync(new GetObjectRequest
+            {
+                BucketName = _bucketName,
+                Key = moduleStorage.FilePath
+            });
+
+            return response.ResponseStream;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning(
+                "Module {Namespace}/{Name}/{Provider}/{Version} exists in database but object {ObjectKey} was not found in S3.",
+                @namespace,
+                name,
+                provider,
+                version,
+                moduleStorage.FilePath);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error opening S3 object stream for module {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace,
+                name,
+                provider,
+                version);
+            return null;
+        }
+    }
+
     protected override Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
