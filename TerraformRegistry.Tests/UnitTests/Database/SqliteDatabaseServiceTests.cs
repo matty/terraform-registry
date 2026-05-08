@@ -77,6 +77,18 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public void Service_ImplementsNarrowDatabaseContracts()
+    {
+        var svc = CreateService("Data Source=:memory:");
+
+        Assert.IsAssignableFrom<IModuleRepository>(svc);
+        Assert.IsAssignableFrom<IModuleExtractionRepository>(svc);
+        Assert.IsAssignableFrom<IUserRepository>(svc);
+        Assert.IsAssignableFrom<IApiKeyRepository>(svc);
+        Assert.IsAssignableFrom<IModuleDownloadRecorder>(svc);
+    }
+
+    [Fact]
     public async Task InitializeDatabase_CreatesSchemaAndAllowsInsertAndFetch()
     {
         var svc = CreateService(_connectionString);
