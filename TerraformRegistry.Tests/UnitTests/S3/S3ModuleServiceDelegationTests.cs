@@ -1,0 +1,136 @@
+using Amazon.S3;
+using Amazon.S3.Model;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Moq;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
+using TerraformRegistry.S3;
+
+namespace TerraformRegistry.Tests.UnitTests.S3;
+
+public class S3ModuleServiceDelegationTests
+{
+    private readonly Mock<IDatabaseService> _mockDatabaseService = new();
+    private readonly Mock<ILogger<S3ModuleService>> _mockLogger = new();
+    private readonly Mock<IAmazonS3> _mockS3Client = new();
+
+    public S3ModuleServiceDelegationTests()
+    {
+        _mockS3Client
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
+            .ReturnsAsync(new ListObjectsV2Response());
+    }
+
+    private S3ModuleService CreateService()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["S3:BucketName"] = "modules",
+                ["S3:Region"] = "eu-west-2"
+            })
+            .Build();
+
+        return new S3ModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object, _mockS3Client.Object);
+    }
+
+    [Fact]
+    public async Task ListModulesAsync_Delegates_To_DatabaseService()
+    {
+        var request = new ModuleSearchRequest();
+        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>() };
+        _mockDatabaseService.Setup(x => x.ListModulesAsync(request)).ReturnsAsync(expected);
+
+        var service = CreateService();
+        var result = await service.ListModulesAsync(request);
+
+        Assert.Equal(expected, result);
+        _mockDatabaseService.Verify(x => x.ListModulesAsync(request), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetModuleAsync_Delegates_To_DatabaseService()
+    {
+        var expected = new Module
+        {
+            Id = "id",
+            Owner = "owner",
+            Namespace = "ns",
+            Name = "name",
+            Version = "1.0.0",
+            Provider = "aws",
+            PublishedAt = DateTime.UtcNow.ToString("o"),
+            Versions = ["1.0.0"],
+            Root = "root",
+            Submodules = [],
+            Providers = new Dictionary<string, string>()
+        };
+        _mockDatabaseService.Setup(x => x.GetModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(expected);
+
+        var service = CreateService();
+        var result = await service.GetModuleAsync("ns", "name", "aws", "1.0.0");
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task GetModuleVersionsAsync_Delegates_To_DatabaseService()
+    {
+        var expected = new ModuleVersions
+        {
+            Modules =
+            [
+                new ModuleVersionInfo
+                {
+                    Versions =
+                    [
+                        new VersionInfo { Version = "1.0.0" }
+                    ]
+                }
+            ]
+        };
+        _mockDatabaseService.Setup(x => x.GetModuleVersionsAsync("ns", "name", "aws")).ReturnsAsync(expected);
+
+        var service = CreateService();
+        var result = await service.GetModuleVersionsAsync("ns", "name", "aws");
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task ListDeletedModulesAsync_Delegates_To_DatabaseService()
+    {
+        var request = new ModuleSearchRequest();
+        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>() };
+        _mockDatabaseService.Setup(x => x.ListDeletedModulesAsync(request)).ReturnsAsync(expected);
+
+        var service = CreateService();
+        var result = await service.ListDeletedModulesAsync(request);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public async Task Delete_And_Restore_Delegate_To_DatabaseService()
+    {
+        _mockDatabaseService.Setup(x => x.SoftDeleteModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(true);
+        _mockDatabaseService.Setup(x => x.RestoreModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(true);
+
+        var service = CreateService();
+
+        Assert.True(await service.DeleteModuleVersionAsync("ns", "name", "aws", "1.0.0"));
+        Assert.True(await service.RestoreModuleVersionAsync("ns", "name", "aws", "1.0.0"));
+    }
+
+    [Fact]
+    public async Task UpdateModuleDescriptionAsync_Delegates_To_DatabaseService()
+    {
+        _mockDatabaseService.Setup(x => x.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc")).ReturnsAsync(true);
+
+        var service = CreateService();
+        var result = await service.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc");
+
+        Assert.True(result);
+    }
+}

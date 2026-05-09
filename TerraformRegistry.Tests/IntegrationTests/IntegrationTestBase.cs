@@ -1,9 +1,15 @@
+using System.Net.Http.Headers;
 using System.Text;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Models;
+using TerraformRegistry.Services;
 using Testcontainers.PostgreSql;
 using Xunit.Abstractions;
 using Xunit.Extensions.Logging;
@@ -33,10 +39,16 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         var randomSuffix = Path.GetRandomFileName().Replace(".", "");
         var moduleStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"modules/{randomSuffix}");
+        var providerStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"providers/{randomSuffix}");
         if (!string.IsNullOrEmpty(moduleStoragePath) && Directory.Exists(moduleStoragePath))
         {
             Directory.Delete(moduleStoragePath, true);
             _output.WriteLine($"Cleared directory: {moduleStoragePath}");
+        }
+        if (Directory.Exists(providerStoragePath))
+        {
+            Directory.Delete(providerStoragePath, true);
+            _output.WriteLine($"Cleared directory: {providerStoragePath}");
         }
 
         _factory = new WebApplicationFactory<Program>()
@@ -45,14 +57,27 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                 builder.ConfigureAppConfiguration((_, config) =>
                 {
                     var connStr = _postgresContainer.GetConnectionString();
-                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                     {
                         ["PostgreSQL:ConnectionString"] = connStr,
                         ["DatabaseProvider"] = "postgres",
                         ["StorageProvider"] = "local",
                         ["BaseUrl"] = "http://localhost:5000",
                         ["ModuleStoragePath"] = moduleStoragePath,
-                        ["AuthorizationToken"] = _authToken
+                        ["ModuleExtraction:Enabled"] = "false",
+                        ["ProviderStoragePath"] = providerStoragePath,
+                        ["AuthorizationToken"] = _authToken,
+                        ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"
+                    });
+                });
+
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<OidcOptions>();
+                    services.AddSingleton(new OidcOptions
+                    {
+                        JwtSecretKey = "integration-test-jwt-secret-key-32-chars-minimum",
+                        JwtExpiryHours = 24
                     });
                 });
 
@@ -66,6 +91,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                 });
 
                 builder.UseEnvironment("Test");
+                ConfigureTestApp(builder);
             });
 
         var testOutputConsumer = Consume.RedirectStdoutAndStderrToStream(
@@ -97,6 +123,28 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         _loggerProvider = new XunitLoggerProvider(_output, (_, _) => true);
 
         _client = _factory.CreateClient();
+    }
+
+    protected virtual void ConfigureTestApp(IWebHostBuilder builder)
+    {
+    }
+
+    protected async Task<HttpClient> CreateClientWithPermissionsAsync(string email, string providerId,
+        string[] permissions)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+        var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
+
+        var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
+        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "test-key");
+        var role = await roleService.CreateRoleAsync($"test-role-{Guid.NewGuid():N}", null, permissions);
+        await permissionService.AssignRoleAsync(user.Id, role.Id, null);
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
+        return client;
     }
 
     public virtual async Task DisposeAsync()

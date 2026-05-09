@@ -42,6 +42,8 @@ public class AzureBlobModuleServiceDownloadTests
         _mockContainerClient.Setup(c =>
                 c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(), default))
             .Returns(Mock.Of<Response<BlobContainerInfo>>());
+        _mockContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+            .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
 
     private AzureBlobModuleService CreateService()
@@ -178,7 +180,7 @@ public class AzureBlobModuleServiceDownloadTests
 
     // Test: Should handle exceptions during SAS generation, log an error, and return null
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Handles_Exception_During_Sas_Generation_And_Returns_Null()
+    public async Task GetModuleDownloadPathAsync_Handles_Unexpected_Exception_During_Sas_Generation_And_Returns_Null()
     {
         // Arrange
         var moduleStorage = new ModuleStorage
@@ -199,7 +201,7 @@ public class AzureBlobModuleServiceDownloadTests
         var mockBlobClient = new Mock<BlobClient>();
         mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
         mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>()))
-            .Throws(new InvalidOperationException("SAS error"));
+            .Throws(new Exception("SAS error"));
 
         _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
             .Returns(mockBlobClient.Object);
@@ -216,8 +218,77 @@ public class AzureBlobModuleServiceDownloadTests
                 LogLevel.Error,
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Error generating SAS token")),
-                It.IsAny<InvalidOperationException>(),
+                It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
+    }
+
+    public async Task GetModuleDownloadPathAsync_FallsBack_ToBlobUri_When_SasGeneration_NotSupported()
+    {
+        var moduleStorage = new ModuleStorage
+        {
+            FilePath = "path/to/blob.zip",
+            Namespace = "testns",
+            Name = "testname",
+            Provider = "testprov",
+            Version = "1.0.0",
+            Description = "Test Description",
+            Dependencies = new List<string>()
+        };
+        _mockDatabaseService.Setup(db =>
+                db.GetModuleStorageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.IsAny<string>()))
+            .ReturnsAsync(moduleStorage);
+
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>()))
+            .Throws(new InvalidOperationException("SAS not supported"));
+        mockBlobClient.SetupGet(bc => bc.Uri)
+            .Returns(new Uri($"https://fakeaccount.blob.core.windows.net/{_containerName}/{moduleStorage.FilePath}"));
+
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
+            .Returns(mockBlobClient.Object);
+
+        var service = CreateService();
+
+        var result = await service.GetModuleDownloadPathAsync("ns", "name", "prov", "1.0.0");
+
+        Assert.Equal(mockBlobClient.Object.Uri.ToString(), result);
+    }
+
+    [Fact]
+    public async Task OpenModulePackageStreamAsync_ReturnsBlobReadStream()
+    {
+        var moduleStorage = new ModuleStorage
+        {
+            FilePath = "path/to/blob.zip",
+            Namespace = "testns",
+            Name = "testname",
+            Provider = "testprov",
+            Version = "1.0.0",
+            Description = "Test Description",
+            Dependencies = []
+        };
+        _mockDatabaseService.Setup(db =>
+                db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+
+        var expectedStream = new MemoryStream([0x50, 0x4B, 0x03, 0x04]);
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.ExistsAsync(default))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        mockBlobClient
+            .Setup(bc => bc.OpenReadAsync(0, null, default))
+            .ReturnsAsync(expectedStream);
+
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
+            .Returns(mockBlobClient.Object);
+
+        var service = CreateService();
+
+        await using var stream = await service.OpenModulePackageStreamAsync("ns", "name", "prov", "1.0.0");
+
+        Assert.Same(expectedStream, stream);
     }
 }

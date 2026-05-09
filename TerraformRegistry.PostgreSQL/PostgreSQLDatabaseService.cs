@@ -1,667 +1,215 @@
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using NpgsqlTypes;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
-using TerraformRegistry.PostgreSQL.Migrations;
+using TerraformRegistry.PostgreSQL.Repositories;
 
 namespace TerraformRegistry.PostgreSQL;
 
 /// <summary>
-///     Implementation of a database service using PostgreSQL
+///     PostgreSQL compatibility facade for registry database storage.
 /// </summary>
 public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 {
-    private readonly string _baseUrl;
     private readonly string _connectionString;
-    private readonly ILogger<PostgreSqlDatabaseService> _logger;
-    private readonly MigrationManager _migrationManager;
+    private readonly DbUpMigrator _dbUpMigrator;
+    private readonly IApiKeyRepository _apiKeys;
+    private readonly IModuleDownloadRecorder _downloads;
+    private readonly IModuleExtractionRepository _moduleExtractions;
+    private readonly IModuleRepository _modules;
+    private readonly IUserRepository _users;
 
     public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger,
-        MigrationManager migrationManager)
+        DbUpMigrator dbUpMigrator)
     {
         _connectionString = connectionString;
-        _baseUrl = baseUrl;
-        _migrationManager = migrationManager;
-        _logger = logger;
+        _dbUpMigrator = dbUpMigrator;
+        _modules = new PostgreSqlModuleRepository(connectionString, baseUrl, logger);
+        _moduleExtractions = new PostgreSqlModuleExtractionRepository(connectionString);
+        _users = new PostgreSqlUserRepository(connectionString);
+        _apiKeys = new PostgreSqlApiKeyRepository(connectionString);
+        _downloads = new PostgreSqlModuleDownloadRecorder(connectionString, logger);
     }
 
-    /// <summary>
-    ///     Lists all modules based on search criteria
-    /// </summary>
-    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
+        _modules.ListModulesAsync(request);
+
+    public Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version) =>
+        _modules.GetModuleAsync(@namespace, name, provider, version);
+
+    public Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider) =>
+        _modules.GetModuleVersionsAsync(@namespace, name, provider);
+
+    public Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider, string version) =>
+        _modules.GetModuleStorageAsync(@namespace, name, provider, version);
+
+    public Task<bool> AddModuleAsync(ModuleStorage module) =>
+        _modules.AddModuleAsync(module);
+
+    public Task<bool> RemoveModuleAsync(ModuleStorage module) =>
+        _modules.RemoveModuleAsync(module);
+
+    public Task<bool> RemoveModuleExactAsync(ModuleStorage module) =>
+        _modules.RemoveModuleExactAsync(module);
+
+    public Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version) =>
+        _modules.RemoveDeletedModuleAsync(@namespace, name, provider, version);
+
+    public Task<bool> AddDeletedModuleAsync(ModuleStorage module) =>
+        _modules.AddDeletedModuleAsync(module);
+
+    public Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule) =>
+        _modules.ReplaceModuleExactAsync(existingModule, newModule);
+
+    public Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version) =>
+        _modules.SoftDeleteModuleAsync(@namespace, name, provider, version);
+
+    public Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version) =>
+        _modules.RestoreModuleAsync(@namespace, name, provider, version);
+
+    public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request) =>
+        _modules.ListDeletedModulesAsync(request);
+
+    public Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version) =>
+        _modules.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+
+    public Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description) =>
+        _modules.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+
+    public Task<ModuleExtractionDocument?> GetModuleExtractionAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version) =>
+        _moduleExtractions.GetModuleExtractionAsync(@namespace, name, provider, version);
+
+    public Task UpsertModuleExtractionAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        ModuleExtractionDocument document,
+        string? sourceChecksum = null) =>
+        _moduleExtractions.UpsertModuleExtractionAsync(@namespace, name, provider, version, document, sourceChecksum);
+
+    public Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version) =>
+        _moduleExtractions.GetModuleLlmContextAsync(@namespace, name, provider, version);
+
+    public Task UpsertModuleLlmContextAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        ModuleLlmContextDocument document,
+        string? sourceChecksum = null) =>
+        _moduleExtractions.UpsertModuleLlmContextAsync(@namespace, name, provider, version, document, sourceChecksum);
+
+    public Task UpdateModuleMetadataAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        Action<ModuleArtifactMetadata> mutate) =>
+        _moduleExtractions.UpdateModuleMetadataAsync(@namespace, name, provider, version, mutate);
+
+    public Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit) =>
+        _moduleExtractions.ListModulesNeedingExtractionAsync(limit);
+
+    public Task<ModuleExtractionAdminSummary> GetModuleExtractionAdminSummaryAsync() =>
+        _moduleExtractions.GetModuleExtractionAdminSummaryAsync();
+
+    public Task<ModuleExtractionAdminPage> ListModuleExtractionsAdminAsync(ModuleExtractionAdminQuery query) =>
+        _moduleExtractions.ListModuleExtractionsAdminAsync(query);
+
+    public Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version) =>
+        _moduleExtractions.GetModuleExtractionAdminDetailAsync(@namespace, name, provider, version);
+
+    public Task<IReadOnlyList<ModuleStorage>> ListModulesForExtractionBackfillAsync(int limit) =>
+        _moduleExtractions.ListModulesForExtractionBackfillAsync(limit);
+
+    public Task<IReadOnlyList<User>> GetUsersByEmailCaseInsensitiveAsync(string email) =>
+        _users.GetUsersByEmailCaseInsensitiveAsync(email);
+
+    public Task<User?> GetUserByEmailAsync(string email) =>
+        _users.GetUserByEmailAsync(email);
+
+    public Task<User?> GetUserByIdAsync(string id) =>
+        _users.GetUserByIdAsync(id);
+
+    public Task AddUserAsync(User user) =>
+        _users.AddUserAsync(user);
+
+    public Task UpdateUserAsync(User user) =>
+        _users.UpdateUserAsync(user);
+
+    public Task DeleteUserAsync(string userId) =>
+        _users.DeleteUserAsync(userId);
+
+    public Task<IEnumerable<User>> ListAllUsersAsync() =>
+        _users.ListAllUsersAsync();
+
+    public Task AddApiKeyAsync(ApiKey apiKey) =>
+        _apiKeys.AddApiKeyAsync(apiKey);
+
+    public Task<ApiKey?> GetApiKeyAsync(Guid id) =>
+        _apiKeys.GetApiKeyAsync(id);
+
+    public Task<IEnumerable<ApiKey>> GetApiKeysByUserAsync(string userId) =>
+        _apiKeys.GetApiKeysByUserAsync(userId);
+
+    public Task<IEnumerable<ApiKey>> GetSharedApiKeysAsync() =>
+        _apiKeys.GetSharedApiKeysAsync();
+
+    public Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix) =>
+        _apiKeys.GetApiKeysByPrefixAsync(prefix);
+
+    public Task UpdateApiKeyAsync(ApiKey apiKey) =>
+        _apiKeys.UpdateApiKeyAsync(apiKey);
+
+    public Task DeleteApiKeyAsync(ApiKey apiKey) =>
+        _apiKeys.DeleteApiKeyAsync(apiKey);
+
+    public Task RecordDownloadAsync(
+        string @namespace,
+        string name,
+        string provider,
+        string version,
+        string? clientIp,
+        string? userAgent) =>
+        _downloads.RecordDownloadAsync(@namespace, name, provider, version, clientIp, userAgent);
+
+    public async Task<bool> CheckConnectionAsync()
     {
-        var modules = new List<ModuleListItem>();
-        var conditions = new List<string>();
-        var parameters = new List<NpgsqlParameter>();
-        var paramCounter = 0;
-
-        var sql = @"
-            WITH latest_versions AS (
-                SELECT 
-                    namespace,
-                    name,
-                    provider,
-                    MAX(version) AS latest_version
-                FROM 
-                    modules
-                GROUP BY 
-                    namespace, name, provider
-            )
-            SELECT 
-                m.namespace,
-                m.name,
-                m.provider,
-                m.version,
-                m.description,
-                m.storage_path,
-                m.published_at,
-                ARRAY(
-                    SELECT version 
-                    FROM modules 
-                    WHERE 
-                        namespace = m.namespace AND 
-                        name = m.name AND 
-                        provider = m.provider
-                    ORDER BY version DESC
-                ) AS versions
-            FROM 
-                modules m
-            INNER JOIN 
-                latest_versions lv ON 
-                    m.namespace = lv.namespace AND 
-                    m.name = lv.name AND 
-                    m.provider = lv.provider AND 
-                    m.version = lv.latest_version
-            WHERE 1=1";
-
-        if (!string.IsNullOrWhiteSpace(request.Q))
-        {
-            conditions.Add($" AND (m.name ILIKE @p{paramCounter} OR m.description ILIKE @p{paramCounter})");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", $"%{request.Q}%"));
-            paramCounter++;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Namespace))
-        {
-            conditions.Add($" AND m.namespace = @p{paramCounter}");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Namespace));
-            paramCounter++;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Provider))
-        {
-            conditions.Add($" AND m.provider = @p{paramCounter}");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Provider));
-            paramCounter++;
-        }
-
-        sql += string.Join(" ", conditions);
-        sql += $" ORDER BY m.namespace, m.name, m.provider LIMIT @p{paramCounter} OFFSET @p{paramCounter + 1}";
-        parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Limit));
-        parameters.Add(new NpgsqlParameter($"@p{paramCounter + 1}", request.Offset));
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddRange(parameters.ToArray());
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var namespace_ = reader.GetString(0);
-            var name = reader.GetString(1);
-            var provider = reader.GetString(2);
-            var version = reader.GetString(3);
-            var description = reader.GetString(4);
-            var publishedAt = reader.GetDateTime(6);
-            var versions = reader.GetFieldValue<string[]>(7);
-
-            modules.Add(new ModuleListItem
-            {
-                Id = $"{namespace_}/{name}/{provider}",
-                Owner = namespace_,
-                Namespace = namespace_,
-                Name = name,
-                Version = version,
-                Provider = provider,
-                Description = description,
-                PublishedAt = publishedAt.ToString("o"),
-                Versions = versions.ToList(),
-                DownloadUrl = $"{_baseUrl}/v1/modules/{namespace_}/{name}/{provider}/{version}/download"
-            });
-        }
-
-        return new ModuleList
-        {
-            Modules = modules,
-            Meta = new Dictionary<string, string>
-            {
-                { "limit", request.Limit.ToString() },
-                { "current_offset", request.Offset.ToString() }
-            }
-        };
-    }
-
-    /// <summary>
-    ///     Gets detailed information about a specific module
-    /// </summary>
-    public async Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
-    {
-        var sql = @"
-            SELECT 
-                namespace,
-                name,
-                provider,
-                version,
-                description,
-                storage_path,
-                published_at,
-                dependencies,
-                (
-                    SELECT 
-                        ARRAY(
-                            SELECT version 
-                            FROM modules 
-                            WHERE 
-                                namespace = m.namespace AND 
-                                name = m.name AND 
-                                provider = m.provider
-                            ORDER BY version DESC
-                        )
-                ) AS versions
-            FROM 
-                modules m
-            WHERE 
-                namespace = @namespace AND
-                name = @name AND
-                provider = @provider AND
-                version = @version";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
-        command.Parameters.AddWithValue("@name", name);
-        command.Parameters.AddWithValue("@provider", provider);
-        command.Parameters.AddWithValue("@version", version);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
-            return null;
-
-        var dependenciesJson = reader.GetString(7);
-        var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
-        var versions = reader.GetFieldValue<string[]>(8);
-
-        return new Module
-        {
-            Id = $"{@namespace}/{name}/{provider}/{version}",
-            Owner = @namespace,
-            Namespace = @namespace,
-            Name = name,
-            Version = version,
-            Provider = provider,
-            Description = reader.GetString(4),
-            Source = $"{_baseUrl}/{@namespace}/{name}",
-            PublishedAt = reader.GetDateTime(6).ToString("o"),
-            DownloadUrl = $"{_baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
-            Versions = versions.ToList(),
-            Root = "main",
-            Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string>
-            {
-                { provider, "*" }
-            }
-        };
-    }
-
-    /// <summary>
-    ///     Gets all versions of a specific module
-    /// </summary>
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
-    {
-        var sql = @"
-            SELECT 
-                version
-            FROM 
-                modules
-            WHERE 
-                namespace = @namespace AND
-                name = @name AND
-                provider = @provider
-            ORDER BY 
-                version DESC";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
-        command.Parameters.AddWithValue("@name", name);
-        command.Parameters.AddWithValue("@provider", provider);
-
-        var versions = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
-
-        return new ModuleVersions
-        {
-            Modules = new List<ModuleVersionInfo>
-            {
-                new ModuleVersionInfo
-                {
-                    Versions = versions.Select(v => new VersionInfo { Version = v }).ToList()
-                }
-            }
-        };
-    }
-
-    /// <summary>
-    ///     Gets the storage path information for a specific module version
-    /// </summary>
-    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider,
-        string version)
-    {
-        var sql = @"
-            SELECT 
-                namespace,
-                name,
-                provider,
-                version,
-                description,
-                storage_path,
-                published_at,
-                dependencies
-            FROM 
-                modules
-            WHERE 
-                namespace = @namespace AND
-                name = @name AND
-                provider = @provider AND
-                version = @version";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
-        command.Parameters.AddWithValue("@name", name);
-        command.Parameters.AddWithValue("@provider", provider);
-        command.Parameters.AddWithValue("@version", version);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
-            return null;
-
-        var dependenciesJson = reader.GetString(7);
-        var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
-
-        return new ModuleStorage
-        {
-            Namespace = reader.GetString(0),
-            Name = reader.GetString(1),
-            Provider = reader.GetString(2),
-            Version = reader.GetString(3),
-            Description = reader.GetString(4),
-            FilePath = reader.GetString(5),
-            PublishedAt = reader.GetDateTime(6),
-            Dependencies = dependencies
-        };
-    }
-
-    /// <summary>
-    ///     Adds a new module to the database
-    /// </summary>
-    public async Task<bool> AddModuleAsync(ModuleStorage module)
-    {
-        var sql = @"
-            INSERT INTO modules (
-                namespace,
-                name,
-                provider,
-                version,
-                description,
-                storage_path,
-                published_at,
-                dependencies
-            )
-            VALUES (
-                @namespace,
-                @name,
-                @provider,
-                @version,
-                @description,
-                @storagePath,
-                @publishedAt,
-                @dependencies
-            )
-            ON CONFLICT (namespace, name, provider, version) 
-            DO UPDATE SET
-                description = @description,
-                storage_path = @storagePath,
-                dependencies = @dependencies
-            RETURNING id";
-
         try
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
-            command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath);
-            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
-            command.Parameters.AddWithValue("@dependencies",
-                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
-                NpgsqlDbType.Jsonb;
-
-            var result = await command.ExecuteScalarAsync();
-            return result != null;
+            await using var command = new NpgsqlCommand("SELECT 1", connection);
+            await command.ExecuteScalarAsync();
+            return true;
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database",
-                module.Namespace, module.Name, module.Provider, module.Version);
             return false;
         }
     }
 
-    /// <summary>
-    ///     Removes a module from the database
-    /// </summary>
-    public async Task<bool> RemoveModuleAsync(ModuleStorage module)
+    public Task InitializeDatabase()
     {
-        var sql = @"
-            DELETE FROM modules
-            WHERE namespace = @namespace
-              AND name = @name
-              AND provider = @provider
-              AND version = @version";
-
-        try
-        {
-            await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
-
-            await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
-
-            var rowsAffected = await command.ExecuteNonQueryAsync();
-            return rowsAffected > 0;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database",
-                module.Namespace, module.Name, module.Provider, module.Version);
-            return false;
-        }
-    }
-
-    // User Methods
-    public async Task<User?> GetUserByEmailAsync(string email)
-    {
-        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE email = @email";
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@email", email);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
-
-        return new User
-        {
-            Id = reader.GetString(0),
-            Email = reader.GetString(1),
-            Provider = reader.GetString(2),
-            ProviderId = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            UpdatedAt = reader.GetDateTime(5)
-        };
-    }
-
-    public async Task<User?> GetUserByIdAsync(string id)
-    {
-        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE id = @id";
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
-
-        return new User
-        {
-            Id = reader.GetString(0),
-            Email = reader.GetString(1),
-            Provider = reader.GetString(2),
-            ProviderId = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            UpdatedAt = reader.GetDateTime(5)
-        };
-    }
-
-    public async Task AddUserAsync(User user)
-    {
-        const string sql = @"
-            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
-            VALUES (@id, @email, @provider, @providerId, @createdAt, @updatedAt)";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue("@id", user.Id);
-        command.Parameters.AddWithValue("@email", user.Email);
-        command.Parameters.AddWithValue("@provider", user.Provider);
-        command.Parameters.AddWithValue("@providerId", user.ProviderId);
-        command.Parameters.AddWithValue("@createdAt", user.CreatedAt);
-        command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task UpdateUserAsync(User user)
-    {
-        const string sql = "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, updated_at=@updatedAt WHERE id=@id";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue("@id", user.Id);
-        command.Parameters.AddWithValue("@email", user.Email);
-        command.Parameters.AddWithValue("@provider", user.Provider);
-        command.Parameters.AddWithValue("@providerId", user.ProviderId);
-        command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task DeleteUserAsync(string userId)
-    {
-        const string sql = "DELETE FROM users WHERE id = @id";
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", userId);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    // ApiKey Methods
-    public async Task AddApiKeyAsync(ApiKey apiKey)
-    {
-        const string sql = @"
-            INSERT INTO api_keys (id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at)
-            VALUES (@id, @userId, @description, @tokenHash, @prefix, @isShared, @createdAt, @expiresAt, @lastUsedAt)";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue("@id", apiKey.Id);
-        command.Parameters.AddWithValue("@userId", apiKey.UserId);
-        command.Parameters.AddWithValue("@description", apiKey.Description);
-        command.Parameters.AddWithValue("@tokenHash", apiKey.TokenHash);
-        command.Parameters.AddWithValue("@prefix", apiKey.Prefix);
-        command.Parameters.AddWithValue("@isShared", apiKey.IsShared);
-        command.Parameters.AddWithValue("@createdAt", apiKey.CreatedAt);
-        command.Parameters.AddWithValue("@expiresAt", apiKey.ExpiresAt ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("@lastUsedAt", apiKey.LastUsedAt ?? (object)DBNull.Value);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task<ApiKey?> GetApiKeyAsync(Guid id)
-    {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE id = @id";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", id);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
-
-        return MapReaderToApiKey(reader);
-    }
-
-    public async Task<IEnumerable<ApiKey>> GetApiKeysByUserAsync(string userId)
-    {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE user_id = @userId ORDER BY created_at DESC";
-        var keys = new List<ApiKey>();
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@userId", userId);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            keys.Add(MapReaderToApiKey(reader));
-        }
-
-        return keys;
-    }
-
-    public async Task<IEnumerable<ApiKey>> GetSharedApiKeysAsync()
-    {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE is_shared = TRUE ORDER BY created_at DESC";
-        var keys = new List<ApiKey>();
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            keys.Add(MapReaderToApiKey(reader));
-        }
-        return keys;
-    }
-
-    public async Task<IEnumerable<ApiKey>> GetApiKeysByPrefixAsync(string prefix)
-    {
-        const string sql = "SELECT id, user_id, description, token_hash, prefix, is_shared, created_at, expires_at, last_used_at FROM api_keys WHERE prefix = @prefix";
-        var keys = new List<ApiKey>();
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@prefix", prefix);
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            keys.Add(MapReaderToApiKey(reader));
-        }
-        return keys;
-    }
-
-    public async Task UpdateApiKeyAsync(ApiKey apiKey)
-    {
-        const string sql = "UPDATE api_keys SET description=@description, is_shared=@isShared, last_used_at=@lastUsedAt WHERE id=@id";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue("@id", apiKey.Id);
-        command.Parameters.AddWithValue("@description", apiKey.Description);
-        command.Parameters.AddWithValue("@isShared", apiKey.IsShared);
-        command.Parameters.AddWithValue("@lastUsedAt", apiKey.LastUsedAt ?? (object)DBNull.Value);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task DeleteApiKeyAsync(ApiKey apiKey)
-    {
-        const string sql = "DELETE FROM api_keys WHERE id = @id";
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@id", apiKey.Id);
-
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private ApiKey MapReaderToApiKey(NpgsqlDataReader reader)
-    {
-        return new ApiKey
-        {
-            Id = reader.GetGuid(0),
-            UserId = reader.GetString(1),
-            Description = reader.GetString(2),
-            TokenHash = reader.GetString(3),
-            Prefix = reader.GetString(4),
-            IsShared = reader.GetBoolean(5),
-            CreatedAt = reader.GetDateTime(6),
-            ExpiresAt = reader.IsDBNull(7) ? null : reader.GetDateTime(7),
-            LastUsedAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8)
-        };
-    }
-
-    public async Task InitializeDatabase()
-    {
-        await InitializeDatabaseImpl();
-    }
-
-    private async Task InitializeDatabaseImpl()
-    {
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-
-        if (await _migrationManager.NeedsInitializationAsync(connection))
-        {
-            await using var transaction = await connection.BeginTransactionAsync();
-            try
-            {
-                await _migrationManager.InitializeDatabaseAsync(connection, transaction);
-                await transaction.CommitAsync();
-                _logger.LogInformation("Database initialization and migrations completed successfully");
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error initializing database");
-                throw;
-            }
-        }
+        _dbUpMigrator.Migrate("postgres", _connectionString);
+        return Task.CompletedTask;
     }
 }

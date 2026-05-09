@@ -1,0 +1,93 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "onboarding": false,
+  "requireConfig": "optional",
+  "branchPrefix": "renovate/",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "Europe/London",
+  "labels": [
+    "dependencies"
+  ],
+  "minimumReleaseAge": "3 days",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security",
+      "dependencies"
+    ],
+    "minimumReleaseAge": null,
+    "prCreation": "immediate",
+    "rangeStrategy": "update-lockfile"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ],
+    "labels": [
+      "dependencies",
+      "lockfile-maintenance"
+    ]
+  },
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 4,
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions",
+      "labels": [
+        "dependencies",
+        "github-actions"
+      ]
+    },
+    {
+      "matchManagers": [
+        "nuget"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "NuGet minor and patch updates",
+      "labels": [
+        "dependencies",
+        "dotnet"
+      ]
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "npm minor and patch updates",
+      "labels": [
+        "dependencies",
+        "frontend"
+      ]
+    },
+    {
+      "matchDatasources": [
+        "docker"
+      ],
+      "labels": [
+        "dependencies",
+        "docker"
+      ]
+    },
+    {
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

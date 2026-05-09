@@ -1,0 +1,261 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "release/**"
+      - "hotfix/**"
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override"
+        required: false
+        type: string
+      push_image:
+        description: "Push image to GHCR"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CONFIGURATION: Release
+  DOTNET_VERSION: "10.0.x"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/terraform-registry
+  NODE_VERSION: "24"
+  SCAN_IMAGE_NAME: terraform-registry:${{ github.sha }}
+  TEST_RESULTS_DIR: TerraformRegistry.Tests/TestResults
+
+jobs:
+  dotnet:
+    name: .NET build, test, coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies with NuGet audit
+        run: |
+          dotnet restore \
+            -p:NuGetAudit=true \
+            -p:NuGetAuditMode=all \
+            -p:NuGetAuditLevel=high \
+            "-warnaserror:NU1903;NU1904"
+
+      - name: Build solution
+        run: dotnet build --no-restore --configuration "$CONFIGURATION"
+
+      - name: Run tests with coverage
+        run: |
+          mkdir -p "$TEST_RESULTS_DIR"
+          dotnet test TerraformRegistry.Tests/TerraformRegistry.Tests.csproj \
+            --no-build \
+            --configuration "$CONFIGURATION" \
+            --logger "trx;LogFileName=test_results.trx" \
+            --results-directory "$TEST_RESULTS_DIR" \
+            --collect "XPlat Code Coverage" \
+            -- \
+            DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+        env:
+          ASPNETCORE_ENVIRONMENT: Test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-results
+          path: ${{ env.TEST_RESULTS_DIR }}/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: code-coverage-report
+          path: ${{ env.TEST_RESULTS_DIR }}/**/coverage.cobertura.xml
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
+        if: env.CODECOV_TOKEN != ''
+        with:
+          files: ${{ env.TEST_RESULTS_DIR }}/**/coverage.cobertura.xml
+          flags: dotnet
+          name: dotnet-tests
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  frontend:
+    name: Frontend build and audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: TerraformRegistry/web-src/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: TerraformRegistry/web-src
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: TerraformRegistry/web-src
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Generate frontend
+        working-directory: TerraformRegistry/web-src
+        run: npm run generate
+
+      - name: Upload generated frontend
+        uses: actions/upload-artifact@v7
+        with:
+          name: generated-frontend
+          path: TerraformRegistry/web-src/.output/public
+          if-no-files-found: error
+          retention-days: 7
+
+  docker:
+    name: Docker build, scan, publish
+    needs:
+      - dotnet
+      - frontend
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        with:
+          versionSpec: "6.x"
+
+      - name: Determine version
+        id: set-version
+        uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8
+        with:
+          configFilePath: GitVersion.yml
+
+      - name: Resolve version
+        id: resolved-version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${{ steps.set-version.outputs.semVer }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Extract Docker metadata
+        id: metadata
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=terraform-registry
+            org.opencontainers.image.description=Private Terraform module registry
+          tags: |
+            type=raw,value=${{ steps.resolved-version.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=release,enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
+
+      - name: Build Docker image for scan
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
+        with:
+          context: .
+          load: true
+          tags: ${{ env.SCAN_IMAGE_NAME }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ env.SCAN_IMAGE_NAME }}
+          format: sarif
+          output: trivy-image.sarif
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          limit-severities-for-sarif: true
+
+      - name: Upload Trivy image scan
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
+        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
