@@ -1,0 +1,371 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.AzureBlob;
+using TerraformRegistry.Middleware;
+using TerraformRegistry.Migrations;
+using TerraformRegistry.Models;
+using TerraformRegistry.PostgreSQL;
+using TerraformRegistry.Services;
+using TerraformRegistry.Services.ModuleExtraction;
+using TerraformRegistry.Services.Publishing;
+using TerraformRegistry.S3;
+
+namespace TerraformRegistry.Startup;
+
+internal static class ServiceRegistrationExtensions
+{
+    public static IServiceCollection AddTerraformRegistryServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
+        services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
+        services.Configure<ModuleExtractionOptions>(configuration.GetSection("ModuleExtraction"));
+        services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
+        services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
+        services.AddSingleton<WebhookPinnedConnectionHelper>();
+        services.AddSingleton<IS3ClientFactory, S3ClientFactory>();
+
+        services.AddSingleton<DbUpMigrator>();
+        services.AddSingleton<IInitializableDb>(provider =>
+        {
+            var db = provider.GetRequiredService<IDatabaseService>();
+            return db as IInitializableDb ??
+                   throw new InvalidOperationException("Database service does not implement IInitializableDb");
+        });
+
+        services.AddDatabaseServices();
+        services.AddModuleStorageServices();
+        services.AddProviderRegistryServices();
+
+        services.AddHostedService<DatabaseInitializerHostedService>();
+        services.AddHttpClient();
+        services.AddHttpClient("WebhookDelivery", c => c.Timeout = TimeSpan.FromSeconds(5))
+            .ConfigurePrimaryHttpMessageHandler(servicesProvider => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                ConnectCallback = servicesProvider.GetRequiredService<WebhookPinnedConnectionHelper>().ConnectAsync
+            });
+
+        services.AddControllers();
+        services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = "CustomBearer";
+                options.DefaultChallengeScheme = "CustomBearer";
+            })
+            .AddScheme<AuthenticationSchemeOptions, CustomBearerHandler>("CustomBearer", options => { });
+
+        var oidcOptions = new OidcOptions();
+        configuration.GetSection("Oidc").Bind(oidcOptions);
+        services.AddSingleton(oidcOptions);
+        services.AddSingleton<JwtService>();
+        services.AddSingleton<OAuthService>();
+        services.AddSingleton(new TerraformLoginOptions());
+        services.AddSingleton<ITerraformAuthorizationCodeStore, InMemoryTerraformAuthorizationCodeStore>();
+        services.AddScoped<IApiKeyService, ApiKeyService>();
+
+        services.AddAnalyticsService();
+        services.AddWebhookServices();
+        services.AddVcsServices();
+        services.AddModuleExtractionServices();
+        services.AddAuthorizationServices();
+
+        services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddDatabaseServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IDatabaseService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var loggerDb = provider.GetRequiredService<ILogger<PostgreSqlDatabaseService>>();
+            var dbUpMigrator = provider.GetRequiredService<DbUpMigrator>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            var baseUrl = config["BaseUrl"] ?? "http://localhost:5131";
+
+            if (string.IsNullOrEmpty(baseUrl))
+                throw new InvalidOperationException("BaseUrl is missing or empty. Please check your configuration.");
+
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlDatabaseService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing or empty. Please check your configuration."),
+                    baseUrl,
+                    loggerDb,
+                    dbUpMigrator),
+                "sqlite" => new SqliteDatabaseService(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db",
+                    baseUrl,
+                    provider.GetRequiredService<ILogger<SqliteDatabaseService>>(),
+                    dbUpMigrator),
+                _ => throw new InvalidOperationException(
+                    $"Invalid database provider specified: '{databaseProvider}'. Check configuration.")
+            };
+        });
+
+        services.AddSingleton<IRuntimeSettingsService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlRuntimeSettingsService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing for runtime settings service.")),
+                "sqlite" => new SqliteRuntimeSettingsService(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddModuleStorageServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IModuleService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var db = provider.GetRequiredService<IDatabaseService>();
+            var logger = provider.GetRequiredService<ILogger<LocalModuleService>>();
+            var storageProvider = config["StorageProvider"]?.ToLowerInvariant() ?? "local";
+            return storageProvider switch
+            {
+                "azure" => new AzureBlobModuleService(
+                    config,
+                    db,
+                    provider.GetRequiredService<ILogger<AzureBlobModuleService>>()),
+                "s3" => new S3ModuleService(
+                    config,
+                    db,
+                    provider.GetRequiredService<ILogger<S3ModuleService>>(),
+                    null,
+                    provider.GetRequiredService<IS3ClientFactory>()),
+                "local" => CreateLocalModuleService(config, db, logger),
+                _ => throw new InvalidOperationException(
+                    $"Invalid storage provider specified: '{storageProvider}'. Check configuration.")
+            };
+        });
+
+        return services;
+    }
+
+    private static IModuleService CreateLocalModuleService(
+        IConfiguration config,
+        IDatabaseService db,
+        ILogger<LocalModuleService> logger)
+    {
+        var storagePath = config["ModuleStoragePath"];
+        if (string.IsNullOrEmpty(storagePath))
+        {
+            logger.LogError(
+                "ModuleStoragePath is missing or empty. Please check your configuration. Application cannot start.");
+            throw new InvalidOperationException(
+                "ModuleStoragePath is missing or empty. Please check your configuration.");
+        }
+
+        return new LocalModuleService(config, db, logger);
+    }
+
+    private static IServiceCollection AddProviderRegistryServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IProviderArtifactStorage>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var storageProvider = config["StorageProvider"]?.ToLowerInvariant() ?? "local";
+            var expiryMinutes = int.TryParse(config["ProviderArtifactUrlExpiryMinutes"], out var parsed) ? parsed : 10;
+
+            return storageProvider switch
+            {
+                "azure" => new AzureBlobProviderArtifactStorage(
+                    config,
+                    provider.GetRequiredService<ILogger<AzureBlobProviderArtifactStorage>>()),
+                "s3" => new S3ProviderArtifactStorage(
+                    config,
+                    provider.GetRequiredService<ILogger<S3ProviderArtifactStorage>>(),
+                    null,
+                    provider.GetRequiredService<IS3ClientFactory>()),
+                "local" => new LocalProviderArtifactStorage(
+                    config["ProviderStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "providers"),
+                    TimeSpan.FromMinutes(expiryMinutes),
+                    provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>()),
+                _ => throw new InvalidOperationException(
+                    $"Provider artifact storage is not implemented for StorageProvider '{storageProvider}'.")
+            };
+        });
+
+        services.AddSingleton<IProviderRegistryService, ProviderRegistryService>();
+        services.AddSingleton<IProviderPackageValidator, ProviderPackageValidator>();
+        services.AddSingleton<IProviderRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlProviderRepository(
+                    config["PostgreSQL:ConnectionString"] ??
+                    throw new InvalidOperationException("PostgreSQL connection string is missing.")),
+                "sqlite" => new SqliteProviderRepository(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddAnalyticsService(this IServiceCollection services)
+    {
+        services.AddSingleton<IAnalyticsService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlAnalyticsService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for analytics service.")),
+                "sqlite" => new SqliteAnalyticsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddWebhookServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IWebhookService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlWebhookService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for webhook service.")),
+                "sqlite" => new SqliteWebhookService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<WebhookUrlValidator>();
+        services.AddSingleton<WebhookDispatcher>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddVcsServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IVcsSourceService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlVcsSourceService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for VCS source service.")),
+                "sqlite" => new SqliteVcsSourceService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        services.AddSingleton<IVcsConnectionService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlVcsConnectionService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for VCS connection service.")),
+                "sqlite" => new SqliteVcsConnectionService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        services.AddSingleton<GitHubVcsService>();
+        services.AddSingleton<IGitHubVcsService>(provider => provider.GetRequiredService<GitHubVcsService>());
+        services.AddHttpClient("GitHubVcs", c => c.Timeout = TimeSpan.FromSeconds(60));
+
+        return services;
+    }
+
+    private static IServiceCollection AddModuleExtractionServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IArchiveWorkspaceFactory, ArchiveWorkspaceFactory>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddSingleton<ReadmeDiscoveryService>();
+        services.AddSingleton<ExampleDiscoveryService>();
+        services.AddSingleton<SubmoduleDiscoveryService>();
+        services.AddSingleton<ITerraformModuleInspector, TerraformConfigInspectRunner>();
+        services.AddSingleton<IModuleLlmContextGenerator, ModuleLlmContextGenerator>();
+        services.AddSingleton<IModuleExtractionConfigService, ModuleExtractionConfigService>();
+        services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
+        services.AddHostedService<ModuleExtractionHostedService>();
+        services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddAuthorizationServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IRoleService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlRoleService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for role service.")),
+                "sqlite" => new SqliteRoleService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        services.AddSingleton<IPermissionService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlPermissionService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for permission service.")),
+                "sqlite" => new SqlitePermissionService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        services.AddSingleton<IAuditService>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlAuditService(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for audit service."),
+                    provider.GetRequiredService<ILogger<PostgreSqlAuditService>>()),
+                "sqlite" => new SqliteAuditService(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db",
+                    provider.GetRequiredService<ILogger<SqliteAuditService>>()),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        return services;
+    }
+}
