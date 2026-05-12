@@ -5,7 +5,7 @@ namespace TerraformRegistry.Models;
 /// <summary>
 ///     Represents a module with detailed information
 /// </summary>
-public class Module
+public class TerraformModule
 {
     [JsonPropertyName("id")] public required string Id { get; set; }
 

@@ -18,6 +18,7 @@ public class S3ModuleServicePurgeAndHealthTests
 
     public S3ModuleServicePurgeAndHealthTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockS3Client
             .SetupSequence(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ReturnsAsync(new ListObjectsV2Response())
@@ -28,6 +29,7 @@ public class S3ModuleServicePurgeAndHealthTests
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["S3:BucketName"] = "modules",
                 ["S3:Region"] = "eu-west-2"
@@ -50,7 +52,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Returns_False_When_Module_Row_Is_Missing()
+    public async Task PurgeModuleVersionAsyncReturnsFalseWhenModuleRowIsMissing()
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
@@ -64,7 +66,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Deletes_Database_Row_And_Object()
+    public async Task PurgeModuleVersionAsyncDeletesDatabaseRowAndObject()
     {
         var module = new ModuleStorage
         {
@@ -136,7 +138,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Deletes_All_Matching_Objects_Across_Pages()
+    public async Task PurgeModuleVersionAsyncDeletesAllMatchingObjectsAcrossPages()
     {
         var module = new ModuleStorage
         {
@@ -227,7 +229,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Returns_False_When_S3_Delete_Fails_And_Keeps_Row_For_Retry()
+    public async Task PurgeModuleVersionAsyncReturnsFalseWhenS3DeleteFailsAndKeepsRowForRetry()
     {
         var module = new ModuleStorage
         {
@@ -279,7 +281,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Returns_False_When_Metadata_Read_Fails_And_Keeps_Row_For_Retry()
+    public async Task PurgeModuleVersionAsyncReturnsFalseWhenMetadataReadFailsAndKeepsRowForRetry()
     {
         var module = new ModuleStorage
         {
@@ -324,7 +326,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Returns_False_When_PublishedAt_Metadata_Is_Invalid_And_Keeps_Row_For_Retry()
+    public async Task PurgeModuleVersionAsyncReturnsFalseWhenPublishedAtMetadataIsInvalidAndKeepsRowForRetry()
     {
         var module = new ModuleStorage
         {
@@ -368,7 +370,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Skips_Newer_Objects_And_Fails_When_Current_Row_Changes()
+    public async Task PurgeModuleVersionAsyncSkipsNewerObjectsAndFailsWhenCurrentRowChanges()
     {
         var module = new ModuleStorage
         {
@@ -430,7 +432,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Restores_Active_Row_When_S3_Delete_Fails_After_Row_Remove()
+    public async Task PurgeModuleVersionAsyncRestoresActiveRowWhenS3DeleteFailsAfterRowRemove()
     {
         var module = new ModuleStorage
         {
@@ -481,7 +483,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Restores_Active_Row_Without_Deleting_Current_Object_When_Historical_Delete_Fails()
+    public async Task PurgeModuleVersionAsyncRestoresActiveRowWithoutDeletingCurrentObjectWhenHistoricalDeleteFails()
     {
         var module = new ModuleStorage
         {
@@ -548,7 +550,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Deletes_Soft_Deleted_Row_Before_Object_Cleanup()
+    public async Task PurgeModuleVersionAsyncDeletesSoftDeletedRowBeforeObjectCleanup()
     {
         var module = new ModuleStorage
         {
@@ -600,7 +602,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Returns_False_When_Soft_Deleted_Row_Was_Restored_Before_Remove()
+    public async Task PurgeModuleVersionAsyncReturnsFalseWhenSoftDeletedRowWasRestoredBeforeRemove()
     {
         var module = new ModuleStorage
         {
@@ -648,7 +650,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsync_Restores_Soft_Deleted_Row_When_S3_Delete_Fails_After_Row_Remove()
+    public async Task PurgeModuleVersionAsyncRestoresSoftDeletedRowWhenS3DeleteFailsAfterRowRemove()
     {
         var module = new ModuleStorage
         {
@@ -699,7 +701,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task CheckStorageAsync_Returns_Healthy_When_List_Succeeds()
+    public async Task CheckStorageAsyncReturnsHealthyWhenListSucceeds()
     {
         var service = CreateService();
 
@@ -710,7 +712,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task CheckStorageAsync_Returns_Unhealthy_When_List_Fails()
+    public async Task CheckStorageAsyncReturnsUnhealthyWhenListFails()
     {
         _mockS3Client
             .SetupSequence(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))

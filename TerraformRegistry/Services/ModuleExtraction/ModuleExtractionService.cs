@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services.ModuleExtraction;
@@ -46,7 +47,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
 
         if (!_queue.Writer.TryWrite(request))
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Unable to queue extraction for module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,
                 request.Name,
@@ -310,7 +311,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         }
         catch (Exception metadataException)
         {
-            _logger.LogError(
+            RegistryLog.Error(_logger,
                 metadataException,
                 "Failed to mark extraction failure for module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,
@@ -341,7 +342,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         }
         catch (Exception metadataException)
         {
-            _logger.LogError(
+            RegistryLog.Error(_logger,
                 metadataException,
                 "Failed to mark LLM context failure for module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,

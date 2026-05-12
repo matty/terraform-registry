@@ -6,7 +6,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class LocalProviderArtifactStorageTests
 {
     [Fact]
-    public async Task SaveAsync_StoresArtifactInsideProviderStorageRoot()
+    public async Task SaveAsyncStoresArtifactInsideProviderStorageRoot()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(
@@ -24,7 +24,7 @@ public class LocalProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task OpenReadAsync_ReturnsStoredArtifactContent()
+    public async Task OpenReadAsyncReturnsStoredArtifactContent()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(
@@ -43,7 +43,7 @@ public class LocalProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task CreateDownloadUrlAsync_ReturnsTokenForStoredArtifact()
+    public async Task CreateDownloadUrlAsyncReturnsTokenForStoredArtifact()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(
@@ -62,25 +62,23 @@ public class LocalProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task OpenTokenAsync_ReturnsNullAfterTokenExpires()
+    public async Task OpenTokenAsyncReturnsNullAfterTokenExpires()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(
             temp.Path,
-            TimeSpan.FromMilliseconds(1),
+            TimeSpan.Zero,
             NullLogger<LocalProviderArtifactStorage>.Instance);
         await using var content = new MemoryStream([1]);
         var result = await storage.SaveAsync("acme/example/1.0.0/file.zip", content, CancellationToken.None);
 
         var tokenUrl = await storage.CreateDownloadUrlAsync(result.StoragePath, CancellationToken.None);
         var token = tokenUrl.Split("token=", StringSplitOptions.None)[1];
-        await Task.Delay(20);
-
         Assert.False(LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out _));
     }
 
     [Fact]
-    public async Task SaveAsync_RejectsPathsOutsideStorageRoot()
+    public async Task SaveAsyncRejectsPathsOutsideStorageRoot()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(
@@ -94,7 +92,7 @@ public class LocalProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task DeleteAsync_RemovesStoredArtifact()
+    public async Task DeleteAsyncRemovesStoredArtifact()
     {
         using var temp = new TempDirectory();
         var storage = new LocalProviderArtifactStorage(

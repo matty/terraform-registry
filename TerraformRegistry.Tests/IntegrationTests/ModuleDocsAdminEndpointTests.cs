@@ -34,7 +34,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Summary_WithoutReadPermission_ReturnsForbidden()
+    public async Task SummaryWithoutReadPermissionReturnsForbidden()
     {
         var client = await CreateClientWithPermissionsAsync(
             "module-docs-no-read@test.com",
@@ -47,7 +47,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Summary_WithReadPermission_ReturnsConfigAndSummary()
+    public async Task SummaryWithReadPermissionReturnsConfigAndSummary()
     {
         var client = await CreateClientWithPermissionsAsync(
             "module-docs-read@test.com",
@@ -65,7 +65,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task UpdateConfig_WithConfigurePermission_PersistsRuntimeSetting()
+    public async Task UpdateConfigWithConfigurePermissionPersistsRuntimeSetting()
     {
         var client = await CreateClientWithPermissionsAsync(
             "module-docs-configure@test.com",
@@ -82,7 +82,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Backfill_WhenDisabled_ReturnsConflict()
+    public async Task BackfillWhenDisabledReturnsConflict()
     {
         var client = await CreateClientWithPermissionsAsync(
             "module-docs-manage@test.com",
@@ -95,7 +95,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Requeue_WhenEnabled_ReturnsAcceptedAndMarksPendingWithoutClearingError()
+    public async Task RequeueWhenEnabledReturnsAcceptedAndMarksPendingWithoutClearingError()
     {
         var client = await CreateModuleDocsAdminClientAsync("module-docs-requeue@test.com", "module-docs-requeue");
         await EnableExtractionAsync(client);
@@ -120,7 +120,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Detail_IncludesStoredLlmContextAndRegenerateEndpointRefreshesIt()
+    public async Task DetailIncludesStoredLlmContextAndRegenerateEndpointRefreshesIt()
     {
         var client = await CreateModuleDocsAdminClientAsync("module-docs-llm@test.com", "module-docs-llm");
 
@@ -132,7 +132,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
             new ModuleExtractionState { Status = "succeeded" },
             new ModuleLlmContextState { Status = "failed", Error = "stale artifact" });
 
-        using (var scope = _factory.Services.CreateScope())
+        using (var scope = Factory.Services.CreateScope())
         {
             var database = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
@@ -186,7 +186,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
     }
 
     [Fact]
-    public async Task Backfill_WhenEnabled_QueuesBoundedModulesAndMarksThemPending()
+    public async Task BackfillWhenEnabledQueuesBoundedModulesAndMarksThemPending()
     {
         var client = await CreateModuleDocsAdminClientAsync("module-docs-backfill@test.com", "module-docs-backfill");
         await EnableExtractionAsync(client);
@@ -245,7 +245,7 @@ public class ModuleDocsAdminEndpointTests(ITestOutputHelper output) : Integratio
         ModuleLlmContextState? llmContext = null,
         DateTime? publishedAt = null)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var inserted = await database.AddModuleAsync(new ModuleStorage

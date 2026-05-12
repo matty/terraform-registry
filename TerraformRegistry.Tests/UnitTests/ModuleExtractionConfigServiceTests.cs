@@ -10,7 +10,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModuleExtractionConfigServiceTests
 {
     [Fact]
-    public async Task GetAsync_UsesStartupDefaultWhenNoRuntimeSettingExists()
+    public async Task GetAsyncUsesStartupDefaultWhenNoRuntimeSettingExists()
     {
         var settings = new Mock<IRuntimeSettingsService>();
         settings
@@ -29,7 +29,7 @@ public class ModuleExtractionConfigServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_RuntimeSettingOverridesStartupDefault()
+    public async Task GetAsyncRuntimeSettingOverridesStartupDefault()
     {
         var settings = new Mock<IRuntimeSettingsService>();
         settings
@@ -55,7 +55,7 @@ public class ModuleExtractionConfigServiceTests
     }
 
     [Fact]
-    public async Task SetEnabledAsync_PersistsRuntimeOverride()
+    public async Task SetEnabledAsyncPersistsRuntimeOverride()
     {
         var settings = new Mock<IRuntimeSettingsService>();
         var service = new ModuleExtractionConfigService(

@@ -82,7 +82,7 @@ public static class HealthHandlers
             }
 
             // Check 2: API key
-            if (!token.Contains('.') || token.Count(c => c == '.') != 2)
+            if (!token.Contains('.', StringComparison.Ordinal) || token.Count(c => c == '.') != 2)
             {
                 using var scope = context.RequestServices.CreateScope();
                 var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();

@@ -13,9 +13,9 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task ExpiredApiKey_Returns401WithExpiredMessage()
+    public async Task ExpiredApiKeyReturns401WithExpiredMessage()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
@@ -34,7 +34,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
         apiKey.ExpiresAt = DateTime.UtcNow.AddHours(-1);
         await dbService.UpdateApiKeyAsync(apiKey);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
 
         var response = await client.GetAsync("/v1/modules");
@@ -45,9 +45,9 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
     }
 
     [Fact]
-    public async Task ValidApiKey_WithFutureExpiration_Succeeds()
+    public async Task ValidApiKeyWithFutureExpirationSucceeds()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
@@ -66,7 +66,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
         apiKey.ExpiresAt = DateTime.UtcNow.AddDays(30);
         await dbService.UpdateApiKeyAsync(apiKey);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
 
         var response = await client.GetAsync("/v1/modules");
@@ -74,9 +74,9 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
     }
 
     [Fact]
-    public async Task ValidApiKey_WithNoExpiration_Succeeds()
+    public async Task ValidApiKeyWithNoExpirationSucceeds()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
@@ -93,7 +93,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
 
         var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "no expiry key");
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
 
         var response = await client.GetAsync("/v1/modules");

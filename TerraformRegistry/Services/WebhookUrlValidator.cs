@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Services;
 
@@ -33,7 +34,7 @@ public class WebhookUrlValidator(
             }
             catch (SocketException ex)
             {
-                logger.LogWarning(ex, "Webhook host resolution failed for {Host}", uri.DnsSafeHost);
+                RegistryLog.Warning(logger, ex, "Webhook host resolution failed for {Host}", uri.DnsSafeHost);
                 throw new InvalidOperationException("Webhook URL host could not be resolved.", ex);
             }
         }
@@ -48,7 +49,7 @@ public class WebhookUrlValidator(
         {
             if (IsPrivateOrLocal(address))
             {
-                logger.LogWarning("Blocked webhook target {Url} because it resolved to {Address}", url, address);
+                RegistryLog.Warning(logger, "Blocked webhook target {Url} because it resolved to {Address}", url, address);
                 throw new InvalidOperationException("Webhook URL resolves to a private or local address and is not allowed.");
             }
         }

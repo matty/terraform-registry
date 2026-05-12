@@ -8,7 +8,7 @@ namespace TerraformRegistry.Tests.UnitTests.Database;
 public class SqliteModuleExtractionAdminQueryTests
 {
     [Fact]
-    public async Task ModuleExtractionAdminQueries_ReturnSummaryListAndDetail()
+    public async Task ModuleExtractionAdminQueriesReturnSummaryListAndDetail()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"module-docs-admin-{Guid.NewGuid():N}.db");
         var connectionString = $"Data Source={dbPath}";

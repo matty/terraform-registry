@@ -3,6 +3,7 @@ using Polly;
 using Polly.Retry;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -34,7 +35,7 @@ public class DatabaseInitializerHostedService : IHostedService
     {
         if (_initializableDb == null)
         {
-            _logger.LogWarning("No IInitializableDb service found. Skipping database initialization.");
+            RegistryLog.Warning(_logger, "No IInitializableDb service found. Skipping database initialization.");
             return;
         }
 
@@ -42,9 +43,9 @@ public class DatabaseInitializerHostedService : IHostedService
 
         await pipeline.ExecuteAsync(async token =>
         {
-            _logger.LogInformation("Attempting to initialize database...");
+            RegistryLog.Information(_logger, "Attempting to initialize database...");
             await _initializableDb.InitializeDatabase();
-            _logger.LogInformation("Database initialization completed successfully.");
+            RegistryLog.Information(_logger, "Database initialization completed successfully.");
         }, cancellationToken);
 
         // Seed default RBAC roles after migration is complete
@@ -61,7 +62,7 @@ public class DatabaseInitializerHostedService : IHostedService
             var dbService = _serviceProvider.GetRequiredService<IDatabaseService>();
 
             await roleService.SeedDefaultRolesAsync();
-            _logger.LogInformation("Default RBAC roles seeded successfully.");
+            RegistryLog.Information(_logger, "Default RBAC roles seeded successfully.");
 
             var adminEmails = configuration["AdminEmails"];
             if (!string.IsNullOrEmpty(adminEmails))
@@ -75,7 +76,7 @@ public class DatabaseInitializerHostedService : IHostedService
                         var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(email);
                         if (matchingUsers.Count > 1)
                         {
-                            _logger.LogError(
+                            RegistryLog.Error(_logger,
                                 "Skipping bootstrap admin assignment for {Email} because multiple legacy users match that email case-insensitively.",
                                 email);
                             continue;
@@ -85,7 +86,7 @@ public class DatabaseInitializerHostedService : IHostedService
                         if (user != null)
                         {
                             await permissionService.AssignRoleAsync(user.Id, adminRole.Id, "system-bootstrap");
-                            _logger.LogInformation("Bootstrapped admin role for user {Email}", email);
+                            RegistryLog.Information(_logger, "Bootstrapped admin role for user {Email}", email);
                         }
                     }
                 }
@@ -93,7 +94,7 @@ public class DatabaseInitializerHostedService : IHostedService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to seed default RBAC roles.");
+            RegistryLog.Error(_logger, ex, "Failed to seed default RBAC roles.");
         }
     }
 
@@ -114,7 +115,7 @@ public class DatabaseInitializerHostedService : IHostedService
                 UseJitter = true,
                 OnRetry = args =>
                 {
-                    _logger.LogWarning(
+                    RegistryLog.Warning(_logger,
                         args.Outcome.Exception,
                         "Database connection attempt {AttemptNumber} of {MaxAttempts} failed. Retrying in {Delay}...",
                         args.AttemptNumber + 1,

@@ -34,7 +34,7 @@ internal static class ModuleEndpointMappingExtensions
                     ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService, context))
             .WithTags("Modules")
             .WithDescription("Gets a specific module")
-            .Produces<Module>()
+            .Produces<TerraformModule>()
             .ProducesProblem(404);
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",

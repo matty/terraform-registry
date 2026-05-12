@@ -9,7 +9,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ProviderRegistryServiceTests
 {
     [Fact]
-    public async Task GetVersionsAsync_ReturnsNullWhenRepositoryReturnsNoVersions()
+    public async Task GetVersionsAsyncReturnsNullWhenRepositoryReturnsNoVersions()
     {
         var repository = new Mock<IProviderRepository>();
         var service = CreateService(repository);
@@ -22,7 +22,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task GetPackageAsync_ReturnsPackageResponseWithSignedAssetUrlsAndRecordsDownload()
+    public async Task GetPackageAsyncReturnsPackageResponseWithSignedAssetUrlsAndRecordsDownload()
     {
         var repository = new Mock<IProviderRepository>();
         var storage = new Mock<IProviderArtifactStorage>();
@@ -95,7 +95,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task CreateProviderAsync_RejectsInvalidProviderNamespace()
+    public async Task CreateProviderAsyncRejectsInvalidProviderNamespace()
     {
         var service = CreateService();
 
@@ -110,7 +110,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task CreateVersionAsync_RejectsInvalidSemanticVersion()
+    public async Task CreateVersionAsyncRejectsInvalidSemanticVersion()
     {
         var service = CreateService();
 
@@ -126,7 +126,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task CreateVersionAsync_RejectsUnsupportedProtocols()
+    public async Task CreateVersionAsyncRejectsUnsupportedProtocols()
     {
         var service = CreateService();
 
@@ -142,7 +142,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task CreateVersionAsync_AcceptsDocumentedProviderProtocolMinorVersions()
+    public async Task CreateVersionAsyncAcceptsDocumentedProviderProtocolMinorVersions()
     {
         var repository = new Mock<IProviderRepository>();
         var providerId = Guid.NewGuid();
@@ -187,7 +187,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task RevokeGpgKeyAsync_RejectsKeyUsedByActiveProviderVersions()
+    public async Task RevokeGpgKeyAsyncRejectsKeyUsedByActiveProviderVersions()
     {
         var repository = new Mock<IProviderRepository>();
         var service = CreateService(repository);
@@ -210,7 +210,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task DeleteProviderAsync_RemovesStoredArtifactsAfterRepositoryDelete()
+    public async Task DeleteProviderAsyncRemovesStoredArtifactsAfterRepositoryDelete()
     {
         var repository = new Mock<IProviderRepository>();
         var storage = new Mock<IProviderArtifactStorage>();
@@ -231,7 +231,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task UploadPlatformPackageAsync_ValidatesPackageAndStoresArtifact()
+    public async Task UploadPlatformPackageAsyncValidatesPackageAndStoresArtifact()
     {
         var repository = new Mock<IProviderRepository>();
         var storage = new Mock<IProviderArtifactStorage>();
@@ -316,7 +316,7 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
-    public async Task UploadPlatformPackageAsync_StoresValidatedNonSeekableUploadBody()
+    public async Task UploadPlatformPackageAsyncStoresValidatedNonSeekableUploadBody()
     {
         var repository = new Mock<IProviderRepository>();
         var storage = new Mock<IProviderArtifactStorage>();

@@ -9,9 +9,9 @@ public class StaticTokenAuthorizationTests(ITestOutputHelper output) : Integrati
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task StaticToken_InTestEnvironment_CanStillAccessModuleProtocolRoutes()
+    public async Task StaticTokenInTestEnvironmentCanStillAccessModuleProtocolRoutes()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var response = await client.GetAsync("/v1/modules");
@@ -20,9 +20,9 @@ public class StaticTokenAuthorizationTests(ITestOutputHelper output) : Integrati
     }
 
     [Fact]
-    public async Task StaticToken_CannotAccessAdminRoutes()
+    public async Task StaticTokenCannotAccessAdminRoutes()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var response = await client.GetAsync("/api/admin/roles");
@@ -31,9 +31,9 @@ public class StaticTokenAuthorizationTests(ITestOutputHelper output) : Integrati
     }
 
     [Fact]
-    public async Task StaticToken_CanAccessProviderProtocolRoutes()
+    public async Task StaticTokenCanAccessProviderProtocolRoutes()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var response = await client.GetAsync("/v1/providers/Acme/example/versions");

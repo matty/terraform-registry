@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -75,8 +76,8 @@ public class SqliteVcsConnectionService : IVcsConnectionService
         cmd.Parameters.AddWithValue("$webhookSecret", vcsConnection.WebhookSecret);
         cmd.Parameters.AddWithValue("$createdBy", (object?)vcsConnection.CreatedBy ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$isActive", vcsConnection.IsActive ? 1 : 0);
-        cmd.Parameters.AddWithValue("$createdAt", vcsConnection.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$updatedAt", vcsConnection.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$createdAt", vcsConnection.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updatedAt", vcsConnection.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
         return vcsConnection;
@@ -91,7 +92,7 @@ public class SqliteVcsConnectionService : IVcsConnectionService
         var parameters = new List<SqliteParameter>
         {
             new("$id", id.ToString()),
-            new("$updatedAt", DateTime.UtcNow.ToString("o"))
+            new("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture))
         };
 
         if (label != null)
@@ -172,8 +173,8 @@ public class SqliteVcsConnectionService : IVcsConnectionService
             WebhookSecret = reader.GetString(5),
             CreatedBy = reader.IsDBNull(6) ? null : reader.GetString(6),
             IsActive = reader.GetInt32(7) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(8)),
-            UpdatedAt = DateTime.Parse(reader.GetString(9))
+            CreatedAt = DateTime.Parse(reader.GetString(8), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(9), CultureInfo.InvariantCulture)
         };
     }
 }

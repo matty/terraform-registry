@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -21,7 +22,7 @@ public class WebhookDispatcher(
                 var webhooks = await webhookService.GetActiveWebhooksForEventAsync(eventType);
 
                 var baseUrl = configuration["BaseUrl"]?.TrimEnd('/') ?? string.Empty;
-                var action = eventType.Contains('.') ? eventType[(eventType.LastIndexOf('.') + 1)..] : eventType;
+                var action = eventType.Contains('.', StringComparison.Ordinal) ? eventType[(eventType.LastIndexOf('.') + 1)..] : eventType;
 
                 var eventData = new WebhookEventData(
                     Id: "wh_" + Guid.NewGuid().ToString("N"),
@@ -49,14 +50,14 @@ public class WebhookDispatcher(
                     }
                     catch (Exception ex)
                     {
-                        logger.LogError(ex, "Failed to deliver webhook {WebhookId} to {Url}", webhook.Id, webhook.Url);
+                        RegistryLog.Error(logger, ex, "Failed to deliver webhook {WebhookId} to {Url}", webhook.Id, webhook.Url);
                     }
                 });
                 await Task.WhenAll(deliveryTasks);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to fire webhook event {EventType}", eventType);
+                RegistryLog.Error(logger, ex, "Failed to fire webhook event {EventType}", eventType);
             }
         });
     }
@@ -89,7 +90,7 @@ public class WebhookDispatcher(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Test webhook delivery failed for {WebhookId} to {Url}", webhook.Id, webhook.Url);
+            RegistryLog.Error(logger, ex, "Test webhook delivery failed for {WebhookId} to {Url}", webhook.Id, webhook.Url);
             return (false, ex.Message);
         }
     }

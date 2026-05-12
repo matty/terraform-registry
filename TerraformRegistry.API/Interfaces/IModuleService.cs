@@ -15,43 +15,43 @@ public interface IModuleService
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version);
+    Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider);
+    Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider);
 
     /// <summary>
     ///     Gets the download path for a specific module version
     /// </summary>
-    Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider, string version);
+    Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Opens the stored module package for internal processing
     /// </summary>
-    Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider, string version);
+    Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Uploads a new module
     /// </summary>
-    Task<bool> UploadModuleAsync(string @namespace, string name, string provider, string version, Stream moduleContent,
+    Task<bool> UploadModuleAsync(string moduleNamespace, string name, string provider, string version, Stream moduleContent,
         string description, bool replace = false, ModuleArtifactMetadata? metadata = null);
 
     /// <summary>
     ///     Soft deletes a module version
     /// </summary>
-    Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version);
+    Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Restores a soft-deleted module version
     /// </summary>
-    Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider, string version);
+    Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Permanently deletes a module version (purge)
     /// </summary>
-    Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version);
+    Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Lists all soft-deleted modules
@@ -61,7 +61,7 @@ public interface IModuleService
     /// <summary>
     ///     Updates the description for all active versions of a module
     /// </summary>
-    Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
+    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description);
 
     /// <summary>
     ///     Checks that the storage backend is healthy and writable

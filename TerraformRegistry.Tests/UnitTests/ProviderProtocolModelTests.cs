@@ -6,7 +6,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ProviderProtocolModelTests
 {
     [Fact]
-    public void ProviderVersionsResponse_SerializesTerraformProviderProtocolShape()
+    public void ProviderVersionsResponseSerializesTerraformProviderProtocolShape()
     {
         var response = new ProviderVersionsResponse
         {
@@ -38,7 +38,7 @@ public class ProviderProtocolModelTests
     }
 
     [Fact]
-    public void ProviderPackageResponse_SerializesSigningKeysForTerraformCli()
+    public void ProviderPackageResponseSerializesSigningKeysForTerraformCli()
     {
         var response = new ProviderPackageResponse
         {

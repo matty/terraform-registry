@@ -14,7 +14,7 @@ public class ProviderProtocolEndpointTests(ITestOutputHelper output) : Integrati
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task ProviderVersions_ReturnsPublishedProviderVersions()
+    public async Task ProviderVersionsReturnsPublishedProviderVersions()
     {
         await SeedProviderReleaseAsync();
         var client = await CreateClientWithPermissionsAsync(
@@ -33,7 +33,7 @@ public class ProviderProtocolEndpointTests(ITestOutputHelper output) : Integrati
     }
 
     [Fact]
-    public async Task ProviderDownload_ReturnsTerraformPackageMetadata()
+    public async Task ProviderDownloadReturnsTerraformPackageMetadata()
     {
         await SeedProviderReleaseAsync();
         var client = await CreateClientWithPermissionsAsync(
@@ -59,7 +59,7 @@ public class ProviderProtocolEndpointTests(ITestOutputHelper output) : Integrati
 
     private async Task SeedProviderReleaseAsync()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IProviderRepository>();
         var storage = scope.ServiceProvider.GetRequiredService<IProviderArtifactStorage>();
 

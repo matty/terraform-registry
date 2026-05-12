@@ -15,7 +15,7 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public class S3StartupTests
 {
     [Fact]
-    public void Startup_WithS3Provider_ResolvesProviderArtifactStorage()
+    public void StartupWithS3ProviderResolvesProviderArtifactStorage()
     {
         var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-s3-provider-startup-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -78,7 +78,7 @@ public class S3StartupTests
     }
 
     [Fact]
-    public void Startup_WithS3Provider_AndMissingBucketName_Throws_During_CreateClient()
+    public void StartupWithS3ProviderAndMissingBucketNameThrowsDuringCreateClient()
     {
         var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-s3-startup-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);

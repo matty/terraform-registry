@@ -1,9 +1,10 @@
-using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
@@ -82,7 +83,7 @@ public static class AuthHandlers
         // Check for OAuth errors
         if (!string.IsNullOrEmpty(error))
         {
-            logger.LogWarning("OAuth error from {Provider}: {Error}", provider, error);
+            RegistryLog.Warning(logger, "OAuth error from {Provider}: {Error}", provider, error);
             return Results.Redirect("/login?error=oauth_denied");
         }
 
@@ -90,7 +91,7 @@ public static class AuthHandlers
         var storedState = context.Request.Cookies[StateCookieName];
         if (string.IsNullOrEmpty(state) || storedState != state)
         {
-            logger.LogWarning("OAuth state mismatch for {Provider}", provider);
+            RegistryLog.Warning(logger, "OAuth state mismatch for {Provider}", provider);
             return Results.Redirect("/login?error=invalid_state");
         }
 
@@ -106,11 +107,11 @@ public static class AuthHandlers
         var userInfo = await oauthService.ExchangeCodeForUserInfoAsync(provider, code);
         if (userInfo == null)
         {
-            logger.LogError("Failed to exchange code for user info with {Provider}", provider);
+            RegistryLog.Error(logger, "Failed to exchange code for user info with {Provider}", provider);
             return Results.Redirect("/login?error=exchange_failed");
         }
 
-        logger.LogInformation("User {Email} logged in via {Provider}", userInfo.Email, provider);
+        RegistryLog.Information(logger, "User {Email} logged in via {Provider}", userInfo.Email, provider);
 
         // Ensure user exists; userInfo.Id is the provider's ID (e.g. GitHub numeric ID).
         User user;
@@ -120,7 +121,7 @@ public static class AuthHandlers
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogWarning(ex, "OIDC login rejected for provider {Provider}", provider);
+            RegistryLog.Warning(logger, ex, "OIDC login rejected for provider {Provider}", provider);
             return Results.Redirect("/login?error=account_link_required");
         }
 
@@ -217,6 +218,7 @@ public static class AuthHandlers
         });
 
         var redirect = QueryHelpers.AddQueryString(redirectUri, new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["code"] = issued.Code,
             ["state"] = state
@@ -474,7 +476,7 @@ public static class AuthHandlers
 
     private static bool IsSafeReturnPath(string path)
     {
-        return path.StartsWith("/", StringComparison.Ordinal) &&
+        return path.StartsWith('/') &&
                !path.StartsWith("//", StringComparison.Ordinal);
     }
 

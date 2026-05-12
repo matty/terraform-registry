@@ -9,9 +9,9 @@ public class TerraformLoginAuthorizationTests(ITestOutputHelper output) : Integr
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task TerraformAuthorize_WithoutPortalSession_Redirects_To_Login_WithContinuation()
+    public async Task TerraformAuthorizeWithoutPortalSessionRedirectsToLoginWithContinuation()
     {
-        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        var client = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });

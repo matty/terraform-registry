@@ -20,11 +20,12 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     private const string SafeCustomWebhookUrl2 = "https://1.1.1.1/custom-hook2";
     private const string SafeInvalidFormatWebhookUrl = "https://1.1.1.1/invalid-hook";
     private const string SafeFormatUpdateWebhookUrl = "https://1.1.1.1/fmt-update-hook";
+    private static readonly string[] ModulePublishedEvents = ["module.published"];
 
     [Fact]
-    public async Task Webhooks_Unauthenticated_Returns401()
+    public async Task WebhooksUnauthenticatedReturns401()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         // No auth header
 
         var response = await client.GetAsync("/api/admin/webhooks");
@@ -32,14 +33,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Create_ReturnsCreated()
+    public async Task WebhooksCreateReturnsCreated()
     {
         var client = await CreateAuthenticatedClientAsync("create-test@example.com", "create-test-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeWebhookUrl,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -53,21 +54,21 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     [InlineData("http://127.0.0.1/hook")]
     [InlineData("http://localhost/hook")]
     [InlineData("ftp://example.com/hook")]
-    public async Task Webhooks_Create_WithUnsafeUrl_ReturnsBadRequest(string url)
+    public async Task WebhooksCreateWithUnsafeUrlReturnsBadRequest(string url)
     {
         var client = await CreateAuthenticatedClientAsync("unsafe-webhook@example.com", "unsafe-webhook-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task Webhooks_List_ReturnsCreatedWebhook()
+    public async Task WebhooksListReturnsCreatedWebhook()
     {
         var client = await CreateAuthenticatedClientAsync("list-test@example.com", "list-test-id");
 
@@ -75,7 +76,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeListWebhookUrl,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
 
         // List webhooks
@@ -87,7 +88,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Update_ReturnsUpdated()
+    public async Task WebhooksUpdateReturnsUpdated()
     {
         var client = await CreateAuthenticatedClientAsync("update-test@example.com", "update-test-id");
 
@@ -95,7 +96,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeUpdateWebhookUrl,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -113,14 +114,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Update_WithUnsafeUrl_ReturnsBadRequest()
+    public async Task WebhooksUpdateWithUnsafeUrlReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("update-unsafe@example.com", "update-unsafe-id");
 
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = "https://1.1.1.1/update-hook",
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -134,14 +135,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Update_WithInvalidFormat_ReturnsBadRequest()
+    public async Task WebhooksUpdateWithInvalidFormatReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("update-invalid-format@example.com", "update-invalid-format-id");
 
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeFormatUpdateWebhookUrl,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -155,14 +156,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Update_ToCustomWithoutTemplate_ReturnsBadRequest()
+    public async Task WebhooksUpdateToCustomWithoutTemplateReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("update-custom-template@example.com", "update-custom-template-id");
 
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeFormatUpdateWebhookUrl,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "generic"
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -177,7 +178,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Delete_ReturnsNoContent()
+    public async Task WebhooksDeleteReturnsNoContent()
     {
         var client = await CreateAuthenticatedClientAsync("delete-test@example.com", "delete-test-id");
 
@@ -185,7 +186,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeDeleteWebhookUrl,
-            events = new[] { "module.published" }
+            events = ModulePublishedEvents
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
         var id = created.GetProperty("id").GetString();
@@ -196,14 +197,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Create_WithDiscordFormat_ReturnsCreated()
+    public async Task WebhooksCreateWithDiscordFormatReturnsCreated()
     {
         var client = await CreateAuthenticatedClientAsync("discord-fmt@example.com", "discord-fmt-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeDiscordWebhookUrl,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "discord"
         });
 
@@ -214,14 +215,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Create_WithCustomFormat_RequiresTemplate()
+    public async Task WebhooksCreateWithCustomFormatRequiresTemplate()
     {
         var client = await CreateAuthenticatedClientAsync("custom-notpl@example.com", "custom-notpl-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeCustomWebhookUrl,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "custom"
         });
 
@@ -229,14 +230,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Create_WithCustomFormat_AndTemplate_ReturnsCreated()
+    public async Task WebhooksCreateWithCustomFormatAndTemplateReturnsCreated()
     {
         var client = await CreateAuthenticatedClientAsync("custom-tpl@example.com", "custom-tpl-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeCustomWebhookUrl2,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "custom",
             template = "{\"text\":\"{{event}}\"}"
         });
@@ -248,14 +249,14 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Create_WithInvalidFormat_ReturnsBadRequest()
+    public async Task WebhooksCreateWithInvalidFormatReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("invalid-fmt@example.com", "invalid-fmt-id");
 
         var response = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeInvalidFormatWebhookUrl,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "invalid"
         });
 
@@ -263,7 +264,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
     }
 
     [Fact]
-    public async Task Webhooks_Update_Format_ReturnsUpdated()
+    public async Task WebhooksUpdateFormatReturnsUpdated()
     {
         var client = await CreateAuthenticatedClientAsync("update-fmt@example.com", "update-fmt-id");
 
@@ -271,7 +272,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var createResponse = await client.PostAsJsonAsync("/api/admin/webhooks", new
         {
             url = SafeFormatUpdateWebhookUrl,
-            events = new[] { "module.published" },
+            events = ModulePublishedEvents,
             format = "generic"
         });
         var created = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
@@ -291,7 +292,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string providerId)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var permissionService = scope.ServiceProvider.GetRequiredService<TerraformRegistry.API.Interfaces.IPermissionService>();
         var roleService = scope.ServiceProvider.GetRequiredService<TerraformRegistry.API.Interfaces.IRoleService>();
@@ -304,7 +305,7 @@ public class WebhookEndpointTests(ITestOutputHelper output) : IntegrationTestBas
         var adminRole = roles.First(r => r.Name == TerraformRegistry.API.RoleNames.Admin);
         await permissionService.AssignRoleAsync(user.Id, adminRole.Id, null);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
         return client;
     }

@@ -16,15 +16,15 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     private const string ValidShasum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     [Fact]
-    public async Task Providers_Unauthenticated_ReturnsUnauthorized()
+    public async Task ProvidersUnauthenticatedReturnsUnauthorized()
     {
-        var response = await _client.GetAsync("/api/providers");
+        var response = await Client.GetAsync("/api/providers");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task CreateProvider_WithPublishPermission_ReturnsCreatedAndCanBeRead()
+    public async Task CreateProviderWithPublishPermissionReturnsCreatedAndCanBeRead()
     {
         var client = await CreateClientWithPermissionsAsync(
             "provider-create@example.com",
@@ -50,7 +50,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task CreateProvider_Duplicate_ReturnsConflict()
+    public async Task CreateProviderDuplicateReturnsConflict()
     {
         var client = await CreateClientWithPermissionsAsync(
             "provider-duplicate@example.com",
@@ -67,7 +67,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task CreateVersion_WithValidSemVer_ReturnsCreated()
+    public async Task CreateVersionWithValidSemVerReturnsCreated()
     {
         var client = await CreatePublisherClientAsync("provider-version@example.com", "provider-version");
         var ns = NewNamespace();
@@ -86,7 +86,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task CreateVersion_WithDocumentedProtocolMinorVersion_ReturnsCreated()
+    public async Task CreateVersionWithDocumentedProtocolMinorVersionReturnsCreated()
     {
         var client = await CreatePublisherClientAsync("provider-version-52@example.com", "provider-version-52");
         var ns = NewNamespace();
@@ -105,7 +105,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task CreateVersion_WithUnsupportedProtocol_ReturnsBadRequest()
+    public async Task CreateVersionWithUnsupportedProtocolReturnsBadRequest()
     {
         var client = await CreatePublisherClientAsync("provider-bad-protocol@example.com", "provider-bad-protocol");
         var ns = NewNamespace();
@@ -122,7 +122,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task CreatePlatform_WithValidMetadata_ReturnsCreatedAndCanBeListed()
+    public async Task CreatePlatformWithValidMetadataReturnsCreatedAndCanBeListed()
     {
         var client = await CreatePublisherClientAsync("provider-platform@example.com", "provider-platform");
         var ns = NewNamespace();
@@ -146,7 +146,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task ListVersionsAndPlatforms_ReturnManagementMetadata()
+    public async Task ListVersionsAndPlatformsReturnManagementMetadata()
     {
         var client = await CreatePublisherClientAsync("provider-management-metadata@example.com", "provider-management-metadata");
         var ns = NewNamespace();
@@ -194,7 +194,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task ProtocolVersions_HidesReleaseUntilShasumsSignatureAndPackageAreUploaded()
+    public async Task ProtocolVersionsHidesReleaseUntilShasumsSignatureAndPackageAreUploaded()
     {
         var client = await CreatePublisherClientAsync("provider-protocol-gating@example.com", "provider-protocol-gating");
         var ns = NewNamespace();
@@ -221,7 +221,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task AddGpgKey_WithoutKeysPermission_ReturnsForbidden()
+    public async Task AddGpgKeyWithoutKeysPermissionReturnsForbidden()
     {
         var client = await CreateClientWithPermissionsAsync(
             "provider-no-key@example.com",
@@ -236,7 +236,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task RevokeGpgKey_UsedByActiveVersion_ReturnsConflict()
+    public async Task RevokeGpgKeyUsedByActiveVersionReturnsConflict()
     {
         var client = await CreatePublisherClientAsync("provider-revoke-key@example.com", "provider-revoke-key");
         var ns = NewNamespace();
@@ -248,7 +248,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task UploadShasumsAndSignature_WithPublishPermission_ReturnsNoContent()
+    public async Task UploadShasumsAndSignatureWithPublishPermissionReturnsNoContent()
     {
         var client = await CreatePublisherClientAsync("provider-files@example.com", "provider-files");
         var ns = NewNamespace();
@@ -268,7 +268,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
-    public async Task UpdateAndDeleteProvider_EnforcesDedicatedPermissions()
+    public async Task UpdateAndDeleteProviderEnforcesDedicatedPermissions()
     {
         var creator = await CreatePublisherClientAsync("provider-lifecycle-create@example.com", "provider-lifecycle-create");
         var ns = NewNamespace();
@@ -296,7 +296,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
             [Permissions.ProvidersRead, Permissions.ProvidersPublish, Permissions.ProvidersKeysManage]);
     }
 
-    private async Task CreateProviderVersionAsync(HttpClient client, string ns)
+    private static async Task CreateProviderVersionAsync(HttpClient client, string ns)
     {
         await CreateProviderAndGpgKeyAsync(client, ns);
         var response = await client.PostAsJsonAsync($"/api/providers/{ns}/example/versions", new CreateProviderVersionRequest
@@ -335,7 +335,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
 
     private async Task MarkPlatformPackageUploadedAsync(string ns)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IProviderRepository>();
         var platform = await repository.GetProviderPlatformAsync(ns, "example", "1.0.0", "linux", "amd64");
         Assert.NotNull(platform);

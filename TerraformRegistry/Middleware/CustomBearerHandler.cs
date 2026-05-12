@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Middleware;
 
@@ -23,7 +24,7 @@ public class CustomBearerHandler : AuthenticationHandler<AuthenticationSchemeOpt
         }
 
         // Log why we are failing
-        Logger.LogInformation("CustomBearerHandler: User is not authenticated for {Path}. Context.User.Identity.IsAuthenticated: {IsAuthenticated}",
+        RegistryLog.Information(Logger, "CustomBearerHandler: User is not authenticated for {Path}. Context.User.Identity.IsAuthenticated: {IsAuthenticated}",
             Context.Request.Path,
             Context.User?.Identity?.IsAuthenticated);
 

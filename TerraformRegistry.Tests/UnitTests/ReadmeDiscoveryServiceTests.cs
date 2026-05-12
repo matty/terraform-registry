@@ -5,7 +5,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ReadmeDiscoveryServiceTests
 {
     [Fact]
-    public void ReadmeDiscoveryService_PrefersRootReadmeAndFindsExamples()
+    public void ReadmeDiscoveryServicePrefersRootReadmeAndFindsExamples()
     {
         var tempDir = Directory.CreateTempSubdirectory();
         File.WriteAllText(Path.Combine(tempDir.FullName, "README.md"), "# Network Module");

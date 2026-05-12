@@ -15,42 +15,42 @@ public interface IModuleRepository
     /// <summary>
     ///     Gets detailed information about a specific module.
     /// </summary>
-    Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version);
+    Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Gets all versions of a specific module.
     /// </summary>
-    Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider);
+    Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider);
 
     /// <summary>
     ///     Gets the storage path information for a specific module version.
     /// </summary>
-    Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider, string version);
+    Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Adds a new module to the database.
     /// </summary>
-    Task<bool> AddModuleAsync(ModuleStorage module);
+    Task<bool> AddModuleAsync(ModuleStorage moduleStorage);
 
     /// <summary>
     ///     Removes a module from the database permanently.
     /// </summary>
-    Task<bool> RemoveModuleAsync(ModuleStorage module);
+    Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage);
 
     /// <summary>
     ///     Removes a module row only when its stored metadata matches the provided module.
     /// </summary>
-    Task<bool> RemoveModuleExactAsync(ModuleStorage module);
+    Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage);
 
     /// <summary>
     ///     Removes a module row only when it is currently soft-deleted.
     /// </summary>
-    Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version);
+    Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Adds a module row directly in the soft-deleted state.
     /// </summary>
-    Task<bool> AddDeletedModuleAsync(ModuleStorage module);
+    Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage);
 
     /// <summary>
     ///     Replaces a module row only when its stored metadata matches the expected current module.
@@ -60,12 +60,12 @@ public interface IModuleRepository
     /// <summary>
     ///     Soft deletes a module by setting its deleted timestamp.
     /// </summary>
-    Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version);
+    Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Restores a soft-deleted module by clearing its deleted timestamp.
     /// </summary>
-    Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version);
+    Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version);
 
     /// <summary>
     ///     Lists all soft-deleted modules.
@@ -76,7 +76,7 @@ public interface IModuleRepository
     ///     Gets a module including soft-deleted ones.
     /// </summary>
     Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version);
@@ -84,5 +84,5 @@ public interface IModuleRepository
     /// <summary>
     ///     Updates the description for all active versions of a module.
     /// </summary>
-    Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description);
+    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description);
 }

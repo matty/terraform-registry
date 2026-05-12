@@ -8,25 +8,25 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleTests(output)
 {
     [Fact]
-    public async Task Upload_ValidModule_Then_ListModules_OutputsResponse()
+    public async Task UploadValidModuleThenListModulesOutputsResponse()
     {
         // Call the existing upload test
-        await Upload_ValidModule_ReturnsOk();
+        await UploadValidModuleReturnsOk();
 
         // Now fetch all modules
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var listResponse = await client.GetAsync("/v1/modules?offset=0&limit=10");
-        _output.WriteLine($"List modules status: {listResponse.StatusCode}");
+        Output.WriteLine($"List modules status: {listResponse.StatusCode}");
         var listContent = await listResponse.Content.ReadAsStringAsync();
-        _output.WriteLine($"List modules response: {listContent}");
+        Output.WriteLine($"List modules response: {listContent}");
     }
 
     [Fact]
-    public async Task ListModules_OutputsResponse()
+    public async Task ListModulesOutputsResponse()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var listResponse = await client.GetAsync("/v1/modules?offset=0&limit=10");
@@ -37,9 +37,9 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
     }
 
     [Fact]
-    public async Task ListModules_UsesSemVerPrecedenceForLatestVersion()
+    public async Task ListModulesUsesSemVerPrecedenceForLatestVersion()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         using var olderContent = CreateModuleUploadContent();

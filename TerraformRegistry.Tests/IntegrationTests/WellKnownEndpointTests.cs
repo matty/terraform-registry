@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text.Json;
 using Xunit.Abstractions;
 
@@ -9,13 +9,13 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task WellKnown_Endpoint_Returns_Expected_Response()
+    public async Task WellKnownEndpointReturnsExpectedResponse()
     {
-        _output.WriteLine("Sending request to /.well-known/terraform.json");
-        var response = await _client.GetAsync("/.well-known/terraform.json");
-        _output.WriteLine($"Received status code: {response.StatusCode}");
+        Output.WriteLine("Sending request to /.well-known/terraform.json");
+        var response = await Client.GetAsync("/.well-known/terraform.json");
+        Output.WriteLine($"Received status code: {response.StatusCode}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var content = await response.Content.ReadAsStringAsync(); _output.WriteLine($"Received content: {content}");
+        var content = await response.Content.ReadAsStringAsync(); Output.WriteLine($"Received content: {content}");
 
         // Assert the JSON content
         var expectedJson = new
@@ -35,9 +35,9 @@ public class WellKnownEndpointTests(ITestOutputHelper output) : IntegrationTestB
     }
 
     [Fact]
-    public async Task WellKnown_Endpoint_Exposes_LoginV1_OAuth_Metadata()
+    public async Task WellKnownEndpointExposesLoginV1OAuthMetadata()
     {
-        var response = await _client.GetAsync("/.well-known/terraform.json");
+        var response = await Client.GetAsync("/.well-known/terraform.json");
         var content = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

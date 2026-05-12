@@ -7,10 +7,12 @@ namespace TerraformRegistry.Models;
 [Table("vcs_connections")]
 public class VcsConnection
 {
-    [Key] [Column("id")]
+    [Key]
+    [Column("id")]
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    [Column("label")] [Required]
+    [Column("label")]
+    [Required]
     public string Label { get; set; } = string.Empty;
 
     [Column("provider")]

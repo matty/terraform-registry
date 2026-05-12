@@ -41,14 +41,14 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return providers;
     }
 
-    public async Task<TerraformProvider?> GetProviderAsync(string @namespace, string type)
+    public async Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             SELECT id, namespace, type, display_name, description, source_repository_url, created_by, created_at, updated_at, deleted_at
             FROM providers
-            WHERE namespace = @namespace AND type = @type AND deleted_at IS NULL", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+            WHERE namespace = @providerNamespace AND type = @type AND deleted_at IS NULL", connection);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -66,9 +66,9 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             await using var connection = await OpenConnectionAsync();
             await using var command = new NpgsqlCommand(@"
                 INSERT INTO providers (id, namespace, type, display_name, description, source_repository_url, created_by, created_at, updated_at)
-                VALUES (@id, @namespace, @type, @displayName, @description, @sourceRepositoryUrl, @createdBy, @createdAt, @updatedAt)", connection);
+                VALUES (@id, @providerNamespace, @type, @displayName, @description, @sourceRepositoryUrl, @createdBy, @createdAt, @updatedAt)", connection);
             command.Parameters.AddWithValue("@id", provider.Id);
-            command.Parameters.AddWithValue("@namespace", provider.Namespace);
+            command.Parameters.AddWithValue("providerNamespace", provider.Namespace);
             command.Parameters.AddWithValue("@type", provider.Type);
             command.Parameters.AddWithValue("@displayName", DbValue(provider.DisplayName));
             command.Parameters.AddWithValue("@description", DbValue(provider.Description));
@@ -86,7 +86,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return provider;
     }
 
-    public async Task<bool> UpdateProviderAsync(string @namespace, string type, string? displayName, string? description, string? sourceRepositoryUrl)
+    public async Task<bool> UpdateProviderAsync(string providerNamespace, string type, string? displayName, string? description, string? sourceRepositoryUrl)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -95,31 +95,31 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
                 description = @description,
                 source_repository_url = @sourceRepositoryUrl,
                 updated_at = @updatedAt
-            WHERE namespace = @namespace AND type = @type AND deleted_at IS NULL", connection);
+            WHERE namespace = @providerNamespace AND type = @type AND deleted_at IS NULL", connection);
         command.Parameters.AddWithValue("@displayName", DbValue(displayName));
         command.Parameters.AddWithValue("@description", DbValue(description));
         command.Parameters.AddWithValue("@sourceRepositoryUrl", DbValue(sourceRepositoryUrl));
         command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<bool> DeleteProviderAsync(string @namespace, string type)
+    public async Task<bool> DeleteProviderAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             UPDATE providers
             SET deleted_at = @deletedAt,
                 updated_at = @deletedAt
-            WHERE namespace = @namespace AND type = @type AND deleted_at IS NULL", connection);
+            WHERE namespace = @providerNamespace AND type = @type AND deleted_at IS NULL", connection);
         command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string @namespace, string type)
+    public async Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         var versionRows = new List<(Guid Id, string Version, string[] Protocols)>();
@@ -127,7 +127,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             SELECT pv.id, pv.version, pv.protocols::text
             FROM provider_versions pv
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type
+            WHERE p.namespace = @providerNamespace AND p.type = @type
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
               AND NULLIF(BTRIM(pv.shasums_storage_path), '') IS NOT NULL
               AND NULLIF(BTRIM(pv.shasums_signature_storage_path), '') IS NOT NULL
@@ -138,7 +138,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
                     AND NULLIF(BTRIM(pp.package_storage_path), '') IS NOT NULL
               )", connection))
         {
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("providerNamespace", providerNamespace);
             command.Parameters.AddWithValue("@type", type);
 
             await using var reader = await command.ExecuteReaderAsync();
@@ -162,7 +162,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return entries;
     }
 
-    public async Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string @namespace, string type)
+    public async Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         var versionRows = new List<(Guid Id, string Version, string[] Protocols, string KeyId, bool HasShasums,
@@ -173,10 +173,10 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
                    pv.shasums_signature_storage_path, pv.published_at
             FROM provider_versions pv
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type
+            WHERE p.namespace = @providerNamespace AND p.type = @type
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL", connection))
         {
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("providerNamespace", providerNamespace);
             command.Parameters.AddWithValue("@type", type);
 
             await using var reader = await command.ExecuteReaderAsync();
@@ -214,7 +214,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return entries;
     }
 
-    public async Task<ProviderVersion?> GetProviderVersionAsync(string @namespace, string type, string version)
+    public async Task<ProviderVersion?> GetProviderVersionAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -222,9 +222,9 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
                    pv.shasums_signature_storage_path, pv.published_at, pv.deleted_at
             FROM provider_versions pv
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type AND pv.version = @version
+            WHERE p.namespace = @providerNamespace AND p.type = @type AND pv.version = @version
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
 
@@ -273,7 +273,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
     public Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath) =>
         UpdateSinglePathAsync("provider_versions", "shasums_signature_storage_path", "id", versionId, storagePath);
 
-    public async Task<bool> DeleteProviderVersionAsync(string @namespace, string type, string version)
+    public async Task<bool> DeleteProviderVersionAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -281,17 +281,17 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             SET deleted_at = @deletedAt
             WHERE version = @version
               AND provider_id IN (
-                  SELECT id FROM providers WHERE namespace = @namespace AND type = @type AND deleted_at IS NULL
+                  SELECT id FROM providers WHERE namespace = @providerNamespace AND type = @type AND deleted_at IS NULL
               )
               AND deleted_at IS NULL", connection);
         command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string @namespace, string type, string? version, string? os, string? arch)
+    public async Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string providerNamespace, string type, string? version, string? os, string? arch)
     {
         await using var connection = await OpenConnectionAsync();
         var paths = new HashSet<string>(StringComparer.Ordinal);
@@ -300,11 +300,11 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             SELECT pv.shasums_storage_path, pv.shasums_signature_storage_path
             FROM provider_versions pv
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type
+            WHERE p.namespace = @providerNamespace AND p.type = @type
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
               AND (CAST(@version AS text) IS NULL OR pv.version = @version)", connection))
         {
-            versionCommand.Parameters.AddWithValue("@namespace", @namespace);
+            versionCommand.Parameters.AddWithValue("providerNamespace", providerNamespace);
             versionCommand.Parameters.AddWithValue("@type", type);
             versionCommand.Parameters.AddWithValue("@version", DbValue(version));
 
@@ -321,13 +321,13 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             FROM provider_platforms pp
             INNER JOIN provider_versions pv ON pv.id = pp.provider_version_id
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type
+            WHERE p.namespace = @providerNamespace AND p.type = @type
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
               AND (CAST(@version AS text) IS NULL OR pv.version = @version)
               AND (CAST(@os AS text) IS NULL OR pp.os = @os)
               AND (CAST(@arch AS text) IS NULL OR pp.arch = @arch)", connection))
         {
-            platformCommand.Parameters.AddWithValue("@namespace", @namespace);
+            platformCommand.Parameters.AddWithValue("providerNamespace", providerNamespace);
             platformCommand.Parameters.AddWithValue("@type", type);
             platformCommand.Parameters.AddWithValue("@version", DbValue(version));
             platformCommand.Parameters.AddWithValue("@os", DbValue(os));
@@ -343,7 +343,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return paths.OrderBy(path => path, StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version)
+    public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -352,10 +352,10 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             FROM provider_platforms pp
             INNER JOIN provider_versions pv ON pv.id = pp.provider_version_id
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type AND pv.version = @version
+            WHERE p.namespace = @providerNamespace AND p.type = @type AND pv.version = @version
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
             ORDER BY pp.os, pp.arch", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
 
@@ -369,7 +369,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return platforms;
     }
 
-    public async Task<ProviderPlatform?> GetProviderPlatformAsync(string @namespace, string type, string version, string os, string arch)
+    public async Task<ProviderPlatform?> GetProviderPlatformAsync(string providerNamespace, string type, string version, string os, string arch)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -378,10 +378,10 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             FROM provider_platforms pp
             INNER JOIN provider_versions pv ON pv.id = pp.provider_version_id
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace AND p.type = @type AND pv.version = @version
+            WHERE p.namespace = @providerNamespace AND p.type = @type AND pv.version = @version
               AND pp.os = @os AND pp.arch = @arch
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
         command.Parameters.AddWithValue("@os", os);
@@ -441,7 +441,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<bool> DeleteProviderPlatformAsync(string @namespace, string type, string version, string os, string arch)
+    public async Task<bool> DeleteProviderPlatformAsync(string providerNamespace, string type, string version, string os, string arch)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
@@ -451,10 +451,10 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
                   SELECT pv.id
                   FROM provider_versions pv
                   INNER JOIN providers p ON p.id = pv.provider_id
-                  WHERE p.namespace = @namespace AND p.type = @type AND pv.version = @version
+                  WHERE p.namespace = @providerNamespace AND p.type = @type AND pv.version = @version
                     AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
               )", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
         command.Parameters.AddWithValue("@os", os);
@@ -462,15 +462,15 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string @namespace)
+    public async Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string providerNamespace)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             SELECT id, namespace, key_id, ascii_armor, trust_signature, source, source_url, created_at, revoked_at
             FROM provider_gpg_keys
-            WHERE namespace = @namespace AND revoked_at IS NULL
+            WHERE namespace = @providerNamespace AND revoked_at IS NULL
             ORDER BY created_at DESC", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
 
         var keys = new List<ProviderGpgKey>();
         await using var reader = await command.ExecuteReaderAsync();
@@ -482,14 +482,14 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return keys;
     }
 
-    public async Task<ProviderGpgKey?> GetGpgKeyAsync(string @namespace, string keyId)
+    public async Task<ProviderGpgKey?> GetGpgKeyAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             SELECT id, namespace, key_id, ascii_armor, trust_signature, source, source_url, created_at, revoked_at
             FROM provider_gpg_keys
-            WHERE namespace = @namespace AND key_id = @keyId AND revoked_at IS NULL", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+            WHERE namespace = @providerNamespace AND key_id = @keyId AND revoked_at IS NULL", connection);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@keyId", keyId);
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -506,9 +506,9 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             await using var connection = await OpenConnectionAsync();
             await using var command = new NpgsqlCommand(@"
                 INSERT INTO provider_gpg_keys (id, namespace, key_id, ascii_armor, trust_signature, source, source_url, created_at)
-                VALUES (@id, @namespace, @keyId, @asciiArmor, @trustSignature, @source, @sourceUrl, @createdAt)", connection);
+                VALUES (@id, @providerNamespace, @keyId, @asciiArmor, @trustSignature, @source, @sourceUrl, @createdAt)", connection);
             command.Parameters.AddWithValue("@id", key.Id);
-            command.Parameters.AddWithValue("@namespace", key.Namespace);
+            command.Parameters.AddWithValue("providerNamespace", key.Namespace);
             command.Parameters.AddWithValue("@keyId", key.KeyId);
             command.Parameters.AddWithValue("@asciiArmor", key.AsciiArmor);
             command.Parameters.AddWithValue("@trustSignature", DbValue(key.TrustSignature));
@@ -525,47 +525,47 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return key;
     }
 
-    public async Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string @namespace, string keyId)
+    public async Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             SELECT 1
             FROM provider_versions pv
             INNER JOIN providers p ON p.id = pv.provider_id
-            WHERE p.namespace = @namespace
+            WHERE p.namespace = @providerNamespace
               AND pv.key_id = @keyId
               AND p.deleted_at IS NULL
               AND pv.deleted_at IS NULL
             LIMIT 1", connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@keyId", keyId);
 
         var result = await command.ExecuteScalarAsync();
         return result != null;
     }
 
-    public async Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId)
+    public async Task<bool> RevokeGpgKeyAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             UPDATE provider_gpg_keys
             SET revoked_at = @revokedAt
-            WHERE namespace = @namespace AND key_id = @keyId AND revoked_at IS NULL", connection);
+            WHERE namespace = @providerNamespace AND key_id = @keyId AND revoked_at IS NULL", connection);
         command.Parameters.AddWithValue("@revokedAt", DateTime.UtcNow);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@keyId", keyId);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task RecordProviderDownloadAsync(Guid? providerId, string @namespace, string type, string version, string os,
+    public async Task RecordProviderDownloadAsync(Guid? providerId, string providerNamespace, string type, string version, string os,
         string arch, string? clientIp, string? userAgent)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = new NpgsqlCommand(@"
             INSERT INTO provider_downloads (provider_id, namespace, type, version, os, arch, download_time, client_ip, user_agent)
-            VALUES (@providerId, @namespace, @type, @version, @os, @arch, @downloadTime, @clientIp, @userAgent)", connection);
+            VALUES (@providerId, @providerNamespace, @type, @version, @os, @arch, @downloadTime, @clientIp, @userAgent)", connection);
         command.Parameters.AddWithValue("@providerId", providerId ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
         command.Parameters.AddWithValue("@os", os);

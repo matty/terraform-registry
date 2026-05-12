@@ -5,7 +5,7 @@ namespace TerraformRegistry.Services;
 
 public interface IWebhookFormatter
 {
-    string FormatPayload(WebhookEventData eventData, string? template);
+    string FormatPayload(WebhookEventData eventData, string? payloadTemplate);
 }
 
 public class GenericFormatter : IWebhookFormatter
@@ -16,7 +16,7 @@ public class GenericFormatter : IWebhookFormatter
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public string FormatPayload(WebhookEventData eventData, string? template)
+    public string FormatPayload(WebhookEventData eventData, string? payloadTemplate)
     {
         return JsonSerializer.Serialize(eventData, CamelCaseOptions);
     }
@@ -24,7 +24,7 @@ public class GenericFormatter : IWebhookFormatter
 
 public class DiscordFormatter : IWebhookFormatter
 {
-    private static readonly Dictionary<string, int> EventColors = new()
+    private static readonly Dictionary<string, int> EventColors = new(StringComparer.Ordinal)
     {
         ["module.published"] = 3066993,
         ["module.deleted"] = 15158332,
@@ -32,15 +32,15 @@ public class DiscordFormatter : IWebhookFormatter
         ["module.purged"] = 15105570,
     };
 
-    public string FormatPayload(WebhookEventData eventData, string? template)
+    public string FormatPayload(WebhookEventData eventData, string? payloadTemplate)
     {
         var color = EventColors.GetValueOrDefault(eventData.Event, 0);
         var title = $"Module {eventData.Action}: {eventData.Module.Namespace}/{eventData.Module.Name}";
         var description = $"{eventData.Module.Provider} v{eventData.Module.Version}";
 
-        if (!string.IsNullOrWhiteSpace(template))
+        if (!string.IsNullOrWhiteSpace(payloadTemplate))
         {
-            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(template, eventData);
+            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(payloadTemplate, eventData);
             if (customTitle != null) title = customTitle;
             if (customBody != null) description = customBody;
         }
@@ -70,14 +70,14 @@ public class DiscordFormatter : IWebhookFormatter
 
 public class SlackFormatter : IWebhookFormatter
 {
-    public string FormatPayload(WebhookEventData eventData, string? template)
+    public string FormatPayload(WebhookEventData eventData, string? payloadTemplate)
     {
         var title = $"Module {eventData.Action}: {eventData.Module.Namespace}/{eventData.Module.Name}";
         var body = $"*{eventData.Module.Provider}* v{eventData.Module.Version}";
 
-        if (!string.IsNullOrWhiteSpace(template))
+        if (!string.IsNullOrWhiteSpace(payloadTemplate))
         {
-            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(template, eventData);
+            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(payloadTemplate, eventData);
             if (customTitle != null) title = customTitle;
             if (customBody != null) body = customBody;
         }
@@ -105,7 +105,7 @@ public class SlackFormatter : IWebhookFormatter
 
 public class TeamsFormatter : IWebhookFormatter
 {
-    private static readonly Dictionary<string, string> EventColors = new()
+    private static readonly Dictionary<string, string> EventColors = new(StringComparer.Ordinal)
     {
         ["module.published"] = "00CC00",
         ["module.deleted"] = "CC0000",
@@ -113,15 +113,15 @@ public class TeamsFormatter : IWebhookFormatter
         ["module.purged"] = "FF8C00",
     };
 
-    public string FormatPayload(WebhookEventData eventData, string? template)
+    public string FormatPayload(WebhookEventData eventData, string? payloadTemplate)
     {
         var themeColor = EventColors.GetValueOrDefault(eventData.Event, "808080");
         var title = $"Module {eventData.Action}: {eventData.Module.Namespace}/{eventData.Module.Name}";
         var summary = title;
 
-        if (!string.IsNullOrWhiteSpace(template))
+        if (!string.IsNullOrWhiteSpace(payloadTemplate))
         {
-            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(template, eventData);
+            var (customTitle, customBody) = TemplateOverrideParser.ParseTemplateOverrides(payloadTemplate, eventData);
             if (customTitle != null) title = customTitle;
             if (customBody != null) summary = customBody;
         }
@@ -154,25 +154,25 @@ public class CustomFormatter : IWebhookFormatter
 {
     private static readonly GenericFormatter FallbackFormatter = new();
 
-    public string FormatPayload(WebhookEventData eventData, string? template)
+    public string FormatPayload(WebhookEventData eventData, string? payloadTemplate)
     {
-        if (string.IsNullOrWhiteSpace(template))
+        if (string.IsNullOrWhiteSpace(payloadTemplate))
         {
-            return FallbackFormatter.FormatPayload(eventData, template);
+            return FallbackFormatter.FormatPayload(eventData, payloadTemplate);
         }
 
         var variables = MustacheRenderer.Flatten(eventData);
-        return MustacheRenderer.Render(template, variables);
+        return MustacheRenderer.Render(payloadTemplate, variables);
     }
 }
 
 file static class TemplateOverrideParser
 {
-    public static (string? Title, string? Body) ParseTemplateOverrides(string template, WebhookEventData eventData)
+    public static (string? Title, string? Body) ParseTemplateOverrides(string payloadTemplate, WebhookEventData eventData)
     {
         try
         {
-            using var doc = JsonDocument.Parse(template);
+            using var doc = JsonDocument.Parse(payloadTemplate);
             var root = doc.RootElement;
             var variables = MustacheRenderer.Flatten(eventData);
 

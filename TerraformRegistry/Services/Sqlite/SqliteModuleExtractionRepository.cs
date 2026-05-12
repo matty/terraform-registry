@@ -8,7 +8,7 @@ namespace TerraformRegistry.Services.Sqlite;
 
 public sealed class SqliteModuleExtractionRepository(string connectionString) : IModuleExtractionRepository
 {
-    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name, string provider,
+    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -20,7 +20,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             FROM module_extractions e
             JOIN modules m ON m.id = e.module_id
             WHERE m.namespace = $ns AND m.name = $name AND m.provider = $prov AND m.version = $ver";
-        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
@@ -31,13 +31,13 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             : JsonSerializer.Deserialize<ModuleExtractionDocument>(json);
     }
 
-    public async Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version,
+    public async Task UpsertModuleExtractionAsync(string moduleNamespace, string name, string provider, string version,
         ModuleExtractionDocument document, string? sourceChecksum = null)
     {
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
-        var now = DateTime.UtcNow.ToString("o");
+        var now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO module_extractions (module_id, document_json, source_checksum, created_at, updated_at)
@@ -48,7 +48,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
                 document_json = excluded.document_json,
                 source_checksum = excluded.source_checksum,
                 updated_at = excluded.updated_at";
-        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
@@ -59,7 +59,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name, string provider,
+    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -71,7 +71,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             FROM module_llm_contexts c
             JOIN modules m ON m.id = c.module_id
             WHERE m.namespace = $ns AND m.name = $name AND m.provider = $prov AND m.version = $ver";
-        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
@@ -82,13 +82,13 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);
     }
 
-    public async Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version,
+    public async Task UpsertModuleLlmContextAsync(string moduleNamespace, string name, string provider, string version,
         ModuleLlmContextDocument document, string? sourceChecksum = null)
     {
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
-        var now = DateTime.UtcNow.ToString("o");
+        var now = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO module_llm_contexts (module_id, schema_version, generated_at, document_json, source_checksum, created_at, updated_at)
@@ -101,12 +101,12 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
                 document_json = excluded.document_json,
                 source_checksum = excluded.source_checksum,
                 updated_at = excluded.updated_at";
-        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
         cmd.Parameters.AddWithValue("$schemaVersion", document.SchemaVersion);
-        cmd.Parameters.AddWithValue("$generatedAt", document.GeneratedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$generatedAt", document.GeneratedAt.ToString("o", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$document", JsonSerializer.Serialize(document));
         cmd.Parameters.AddWithValue("$checksum", (object?)sourceChecksum ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$now", now);
@@ -114,7 +114,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
+    public async Task UpdateModuleMetadataAsync(string moduleNamespace, string name, string provider, string version,
         Action<ModuleArtifactMetadata> mutate)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -125,7 +125,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             SELECT metadata
             FROM modules
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
-        readCmd.Parameters.AddWithValue("$ns", @namespace);
+        readCmd.Parameters.AddWithValue("$ns", moduleNamespace);
         readCmd.Parameters.AddWithValue("$name", name);
         readCmd.Parameters.AddWithValue("$prov", provider);
         readCmd.Parameters.AddWithValue("$ver", version);
@@ -139,7 +139,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             UPDATE modules
             SET metadata = $metadata
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
-        updateCmd.Parameters.AddWithValue("$ns", @namespace);
+        updateCmd.Parameters.AddWithValue("$ns", moduleNamespace);
         updateCmd.Parameters.AddWithValue("$name", name);
         updateCmd.Parameters.AddWithValue("$prov", provider);
         updateCmd.Parameters.AddWithValue("$ver", version);
@@ -199,9 +199,9 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
             IncrementStatus(summary, metadata.Extraction?.Status);
             IncrementLlmStatus(summary, metadata.LlmContext?.Status);
 
-            if (Convert.ToInt32(reader.GetValue(1)) == 0)
+            if (Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) == 0)
                 summary.NeverExtracted++;
-            if (Convert.ToInt32(reader.GetValue(2)) == 0)
+            if (Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture) == 0)
                 summary.LlmNeverGenerated++;
         }
 
@@ -259,7 +259,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
         };
     }
 
-    public async Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(string @namespace, string name,
+    public async Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(string moduleNamespace, string name,
         string provider, string version)
     {
         await using var connection = new SqliteConnection(connectionString);
@@ -276,7 +276,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
               AND m.provider = $prov
               AND m.version = $ver
               AND m.deleted_at IS NULL";
-        cmd.Parameters.AddWithValue("$ns", @namespace);
+        cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);

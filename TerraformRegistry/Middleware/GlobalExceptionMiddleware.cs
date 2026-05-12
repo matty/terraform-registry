@@ -1,4 +1,5 @@
 using System.Text.Json;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Middleware;
 
@@ -7,6 +8,11 @@ namespace TerraformRegistry.Middleware;
 /// </summary>
 public class GlobalExceptionMiddleware
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
     private readonly RequestDelegate _next;
 
@@ -24,7 +30,7 @@ public class GlobalExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An unhandled exception occurred while processing request {Method} {Path}",
+            RegistryLog.Error(_logger, ex, "An unhandled exception occurred while processing request {Method} {Path}",
                 context.Request.Method, context.Request.Path);
             await HandleExceptionAsync(context, ex);
         }
@@ -37,12 +43,7 @@ public class GlobalExceptionMiddleware
 
         var response = CreateErrorResponse(exception, context.Response.StatusCode);
 
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
-
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
     }
 
     private static int GetStatusCode(Exception exception)
@@ -56,7 +57,7 @@ public class GlobalExceptionMiddleware
             DirectoryNotFoundException => 404,
             NotSupportedException => 405,
             TimeoutException => 408,
-            InvalidOperationException when exception.Message.Contains("already exists") => 409,
+            InvalidOperationException when exception.Message.Contains("already exists", StringComparison.Ordinal) => 409,
             InvalidOperationException => 422,
             _ => 500
         };

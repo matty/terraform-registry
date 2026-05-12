@@ -9,7 +9,7 @@ namespace TerraformRegistry.Tests.UnitTests.Database;
 public class SqliteProviderRepositoryTests
 {
     [Fact]
-    public async Task CreateProviderAsync_PersistsProviderAndReturnsCreatedRecord()
+    public async Task CreateProviderAsyncPersistsProviderAndReturnsCreatedRecord()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         var repository = fixture.Repository;
@@ -34,7 +34,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task GetProviderVersionsAsync_ReturnsPlatformsForActiveVersionsOnly()
+    public async Task GetProviderVersionsAsyncReturnsPlatformsForActiveVersionsOnly()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         var provider = await fixture.SeedProviderWithVersionAndPlatformAsync();
@@ -51,7 +51,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task GetProviderVersionsAsync_HidesVersionsAndPlatformsUntilArtifactsAreInstallable()
+    public async Task GetProviderVersionsAsyncHidesVersionsAndPlatformsUntilArtifactsAreInstallable()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         var provider = await fixture.SeedProviderWithVersionAndPlatformAsync();
@@ -69,7 +69,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task GetProviderArtifactStoragePathsAsync_ReturnsVersionAndPlatformArtifacts()
+    public async Task GetProviderArtifactStoragePathsAsyncReturnsVersionAndPlatformArtifacts()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         await fixture.SeedProviderWithVersionAndPlatformAsync();
@@ -86,7 +86,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task ProviderGpgKeyIsReferencedByActiveVersionsAsync_IgnoresDeletedVersions()
+    public async Task ProviderGpgKeyIsReferencedByActiveVersionsAsyncIgnoresDeletedVersions()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         var provider = await fixture.SeedProviderWithVersionAndPlatformAsync();
@@ -98,7 +98,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task GetProviderPlatformAsync_ReturnsPackageMetadata()
+    public async Task GetProviderPlatformAsyncReturnsPackageMetadata()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         await fixture.SeedProviderWithVersionAndPlatformAsync();
@@ -111,7 +111,7 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
-    public async Task AddGpgKeyAsync_PersistsNamespaceKeyAndLookupIgnoresRevokedKeys()
+    public async Task AddGpgKeyAsyncPersistsNamespaceKeyAndLookupIgnoresRevokedKeys()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
         var repository = fixture.Repository;

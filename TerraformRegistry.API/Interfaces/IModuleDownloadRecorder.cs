@@ -6,7 +6,7 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IModuleDownloadRecorder
 {
     Task RecordDownloadAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,

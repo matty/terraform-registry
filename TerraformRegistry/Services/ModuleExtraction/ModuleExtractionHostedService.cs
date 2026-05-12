@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Services.ModuleExtraction;
 
@@ -38,7 +39,7 @@ public sealed class ModuleExtractionHostedService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(
+                RegistryLog.Error(_logger,
                     ex,
                     "Module extraction failed for {Namespace}/{Name}/{Provider}/{Version}",
                     request.Namespace,
@@ -59,7 +60,7 @@ public sealed class ModuleExtractionHostedService : BackgroundService
             var queued = await _extractionService.QueueBackfillAsync(_options.StartupBackfillBatchSize, stoppingToken);
             if (queued.Count > 0)
             {
-                _logger.LogInformation("Queued {Count} modules for startup extraction backfill.", queued.Count);
+                RegistryLog.Information(_logger, "Queued {Count} modules for startup extraction backfill.", queued.Count);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -68,7 +69,7 @@ public sealed class ModuleExtractionHostedService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to queue module extraction startup backfill.");
+            RegistryLog.Error(_logger, ex, "Failed to queue module extraction startup backfill.");
         }
     }
 
@@ -76,7 +77,7 @@ public sealed class ModuleExtractionHostedService : BackgroundService
     {
         while (!await _configService.IsEnabledAsync(stoppingToken))
         {
-            _logger.LogInformation("Module extraction is disabled. Waiting before processing queued work.");
+            RegistryLog.Information(_logger, "Module extraction is disabled. Waiting before processing queued work.");
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
         }
     }

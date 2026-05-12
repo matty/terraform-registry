@@ -17,6 +17,7 @@ public class S3ModuleServiceDelegationTests
 
     public S3ModuleServiceDelegationTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockS3Client
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ReturnsAsync(new ListObjectsV2Response());
@@ -26,6 +27,7 @@ public class S3ModuleServiceDelegationTests
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["S3:BucketName"] = "modules",
                 ["S3:Region"] = "eu-west-2"
@@ -36,10 +38,10 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task ListModulesAsync_Delegates_To_DatabaseService()
+    public async Task ListModulesAsyncDelegatesToDatabaseService()
     {
         var request = new ModuleSearchRequest();
-        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>() };
+        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>(StringComparer.Ordinal) };
         _mockDatabaseService.Setup(x => x.ListModulesAsync(request)).ReturnsAsync(expected);
 
         var service = CreateService();
@@ -50,9 +52,9 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task GetModuleAsync_Delegates_To_DatabaseService()
+    public async Task GetModuleAsyncDelegatesToDatabaseService()
     {
-        var expected = new Module
+        var expected = new TerraformModule
         {
             Id = "id",
             Owner = "owner",
@@ -64,7 +66,7 @@ public class S3ModuleServiceDelegationTests
             Versions = ["1.0.0"],
             Root = "root",
             Submodules = [],
-            Providers = new Dictionary<string, string>()
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal)
         };
         _mockDatabaseService.Setup(x => x.GetModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(expected);
 
@@ -75,7 +77,7 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task GetModuleVersionsAsync_Delegates_To_DatabaseService()
+    public async Task GetModuleVersionsAsyncDelegatesToDatabaseService()
     {
         var expected = new ModuleVersions
         {
@@ -99,10 +101,10 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task ListDeletedModulesAsync_Delegates_To_DatabaseService()
+    public async Task ListDeletedModulesAsyncDelegatesToDatabaseService()
     {
         var request = new ModuleSearchRequest();
-        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>() };
+        var expected = new ModuleList { Modules = [], Meta = new Dictionary<string, string>(StringComparer.Ordinal) };
         _mockDatabaseService.Setup(x => x.ListDeletedModulesAsync(request)).ReturnsAsync(expected);
 
         var service = CreateService();
@@ -112,7 +114,7 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task Delete_And_Restore_Delegate_To_DatabaseService()
+    public async Task DeleteAndRestoreDelegateToDatabaseService()
     {
         _mockDatabaseService.Setup(x => x.SoftDeleteModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(true);
         _mockDatabaseService.Setup(x => x.RestoreModuleAsync("ns", "name", "aws", "1.0.0")).ReturnsAsync(true);
@@ -124,7 +126,7 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task UpdateModuleDescriptionAsync_Delegates_To_DatabaseService()
+    public async Task UpdateModuleDescriptionAsyncDelegatesToDatabaseService()
     {
         _mockDatabaseService.Setup(x => x.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc")).ReturnsAsync(true);
 

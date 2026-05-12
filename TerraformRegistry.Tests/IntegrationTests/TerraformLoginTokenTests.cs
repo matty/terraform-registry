@@ -15,7 +15,7 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task TerraformToken_WithValidCodeAndPkce_ReturnsNewApiToken_ValidForModules()
+    public async Task TerraformTokenWithValidCodeAndPkceReturnsNewApiTokenValidForModules()
     {
         var (sessionClient, userId) = await CreateClientWithPortalSessionAsync("cli-user@example.com");
         var verifier = "verifier-secret-123456789";
@@ -33,7 +33,7 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
         Assert.False(string.IsNullOrWhiteSpace(code));
         Assert.Equal("abc", GetQueryParameter(authorize.Headers.Location, "state"));
 
-        var tokenClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        var tokenClient = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
@@ -41,6 +41,7 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
         var tokenResponse = await tokenClient.PostAsync(
             "/api/auth/terraform/token",
             new FormUrlEncodedContent(new Dictionary<string, string>
+(StringComparer.Ordinal)
             {
                 ["grant_type"] = "authorization_code",
                 ["client_id"] = "terraform-cli",
@@ -57,14 +58,14 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
         Assert.False(string.IsNullOrWhiteSpace(accessToken));
         Assert.Equal("Bearer", tokenDoc.RootElement.GetProperty("token_type").GetString());
 
-        var modulesClient = _factory.CreateClient();
+        var modulesClient = Factory.CreateClient();
         modulesClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         var modulesResponse = await modulesClient.GetAsync("/v1/modules");
 
         Assert.Equal(HttpStatusCode.OK, modulesResponse.StatusCode);
 
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var keys = (await apiKeyService.ListApiKeysAsync(userId)).ToList();
 
@@ -75,7 +76,7 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
     }
 
     [Fact]
-    public async Task RepeatedTerraformLogins_IssueDistinctTokens()
+    public async Task RepeatedTerraformLoginsIssueDistinctTokens()
     {
         var first = await CompleteTerraformLoginAsync("repeat-user@example.com");
         var second = await CompleteTerraformLoginAsync("repeat-user@example.com");
@@ -85,14 +86,14 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
 
     private async Task<(HttpClient Client, string UserId)> CreateClientWithPortalSessionAsync(string email)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
 
         var user = await apiKeyService.GetOrCreateUserAsync(email, "test", Guid.NewGuid().ToString("N"));
 
         var jwt = jwtService.GenerateToken(user.Id, email, "CLI User", "test");
-        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        var client = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
@@ -111,13 +112,14 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
             $"/api/auth/terraform/authorize?client_id=terraform-cli&redirect_uri={Uri.EscapeDataString(redirectUri)}&response_type=code&state=repeat&code_challenge={Uri.EscapeDataString(challenge)}&code_challenge_method=S256");
         var code = GetQueryParameter(authorize.Headers.Location!, "code");
 
-        var tokenClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        var tokenClient = Factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
         var tokenResponse = await tokenClient.PostAsync(
             "/api/auth/terraform/token",
             new FormUrlEncodedContent(new Dictionary<string, string>
+(StringComparer.Ordinal)
             {
                 ["grant_type"] = "authorization_code",
                 ["client_id"] = "terraform-cli",

@@ -14,11 +14,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly DbUpMigrator _dbUpMigrator;
-    private readonly IApiKeyRepository _apiKeys;
-    private readonly IModuleDownloadRecorder _downloads;
-    private readonly IModuleExtractionRepository _moduleExtractions;
-    private readonly IModuleRepository _modules;
-    private readonly IUserRepository _users;
+    private readonly PostgreSqlApiKeyRepository _apiKeys;
+    private readonly PostgreSqlModuleDownloadRecorder _downloads;
+    private readonly PostgreSqlModuleExtractionRepository _moduleExtractions;
+    private readonly PostgreSqlModuleRepository _modules;
+    private readonly PostgreSqlUserRepository _users;
 
     public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger,
         DbUpMigrator dbUpMigrator)
@@ -35,91 +35,91 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
         _modules.ListModulesAsync(request);
 
-    public Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version) =>
-        _modules.GetModuleAsync(@namespace, name, provider, version);
+    public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version) =>
+        _modules.GetModuleAsync(moduleNamespace, name, provider, version);
 
-    public Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider) =>
-        _modules.GetModuleVersionsAsync(@namespace, name, provider);
+    public Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider) =>
+        _modules.GetModuleVersionsAsync(moduleNamespace, name, provider);
 
-    public Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider, string version) =>
-        _modules.GetModuleStorageAsync(@namespace, name, provider, version);
+    public Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider, string version) =>
+        _modules.GetModuleStorageAsync(moduleNamespace, name, provider, version);
 
-    public Task<bool> AddModuleAsync(ModuleStorage module) =>
-        _modules.AddModuleAsync(module);
+    public Task<bool> AddModuleAsync(ModuleStorage moduleStorage) =>
+        _modules.AddModuleAsync(moduleStorage);
 
-    public Task<bool> RemoveModuleAsync(ModuleStorage module) =>
-        _modules.RemoveModuleAsync(module);
+    public Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage) =>
+        _modules.RemoveModuleAsync(moduleStorage);
 
-    public Task<bool> RemoveModuleExactAsync(ModuleStorage module) =>
-        _modules.RemoveModuleExactAsync(module);
+    public Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage) =>
+        _modules.RemoveModuleExactAsync(moduleStorage);
 
-    public Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version) =>
-        _modules.RemoveDeletedModuleAsync(@namespace, name, provider, version);
+    public Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version) =>
+        _modules.RemoveDeletedModuleAsync(moduleNamespace, name, provider, version);
 
-    public Task<bool> AddDeletedModuleAsync(ModuleStorage module) =>
-        _modules.AddDeletedModuleAsync(module);
+    public Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage) =>
+        _modules.AddDeletedModuleAsync(moduleStorage);
 
     public Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule) =>
         _modules.ReplaceModuleExactAsync(existingModule, newModule);
 
-    public Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version) =>
-        _modules.SoftDeleteModuleAsync(@namespace, name, provider, version);
+    public Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version) =>
+        _modules.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
 
-    public Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version) =>
-        _modules.RestoreModuleAsync(@namespace, name, provider, version);
+    public Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version) =>
+        _modules.RestoreModuleAsync(moduleNamespace, name, provider, version);
 
     public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request) =>
         _modules.ListDeletedModulesAsync(request);
 
     public Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version) =>
-        _modules.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+        _modules.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version);
 
-    public Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider, string description) =>
-        _modules.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+    public Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description) =>
+        _modules.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
 
     public Task<ModuleExtractionDocument?> GetModuleExtractionAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version) =>
-        _moduleExtractions.GetModuleExtractionAsync(@namespace, name, provider, version);
+        _moduleExtractions.GetModuleExtractionAsync(moduleNamespace, name, provider, version);
 
     public Task UpsertModuleExtractionAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
         ModuleExtractionDocument document,
         string? sourceChecksum = null) =>
-        _moduleExtractions.UpsertModuleExtractionAsync(@namespace, name, provider, version, document, sourceChecksum);
+        _moduleExtractions.UpsertModuleExtractionAsync(moduleNamespace, name, provider, version, document, sourceChecksum);
 
     public Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version) =>
-        _moduleExtractions.GetModuleLlmContextAsync(@namespace, name, provider, version);
+        _moduleExtractions.GetModuleLlmContextAsync(moduleNamespace, name, provider, version);
 
     public Task UpsertModuleLlmContextAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
         ModuleLlmContextDocument document,
         string? sourceChecksum = null) =>
-        _moduleExtractions.UpsertModuleLlmContextAsync(@namespace, name, provider, version, document, sourceChecksum);
+        _moduleExtractions.UpsertModuleLlmContextAsync(moduleNamespace, name, provider, version, document, sourceChecksum);
 
     public Task UpdateModuleMetadataAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
         Action<ModuleArtifactMetadata> mutate) =>
-        _moduleExtractions.UpdateModuleMetadataAsync(@namespace, name, provider, version, mutate);
+        _moduleExtractions.UpdateModuleMetadataAsync(moduleNamespace, name, provider, version, mutate);
 
     public Task<IReadOnlyList<ModuleStorage>> ListModulesNeedingExtractionAsync(int limit) =>
         _moduleExtractions.ListModulesNeedingExtractionAsync(limit);
@@ -131,11 +131,11 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         _moduleExtractions.ListModuleExtractionsAdminAsync(query);
 
     public Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version) =>
-        _moduleExtractions.GetModuleExtractionAdminDetailAsync(@namespace, name, provider, version);
+        _moduleExtractions.GetModuleExtractionAdminDetailAsync(moduleNamespace, name, provider, version);
 
     public Task<IReadOnlyList<ModuleStorage>> ListModulesForExtractionBackfillAsync(int limit) =>
         _moduleExtractions.ListModulesForExtractionBackfillAsync(limit);
@@ -183,13 +183,13 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         _apiKeys.DeleteApiKeyAsync(apiKey);
 
     public Task RecordDownloadAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
         string? clientIp,
         string? userAgent) =>
-        _downloads.RecordDownloadAsync(@namespace, name, provider, version, clientIp, userAgent);
+        _downloads.RecordDownloadAsync(moduleNamespace, name, provider, version, clientIp, userAgent);
 
     public async Task<bool> CheckConnectionAsync()
     {

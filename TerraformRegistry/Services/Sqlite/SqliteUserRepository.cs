@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -63,8 +64,8 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         cmd.Parameters.AddWithValue("$email", user.Email);
         cmd.Parameters.AddWithValue("$prov", user.Provider);
         cmd.Parameters.AddWithValue("$provId", user.ProviderId);
-        cmd.Parameters.AddWithValue("$created", user.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$created", user.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -84,7 +85,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         cmd.Parameters.AddWithValue("$email", user.Email);
         cmd.Parameters.AddWithValue("$prov", user.Provider);
         cmd.Parameters.AddWithValue("$provId", user.ProviderId);
-        cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -123,8 +124,8 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
             Email = reader.GetString(1),
             Provider = reader.GetString(2),
             ProviderId = reader.GetString(3),
-            CreatedAt = DateTime.Parse(reader.GetString(4)),
-            UpdatedAt = DateTime.Parse(reader.GetString(5))
+            CreatedAt = DateTime.Parse(reader.GetString(4), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture)
         };
     }
 }

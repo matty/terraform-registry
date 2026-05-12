@@ -6,7 +6,7 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public sealed class ProviderTerraformCliSmokeTests(ITestOutputHelper output)
 {
     [Fact]
-    public async Task TerraformInit_InstallsSignedProviderFromLocalRegistry_WhenTerraformCliIsAvailable()
+    public async Task TerraformInitInstallsSignedProviderFromLocalRegistryWhenTerraformCliIsAvailable()
     {
         var require = IsTruthy(Environment.GetEnvironmentVariable("TF_REGISTRY_REQUIRE_TERRAFORM_CLI_TEST"));
         var terraformExists = await CommandExistsAsync("terraform");
@@ -118,9 +118,9 @@ public sealed class ProviderTerraformCliSmokeTests(ITestOutputHelper output)
             {
                 process.Kill(entireProcessTree: true);
             }
-            catch
+            catch (Exception ex)
             {
-                // Process may have exited between timeout and kill.
+                Console.Error.WriteLine($"Failed to kill terraform process after timeout: {ex.Message}");
             }
 
             return new ProcessResult(-1, string.Empty, $"Process timed out after {timeout}.");

@@ -24,6 +24,7 @@ public class AzureBlobModuleServiceDownloadTests
     {
         _mockDatabaseService = new Mock<IDatabaseService>();
         _mockLogger = new Mock<ILogger<AzureBlobModuleService>>();
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockConfiguration = new Mock<IConfiguration>();
         _mockBlobServiceClient = new Mock<BlobServiceClient>();
         _mockContainerClient = new Mock<BlobContainerClient>();
@@ -60,7 +61,7 @@ public class AzureBlobModuleServiceDownloadTests
 
     // Test: Should return null and log a warning when the module is not found in the database
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_When_Module_Not_In_Database()
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenModuleNotInDatabase()
     {
         // Arrange
         _mockDatabaseService.Setup(db =>
@@ -87,7 +88,7 @@ public class AzureBlobModuleServiceDownloadTests
 
     // Test: Should return null and log a warning when the blob does not exist in storage, even if the module exists in the database
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_When_Blob_Does_Not_Exist()
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenBlobDoesNotExist()
     {
         // Arrange
         var moduleStorage = new ModuleStorage
@@ -133,7 +134,7 @@ public class AzureBlobModuleServiceDownloadTests
 
     // Test: Should return a SAS URI when both the module exists in the database and the blob exists in storage
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_SasUri_When_Module_And_Blob_Exist()
+    public async Task GetModuleDownloadPathAsyncReturnsSasUriWhenModuleAndBlobExist()
     {
         // Arrange
         var moduleStorage = new ModuleStorage
@@ -174,13 +175,13 @@ public class AzureBlobModuleServiceDownloadTests
                 bsb.BlobName == moduleStorage.FilePath &&
                 bsb.BlobContainerName == _containerName &&
                 bsb.Resource == "b" &&
-                bsb.Permissions.Contains("r") // Changed from bsb.GetPermissions().HasFlag(BlobSasPermissions.Read)
+                bsb.Permissions.Contains('r') // Changed from bsb.GetPermissions().HasFlag(BlobSasPermissions.Read)
         )), Times.Once);
     }
 
     // Test: Should handle exceptions during SAS generation, log an error, and return null
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Handles_Unexpected_Exception_During_Sas_Generation_And_Returns_Null()
+    public async Task GetModuleDownloadPathAsyncHandlesUnexpectedExceptionDuringSasGenerationAndReturnsNull()
     {
         // Arrange
         var moduleStorage = new ModuleStorage
@@ -201,7 +202,7 @@ public class AzureBlobModuleServiceDownloadTests
         var mockBlobClient = new Mock<BlobClient>();
         mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
         mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>()))
-            .Throws(new Exception("SAS error"));
+            .Throws(new InvalidOperationException("SAS error"));
 
         _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
             .Returns(mockBlobClient.Object);
@@ -223,7 +224,8 @@ public class AzureBlobModuleServiceDownloadTests
             Times.Once);
     }
 
-    public async Task GetModuleDownloadPathAsync_FallsBack_ToBlobUri_When_SasGeneration_NotSupported()
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncFallsBackToBlobUriWhenSasGenerationNotSupported()
     {
         var moduleStorage = new ModuleStorage
         {
@@ -258,7 +260,7 @@ public class AzureBlobModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task OpenModulePackageStreamAsync_ReturnsBlobReadStream()
+    public async Task OpenModulePackageStreamAsyncReturnsBlobReadStream()
     {
         var moduleStorage = new ModuleStorage
         {

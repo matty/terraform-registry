@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
@@ -41,7 +42,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return providers;
     }
 
-    public async Task<TerraformProvider?> GetProviderAsync(string @namespace, string type)
+    public async Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -49,7 +50,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             SELECT id, namespace, type, display_name, description, source_repository_url, created_by, created_at, updated_at, deleted_at
             FROM providers
             WHERE namespace = $namespace AND type = $type AND deleted_at IS NULL";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -76,8 +77,8 @@ public sealed class SqliteProviderRepository : IProviderRepository
             command.Parameters.AddWithValue("$description", DbValue(provider.Description));
             command.Parameters.AddWithValue("$sourceRepositoryUrl", DbValue(provider.SourceRepositoryUrl));
             command.Parameters.AddWithValue("$createdBy", DbValue(provider.CreatedBy));
-            command.Parameters.AddWithValue("$createdAt", provider.CreatedAt.ToUniversalTime().ToString("o"));
-            command.Parameters.AddWithValue("$updatedAt", provider.UpdatedAt.ToUniversalTime().ToString("o"));
+            command.Parameters.AddWithValue("$createdAt", provider.CreatedAt.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$updatedAt", provider.UpdatedAt.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync();
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
@@ -88,7 +89,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return provider;
     }
 
-    public async Task<bool> UpdateProviderAsync(string @namespace, string type, string? displayName, string? description, string? sourceRepositoryUrl)
+    public async Task<bool> UpdateProviderAsync(string providerNamespace, string type, string? displayName, string? description, string? sourceRepositoryUrl)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -102,13 +103,13 @@ public sealed class SqliteProviderRepository : IProviderRepository
         command.Parameters.AddWithValue("$displayName", DbValue(displayName));
         command.Parameters.AddWithValue("$description", DbValue(description));
         command.Parameters.AddWithValue("$sourceRepositoryUrl", DbValue(sourceRepositoryUrl));
-        command.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("o"));
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<bool> DeleteProviderAsync(string @namespace, string type)
+    public async Task<bool> DeleteProviderAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -117,13 +118,13 @@ public sealed class SqliteProviderRepository : IProviderRepository
             SET deleted_at = $deletedAt,
                 updated_at = $deletedAt
             WHERE namespace = $namespace AND type = $type AND deleted_at IS NULL";
-        command.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o"));
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string @namespace, string type)
+    public async Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         var versionRows = new List<(Guid Id, string Version, string[] Protocols)>();
@@ -143,7 +144,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                       WHERE pp.provider_version_id = pv.id
                         AND NULLIF(TRIM(pp.package_storage_path), '') IS NOT NULL
                   )";
-            command.Parameters.AddWithValue("$namespace", @namespace);
+            command.Parameters.AddWithValue("$namespace", providerNamespace);
             command.Parameters.AddWithValue("$type", type);
 
             await using var reader = await command.ExecuteReaderAsync();
@@ -167,7 +168,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return entries;
     }
 
-    public async Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string @namespace, string type)
+    public async Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();
         var versionRows = new List<(string Id, string Version, string[] Protocols, string KeyId, bool HasShasums,
@@ -182,7 +183,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                 INNER JOIN providers p ON p.id = pv.provider_id
                 WHERE p.namespace = $namespace AND p.type = $type
                   AND p.deleted_at IS NULL AND pv.deleted_at IS NULL";
-            command.Parameters.AddWithValue("$namespace", @namespace);
+            command.Parameters.AddWithValue("$namespace", providerNamespace);
             command.Parameters.AddWithValue("$type", type);
 
             await using var reader = await command.ExecuteReaderAsync();
@@ -197,7 +198,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                     reader.GetString(3),
                     !string.IsNullOrWhiteSpace(shasumsStoragePath),
                     !string.IsNullOrWhiteSpace(shasumsSignatureStoragePath),
-                    DateTime.Parse(reader.GetString(6)).ToUniversalTime()));
+                    DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture).ToUniversalTime()));
             }
         }
 
@@ -220,7 +221,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return entries;
     }
 
-    public async Task<ProviderVersion?> GetProviderVersionAsync(string @namespace, string type, string version)
+    public async Task<ProviderVersion?> GetProviderVersionAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -231,7 +232,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             INNER JOIN providers p ON p.id = pv.provider_id
             WHERE p.namespace = $namespace AND p.type = $type AND pv.version = $version
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
 
@@ -263,7 +264,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             command.Parameters.AddWithValue("$version", providerVersion.Version);
             command.Parameters.AddWithValue("$protocols", SerializeProtocols(providerVersion.Protocols));
             command.Parameters.AddWithValue("$keyId", providerVersion.KeyId);
-            command.Parameters.AddWithValue("$publishedAt", providerVersion.PublishedAt.ToString("o"));
+            command.Parameters.AddWithValue("$publishedAt", providerVersion.PublishedAt.ToString("o", CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync();
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
@@ -280,7 +281,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
     public Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath) =>
         UpdateSinglePathAsync("provider_versions", "shasums_signature_storage_path", "id", versionId, storagePath);
 
-    public async Task<bool> DeleteProviderVersionAsync(string @namespace, string type, string version)
+    public async Task<bool> DeleteProviderVersionAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -292,14 +293,14 @@ public sealed class SqliteProviderRepository : IProviderRepository
                   SELECT id FROM providers WHERE namespace = $namespace AND type = $type AND deleted_at IS NULL
               )
               AND deleted_at IS NULL";
-        command.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o"));
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string @namespace, string type, string? version, string? os, string? arch)
+    public async Task<IReadOnlyList<string>> GetProviderArtifactStoragePathsAsync(string providerNamespace, string type, string? version, string? os, string? arch)
     {
         await using var connection = await OpenConnectionAsync();
         var paths = new HashSet<string>(StringComparer.Ordinal);
@@ -313,7 +314,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                 WHERE p.namespace = $namespace AND p.type = $type
                   AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
                   AND ($version IS NULL OR pv.version = $version)";
-            versionCommand.Parameters.AddWithValue("$namespace", @namespace);
+            versionCommand.Parameters.AddWithValue("$namespace", providerNamespace);
             versionCommand.Parameters.AddWithValue("$type", type);
             versionCommand.Parameters.AddWithValue("$version", DbValue(version));
 
@@ -337,7 +338,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                   AND ($version IS NULL OR pv.version = $version)
                   AND ($os IS NULL OR pp.os = $os)
                   AND ($arch IS NULL OR pp.arch = $arch)";
-            platformCommand.Parameters.AddWithValue("$namespace", @namespace);
+            platformCommand.Parameters.AddWithValue("$namespace", providerNamespace);
             platformCommand.Parameters.AddWithValue("$type", type);
             platformCommand.Parameters.AddWithValue("$version", DbValue(version));
             platformCommand.Parameters.AddWithValue("$os", DbValue(os));
@@ -353,7 +354,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return paths.OrderBy(path => path, StringComparer.Ordinal).ToList();
     }
 
-    public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string @namespace, string type, string version)
+    public async Task<IReadOnlyList<ProviderManagementPlatformEntry>> GetProviderManagementPlatformsAsync(string providerNamespace, string type, string version)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -366,7 +367,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             WHERE p.namespace = $namespace AND p.type = $type AND pv.version = $version
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
             ORDER BY pp.os, pp.arch";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
 
@@ -380,7 +381,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return platforms;
     }
 
-    public async Task<ProviderPlatform?> GetProviderPlatformAsync(string @namespace, string type, string version, string os, string arch)
+    public async Task<ProviderPlatform?> GetProviderPlatformAsync(string providerNamespace, string type, string version, string os, string arch)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -393,7 +394,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             WHERE p.namespace = $namespace AND p.type = $type AND pv.version = $version
               AND pp.os = $os AND pp.arch = $arch
               AND p.deleted_at IS NULL AND pv.deleted_at IS NULL";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$os", os);
@@ -450,12 +451,12 @@ public sealed class SqliteProviderRepository : IProviderRepository
             WHERE id = $id";
         command.Parameters.AddWithValue("$storagePath", storagePath);
         command.Parameters.AddWithValue("$sizeBytes", sizeBytes);
-        command.Parameters.AddWithValue("$uploadedAt", DateTime.UtcNow.ToString("o"));
+        command.Parameters.AddWithValue("$uploadedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
         command.Parameters.AddWithValue("$id", platformId.ToString());
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<bool> DeleteProviderPlatformAsync(string @namespace, string type, string version, string os, string arch)
+    public async Task<bool> DeleteProviderPlatformAsync(string providerNamespace, string type, string version, string os, string arch)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -469,7 +470,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
                   WHERE p.namespace = $namespace AND p.type = $type AND pv.version = $version
                     AND p.deleted_at IS NULL AND pv.deleted_at IS NULL
               )";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$os", os);
@@ -477,7 +478,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string @namespace)
+    public async Task<IReadOnlyList<ProviderGpgKey>> ListGpgKeysAsync(string providerNamespace)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -486,7 +487,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             FROM provider_gpg_keys
             WHERE namespace = $namespace AND revoked_at IS NULL
             ORDER BY created_at DESC";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
 
         var keys = new List<ProviderGpgKey>();
         await using var reader = await command.ExecuteReaderAsync();
@@ -498,7 +499,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return keys;
     }
 
-    public async Task<ProviderGpgKey?> GetGpgKeyAsync(string @namespace, string keyId)
+    public async Task<ProviderGpgKey?> GetGpgKeyAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -506,7 +507,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             SELECT id, namespace, key_id, ascii_armor, trust_signature, source, source_url, created_at, revoked_at
             FROM provider_gpg_keys
             WHERE namespace = $namespace AND key_id = $keyId AND revoked_at IS NULL";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$keyId", keyId);
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -532,7 +533,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             command.Parameters.AddWithValue("$trustSignature", DbValue(key.TrustSignature));
             command.Parameters.AddWithValue("$source", DbValue(key.Source));
             command.Parameters.AddWithValue("$sourceUrl", DbValue(key.SourceUrl));
-            command.Parameters.AddWithValue("$createdAt", key.CreatedAt.ToUniversalTime().ToString("o"));
+            command.Parameters.AddWithValue("$createdAt", key.CreatedAt.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture));
             await command.ExecuteNonQueryAsync();
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
@@ -543,7 +544,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return key;
     }
 
-    public async Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string @namespace, string keyId)
+    public async Task<bool> ProviderGpgKeyIsReferencedByActiveVersionsAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -556,14 +557,14 @@ public sealed class SqliteProviderRepository : IProviderRepository
               AND p.deleted_at IS NULL
               AND pv.deleted_at IS NULL
             LIMIT 1";
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$keyId", keyId);
 
         var result = await command.ExecuteScalarAsync();
         return result != null;
     }
 
-    public async Task<bool> RevokeGpgKeyAsync(string @namespace, string keyId)
+    public async Task<bool> RevokeGpgKeyAsync(string providerNamespace, string keyId)
     {
         await using var connection = await OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -571,13 +572,13 @@ public sealed class SqliteProviderRepository : IProviderRepository
             UPDATE provider_gpg_keys
             SET revoked_at = $revokedAt
             WHERE namespace = $namespace AND key_id = $keyId AND revoked_at IS NULL";
-        command.Parameters.AddWithValue("$revokedAt", DateTime.UtcNow.ToString("o"));
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$revokedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$keyId", keyId);
         return await command.ExecuteNonQueryAsync() > 0;
     }
 
-    public async Task RecordProviderDownloadAsync(Guid? providerId, string @namespace, string type, string version, string os,
+    public async Task RecordProviderDownloadAsync(Guid? providerId, string providerNamespace, string type, string version, string os,
         string arch, string? clientIp, string? userAgent)
     {
         await using var connection = await OpenConnectionAsync();
@@ -586,12 +587,12 @@ public sealed class SqliteProviderRepository : IProviderRepository
             INSERT INTO provider_downloads (provider_id, namespace, type, version, os, arch, download_time, client_ip, user_agent)
             VALUES ($providerId, $namespace, $type, $version, $os, $arch, $downloadTime, $clientIp, $userAgent)";
         command.Parameters.AddWithValue("$providerId", providerId?.ToString() ?? (object)DBNull.Value);
-        command.Parameters.AddWithValue("$namespace", @namespace);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$os", os);
         command.Parameters.AddWithValue("$arch", arch);
-        command.Parameters.AddWithValue("$downloadTime", DateTime.UtcNow.ToString("o"));
+        command.Parameters.AddWithValue("$downloadTime", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
         command.Parameters.AddWithValue("$clientIp", DbValue(clientIp));
         command.Parameters.AddWithValue("$userAgent", DbValue(userAgent));
         await command.ExecuteNonQueryAsync();
@@ -670,8 +671,8 @@ public sealed class SqliteProviderRepository : IProviderRepository
             Description = ReadNullableString(reader, 4),
             SourceRepositoryUrl = ReadNullableString(reader, 5),
             CreatedBy = ReadNullableString(reader, 6),
-            CreatedAt = DateTime.Parse(reader.GetString(7)).ToUniversalTime(),
-            UpdatedAt = DateTime.Parse(reader.GetString(8)).ToUniversalTime(),
+            CreatedAt = DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture).ToUniversalTime(),
+            UpdatedAt = DateTime.Parse(reader.GetString(8), CultureInfo.InvariantCulture).ToUniversalTime(),
             DeletedAt = ReadNullableDateTime(reader, 9)
         };
     }
@@ -687,7 +688,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             KeyId = reader.GetString(4),
             ShasumsStoragePath = ReadNullableString(reader, 5),
             ShasumsSignatureStoragePath = ReadNullableString(reader, 6),
-            PublishedAt = DateTime.Parse(reader.GetString(7)).ToUniversalTime(),
+            PublishedAt = DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture).ToUniversalTime(),
             DeletedAt = ReadNullableDateTime(reader, 8)
         };
     }
@@ -735,7 +736,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
             TrustSignature = ReadNullableString(reader, 4),
             Source = ReadNullableString(reader, 5),
             SourceUrl = ReadNullableString(reader, 6),
-            CreatedAt = DateTime.Parse(reader.GetString(7)).ToUniversalTime(),
+            CreatedAt = DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture).ToUniversalTime(),
             RevokedAt = ReadNullableDateTime(reader, 8)
         };
     }
@@ -757,7 +758,7 @@ public sealed class SqliteProviderRepository : IProviderRepository
     }
 
     private static DateTime? ReadNullableDateTime(SqliteDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : DateTime.Parse(reader.GetString(ordinal)).ToUniversalTime();
+        reader.IsDBNull(ordinal) ? null : DateTime.Parse(reader.GetString(ordinal), CultureInfo.InvariantCulture).ToUniversalTime();
 
     private static object DbValue(string? value) => string.IsNullOrEmpty(value) ? DBNull.Value : value;
 }

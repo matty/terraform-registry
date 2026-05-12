@@ -17,6 +17,7 @@ public class S3ModuleServiceConstructorTests
 
     public S3ModuleServiceConstructorTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockS3Client
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ReturnsAsync(new ListObjectsV2Response());
@@ -30,9 +31,10 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_When_BucketName_Is_Missing()
+    public void ConstructorThrowsArgumentNullExceptionWhenBucketNameIsMissing()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:Region"] = "eu-west-2"
         });
@@ -44,13 +46,15 @@ public class S3ModuleServiceConstructorTests
                 _mockLogger.Object,
                 _mockS3Client.Object));
 
-        Assert.Equal("S3:BucketName", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("S3:BucketName", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_When_BucketName_Is_Blank()
+    public void ConstructorThrowsArgumentNullExceptionWhenBucketNameIsBlank()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "   ",
             ["S3:Region"] = "eu-west-2"
@@ -63,13 +67,15 @@ public class S3ModuleServiceConstructorTests
                 _mockLogger.Object,
                 _mockS3Client.Object));
 
-        Assert.Equal("S3:BucketName", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("S3:BucketName", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_When_Region_Is_Missing()
+    public void ConstructorThrowsArgumentNullExceptionWhenRegionIsMissing()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules"
         });
@@ -81,13 +87,15 @@ public class S3ModuleServiceConstructorTests
                 _mockLogger.Object,
                 _mockS3Client.Object));
 
-        Assert.Equal("S3:Region", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("S3:Region", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_When_Region_Is_Blank()
+    public void ConstructorThrowsArgumentNullExceptionWhenRegionIsBlank()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules",
             ["S3:Region"] = "\t"
@@ -100,13 +108,15 @@ public class S3ModuleServiceConstructorTests
                 _mockLogger.Object,
                 _mockS3Client.Object));
 
-        Assert.Equal("S3:Region", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("S3:Region", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Constructor_Uses_Provided_IAmazonS3_And_Skips_Factory()
+    public void ConstructorUsesProvidedIAmazonS3AndSkipsFactory()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules",
             ["S3:Region"] = "eu-west-2"
@@ -131,9 +141,10 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
-    public void Constructor_Uses_Explicit_Credentials_And_Endpoint_Settings_When_Configured()
+    public void ConstructorUsesExplicitCredentialsAndEndpointSettingsWhenConfigured()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules",
             ["S3:Region"] = "eu-west-2",
@@ -168,9 +179,10 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
-    public void Constructor_Uses_Default_Credential_Chain_When_Explicit_Credentials_Are_Absent()
+    public void ConstructorUsesDefaultCredentialChainWhenExplicitCredentialsAreAbsent()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules",
             ["S3:Region"] = "eu-west-2"
@@ -194,9 +206,10 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
-    public void Constructor_Invalid_PresignedUrlExpiryMinutes_Defaults_And_Does_Not_Throw()
+    public void ConstructorInvalidPresignedUrlExpiryMinutesDefaultsAndDoesNotThrow()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             ["S3:BucketName"] = "modules",
             ["S3:Region"] = "eu-west-2",

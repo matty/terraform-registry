@@ -8,13 +8,13 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IModuleExtractionRepository
 {
     Task<ModuleExtractionDocument?> GetModuleExtractionAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version);
 
     Task UpsertModuleExtractionAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
@@ -22,13 +22,13 @@ public interface IModuleExtractionRepository
         string? sourceChecksum = null);
 
     Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version);
 
     Task UpsertModuleLlmContextAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
@@ -36,7 +36,7 @@ public interface IModuleExtractionRepository
         string? sourceChecksum = null);
 
     Task UpdateModuleMetadataAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version,
@@ -49,7 +49,7 @@ public interface IModuleExtractionRepository
     Task<ModuleExtractionAdminPage> ListModuleExtractionsAdminAsync(ModuleExtractionAdminQuery query);
 
     Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(
-        string @namespace,
+        string moduleNamespace,
         string name,
         string provider,
         string version);

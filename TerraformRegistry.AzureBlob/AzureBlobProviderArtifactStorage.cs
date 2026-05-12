@@ -5,6 +5,7 @@ using Azure.Storage.Sas;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.AzureBlob;
 
@@ -22,15 +23,15 @@ public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
     {
         _logger = logger;
         _containerName = configuration["AzureStorage:ContainerName"]
-                         ?? throw new ArgumentNullException("AzureStorage:ContainerName",
-                             "Azure Storage container name is required.");
+                         ?? throw new ArgumentNullException(nameof(configuration),
+                             "AzureStorage:ContainerName configuration value is required.");
 
         _sasTokenExpiryMinutes = int.TryParse(configuration["AzureStorage:SasTokenExpiryMinutes"], out var configured)
             ? configured
             : 5;
         if (_sasTokenExpiryMinutes <= 0)
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "AzureStorage:SasTokenExpiryMinutes must be a positive integer, but was configured as {ConfiguredValue}. Defaulting to 5 minutes.",
                 _sasTokenExpiryMinutes);
             _sasTokenExpiryMinutes = 5;
@@ -52,8 +53,8 @@ public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
                 {
                     const string errorMessage =
                         "Azure Storage AccountName ('AzureStorage:AccountName') is required when connection string is not provided (for Managed Identity).";
-                    _logger.LogError(errorMessage);
-                    throw new ArgumentNullException("AzureStorage:AccountName", errorMessage);
+                    RegistryLog.Error(_logger, "{ErrorMessage}", errorMessage);
+                    throw new ArgumentNullException(nameof(configuration), errorMessage);
                 }
 
                 var blobServiceUri = new Uri($"https://{accountName}.blob.core.windows.net");
@@ -134,7 +135,7 @@ public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Provider artifact Azure Blob storage health check failed");
+            RegistryLog.Error(_logger, ex, "Provider artifact Azure Blob storage health check failed");
             return (false, ex.Message);
         }
     }

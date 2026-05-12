@@ -22,7 +22,7 @@ public class RuntimeSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsNullWhenSettingDoesNotExist()
+    public async Task GetAsyncReturnsNullWhenSettingDoesNotExist()
     {
         var service = new SqliteRuntimeSettingsService(_connectionString);
 
@@ -32,7 +32,7 @@ public class RuntimeSettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SetAsync_UpsertsJsonValueAndAuditFields()
+    public async Task SetAsyncUpsertsJsonValueAndAuditFields()
     {
         var service = new SqliteRuntimeSettingsService(_connectionString);
 
@@ -51,5 +51,6 @@ public class RuntimeSettingsServiceTests : IDisposable
     public void Dispose()
     {
         _connection.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

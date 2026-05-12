@@ -3,6 +3,7 @@ using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.Extensions.Logging;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.S3;
@@ -25,7 +26,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to reach S3 bucket '{BucketName}' during startup.", bucketName);
+            RegistryLog.Error(logger, ex, "Failed to reach S3 bucket '{BucketName}' during startup.", bucketName);
         }
     }
 
@@ -63,7 +64,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Module {Namespace}/{Name}/{Provider}/{Version} exists in database but object {ObjectKey} was not found in S3.",
                 @namespace,
                 name,
@@ -74,7 +75,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error checking S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -96,7 +97,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error generating pre-signed URL for module {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -126,7 +127,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Module {Namespace}/{Name}/{Provider}/{Version} exists in database but object {ObjectKey} was not found in S3.",
                 @namespace,
                 name,
@@ -137,7 +138,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error opening S3 object stream for module {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -165,7 +166,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error uploading temporary S3 object for module {Namespace}/{Name}/{Provider}/{Version}.",
                 module.Namespace,
@@ -193,7 +194,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to delete {ObjectType} S3 object {ObjectKey}.", objectType, objectKey);
+            RegistryLog.Error(logger, ex, "Failed to delete {ObjectType} S3 object {ObjectKey}.", objectType, objectKey);
         }
     }
 
@@ -215,7 +216,7 @@ internal sealed class S3ModuleObjectStore(
         {
             if (await FinalObjectMatchesModuleAsync(module))
             {
-                logger.LogWarning(
+                RegistryLog.Warning(logger,
                     ex,
                     "S3 finalization for module {Namespace}/{Name}/{Provider}/{Version} during {Operation} reported an error, but the final object metadata matches the uploaded module. Continuing.",
                     module.Namespace,
@@ -226,7 +227,7 @@ internal sealed class S3ModuleObjectStore(
                 return true;
             }
 
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error finalizing module {Namespace}/{Name}/{Provider}/{Version} from temporary S3 object during {Operation}.",
                 module.Namespace,
@@ -258,7 +259,7 @@ internal sealed class S3ModuleObjectStore(
             }
             catch (Exception ex)
             {
-                logger.LogError(
+                RegistryLog.Error(logger,
                     ex,
                     "Failed to list S3 objects for purge prefix {Prefix} on module {Namespace}/{Name}/{Provider}/{Version}.",
                     prefix,
@@ -305,7 +306,7 @@ internal sealed class S3ModuleObjectStore(
             }
             catch (Exception ex)
             {
-                logger.LogError(
+                RegistryLog.Error(logger,
                     ex,
                     "Failed to delete purgeable S3 object {ObjectKey} for module {Namespace}/{Name}/{Provider}/{Version}.",
                     objectKey,
@@ -337,7 +338,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error checking final S3 metadata for module {Namespace}/{Name}/{Provider}/{Version}.",
                 module.Namespace,
@@ -423,7 +424,7 @@ internal sealed class S3ModuleObjectStore(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Failed to read S3 metadata for purge candidate {ObjectKey} on module {Namespace}/{Name}/{Provider}/{Version}.",
                 objectKey,
@@ -447,7 +448,7 @@ internal sealed class S3ModuleObjectStore(
                 DateTimeStyles.RoundtripKind,
                 out var objectPublishedAt))
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Skipping purge candidate {ObjectKey} for module {Namespace}/{Name}/{Provider}/{Version} because its metadata is missing a parseable publishedAt value.",
                 objectKey,
                 module.Namespace,

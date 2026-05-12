@@ -1,3 +1,4 @@
+using System.Globalization;
 using Npgsql;
 using TerraformRegistry.API.Interfaces;
 
@@ -111,7 +112,7 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         while (await reader.ReadAsync())
         {
             data.Add(new TrendEntry(
-                reader.GetDateTime(0).ToString("yyyy-MM-dd"),
+                reader.GetDateTime(0).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 reader.GetInt64(1)
             ));
         }
@@ -119,7 +120,7 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         return new DownloadTrendsResult(period, interval, data);
     }
 
-    public async Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string @namespace, string name, string provider, string period)
+    public async Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string moduleNamespace, string name, string provider, string period)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -130,11 +131,11 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         // Total downloads
         var totalSql = $@"
             SELECT COUNT(*) FROM module_downloads
-            WHERE namespace = @namespace AND name = @name AND provider = @provider
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider
             {periodFilter}";
 
         await using var totalCmd = new NpgsqlCommand(totalSql, connection);
-        totalCmd.Parameters.AddWithValue("@namespace", @namespace);
+        totalCmd.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         totalCmd.Parameters.AddWithValue("@name", name);
         totalCmd.Parameters.AddWithValue("@provider", provider);
         if (period != "all")
@@ -152,13 +153,13 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         var versionSql = $@"
             SELECT version, COUNT(*) AS downloads
             FROM module_downloads
-            WHERE namespace = @namespace AND name = @name AND provider = @provider
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider
             {periodFilter}
             GROUP BY version
             ORDER BY downloads DESC";
 
         await using var versionCmd = new NpgsqlCommand(versionSql, connection);
-        versionCmd.Parameters.AddWithValue("@namespace", @namespace);
+        versionCmd.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         versionCmd.Parameters.AddWithValue("@name", name);
         versionCmd.Parameters.AddWithValue("@provider", provider);
         if (period != "all")
@@ -182,13 +183,13 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         var trendSql = $@"
             SELECT download_time::date AS date, COUNT(*) AS downloads
             FROM module_downloads
-            WHERE namespace = @namespace AND name = @name AND provider = @provider
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider
             {periodFilter}
             GROUP BY date
             ORDER BY date";
 
         await using var trendCmd = new NpgsqlCommand(trendSql, connection);
-        trendCmd.Parameters.AddWithValue("@namespace", @namespace);
+        trendCmd.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         trendCmd.Parameters.AddWithValue("@name", name);
         trendCmd.Parameters.AddWithValue("@provider", provider);
         if (period != "all")
@@ -201,12 +202,12 @@ public class PostgreSqlAnalyticsService : IAnalyticsService
         while (await trendReader.ReadAsync())
         {
             trend.Add(new TrendEntry(
-                trendReader.GetDateTime(0).ToString("yyyy-MM-dd"),
+                trendReader.GetDateTime(0).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 trendReader.GetInt64(1)
             ));
         }
 
-        return new ModuleAnalyticsResult(@namespace, name, provider, total, versions, trend);
+        return new ModuleAnalyticsResult(moduleNamespace, name, provider, total, versions, trend);
     }
 
     private static DateTime GetPeriodStart(string period) => period switch

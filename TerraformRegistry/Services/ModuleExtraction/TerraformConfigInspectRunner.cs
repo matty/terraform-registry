@@ -107,7 +107,9 @@ public sealed class TerraformConfigInspectRunner : ITerraformModuleInspector
     {
         if (!root.TryGetProperty("required_providers", out var providers) ||
             providers.ValueKind != JsonValueKind.Object)
+        {
             return;
+        }
 
         foreach (var provider in providers.EnumerateObject())
         {
@@ -125,7 +127,7 @@ public sealed class TerraformConfigInspectRunner : ITerraformModuleInspector
         }
     }
 
-    private static void MapResources(JsonElement root, string propertyName, ICollection<ModuleResourceDefinition> target)
+    private static void MapResources(JsonElement root, string propertyName, List<ModuleResourceDefinition> target)
     {
         if (!root.TryGetProperty(propertyName, out var resources) || resources.ValueKind != JsonValueKind.Object)
             return;

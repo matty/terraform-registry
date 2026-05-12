@@ -21,6 +21,7 @@ public class AzureBlobModuleServiceDelegationTests
 
     public AzureBlobModuleServiceDelegationTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockConfiguration.Setup(c => c["AzureStorage:ContainerName"]).Returns(ContainerName);
         _mockConfiguration.Setup(c => c["AzureStorage:SasTokenExpiryMinutes"]).Returns("5");
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(ContainerName)).Returns(_mockContainerClient.Object);
@@ -39,13 +40,13 @@ public class AzureBlobModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task ListModulesAsync_Delegates_To_DatabaseService()
+    public async Task ListModulesAsyncDelegatesToDatabaseService()
     {
         var request = new ModuleSearchRequest();
         var expected = new ModuleList
         {
             Modules = new List<ModuleListItem>(),
-            Meta = new Dictionary<string, string>()
+            Meta = new Dictionary<string, string>(StringComparer.Ordinal)
         };
         _mockDatabaseService.Setup(x => x.ListModulesAsync(request)).ReturnsAsync(expected);
         var service = CreateService();
@@ -55,9 +56,9 @@ public class AzureBlobModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task GetModuleAsync_Delegates_To_DatabaseService()
+    public async Task GetModuleAsyncDelegatesToDatabaseService()
     {
-        var expected = new Module
+        var expected = new TerraformModule
         {
             Id = string.Empty,
             Owner = string.Empty,
@@ -69,7 +70,7 @@ public class AzureBlobModuleServiceDelegationTests
             Versions = new List<string>(),
             Root = string.Empty,
             Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string>()
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal)
         };
         _mockDatabaseService.Setup(x => x.GetModuleAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(expected);
         var service = CreateService();
@@ -79,7 +80,7 @@ public class AzureBlobModuleServiceDelegationTests
     }
 
     [Fact]
-    public async Task GetModuleVersionsAsync_Delegates_To_DatabaseService()
+    public async Task GetModuleVersionsAsyncDelegatesToDatabaseService()
     {
         var expected = new ModuleVersions
         {

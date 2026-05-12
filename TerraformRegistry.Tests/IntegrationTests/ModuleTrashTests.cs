@@ -12,9 +12,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task SoftDelete_ExistingModule_ReturnsNoContent()
+    public async Task SoftDeleteExistingModuleReturnsNoContent()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.0.0");
@@ -24,9 +24,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task SoftDelete_NonExistentModule_ReturnsNotFound()
+    public async Task SoftDeleteNonExistentModuleReturnsNotFound()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var response = await client.DeleteAsync("/v1/modules/test-ns/test-name/test-provider/99.99.99");
@@ -34,9 +34,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task Restore_SoftDeletedModule_ReturnsNoContent()
+    public async Task RestoreSoftDeletedModuleReturnsNoContent()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.1.0");
@@ -47,9 +47,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task Purge_SoftDeletedModule_ReturnsNoContent()
+    public async Task PurgeSoftDeletedModuleReturnsNoContent()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.2.0");
@@ -60,9 +60,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task Purge_ThenListTrash_ModuleIsGone()
+    public async Task PurgeThenListTrashModuleIsGone()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.3.0");
@@ -75,9 +75,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task SoftDeletedModule_NotVisibleInModuleList()
+    public async Task SoftDeletedModuleNotVisibleInModuleList()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.4.0");
@@ -89,9 +89,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task SoftDeletedModule_DetailReturnsNotFound()
+    public async Task SoftDeletedModuleDetailReturnsNotFound()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.6.0");
@@ -103,9 +103,9 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task SoftDeletedModule_VisibleInTrashList()
+    public async Task SoftDeletedModuleVisibleInTrashList()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         await UploadTestModule(client, "2.5.0");
@@ -116,7 +116,7 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
         Assert.Contains("2.5.0", content);
     }
 
-    private async Task UploadTestModule(HttpClient client, string version)
+    private static async Task UploadTestModule(HttpClient client, string version)
     {
         var projectDir = GetProjectDirectory();
         var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
@@ -132,10 +132,11 @@ public class ModuleTrashTests(ITestOutputHelper output) : IntegrationTestBase(ou
         Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
     }
 
-    private string GetProjectDirectory()
+    private static string GetProjectDirectory()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var assemblyDirectory = Path.GetDirectoryName(assembly.Location);
+        var assemblyDirectory = Path.GetDirectoryName(assembly.Location)
+            ?? throw new DirectoryNotFoundException("Could not locate the test assembly directory.");
         var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName;
 
         if (string.IsNullOrEmpty(projectDir) || !Directory.Exists(projectDir))

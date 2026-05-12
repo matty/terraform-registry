@@ -8,7 +8,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class TerraformConfigInspectRunnerTests
 {
     [Fact]
-    public async Task TerraformConfigInspectRunner_MapsJsonIntoExtractionDocument()
+    public async Task TerraformConfigInspectRunnerMapsJsonIntoExtractionDocument()
     {
         var json = """
         {

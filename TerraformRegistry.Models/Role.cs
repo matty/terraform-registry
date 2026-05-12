@@ -6,16 +6,19 @@ namespace TerraformRegistry.Models;
 [Table("roles")]
 public class Role
 {
-    [Key] [Column("id")]
+    [Key]
+    [Column("id")]
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    [Column("name")] [Required]
+    [Column("name")]
+    [Required]
     public string Name { get; set; } = string.Empty;
 
     [Column("description")]
     public string? Description { get; set; }
 
-    [Column("permissions")] [Required]
+    [Column("permissions")]
+    [Required]
     public string[] Permissions { get; set; } = [];
 
     [Column("is_system")]

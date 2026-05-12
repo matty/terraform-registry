@@ -8,7 +8,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class GlobalExceptionMiddlewareTests
 {
     [Fact]
-    public void GetStatusCode_WithArgumentException_Returns400()
+    public void GetStatusCodeWithArgumentExceptionReturns400()
     {
         // Test the private method indirectly by testing the middleware behavior
         var exception = new ArgumentException("Test argument exception");
@@ -18,7 +18,7 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithArgumentNullException_Returns400()
+    public void GetStatusCodeWithArgumentNullExceptionReturns400()
     {
         var exception = new ArgumentNullException("paramName", "Test null argument exception");
         var statusCode = GetStatusCodeForException(exception);
@@ -27,7 +27,7 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithFileNotFoundException_Returns404()
+    public void GetStatusCodeWithFileNotFoundExceptionReturns404()
     {
         var exception = new FileNotFoundException("Test file not found");
         var statusCode = GetStatusCodeForException(exception);
@@ -36,7 +36,7 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithUnauthorizedAccessException_Returns401()
+    public void GetStatusCodeWithUnauthorizedAccessExceptionReturns401()
     {
         var exception = new UnauthorizedAccessException("Test unauthorized access");
         var statusCode = GetStatusCodeForException(exception);
@@ -45,7 +45,7 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithInvalidOperationExceptionContainingAlreadyExists_Returns409()
+    public void GetStatusCodeWithInvalidOperationExceptionContainingAlreadyExistsReturns409()
     {
         var exception = new InvalidOperationException("Resource already exists");
         var statusCode = GetStatusCodeForException(exception);
@@ -54,7 +54,7 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithInvalidOperationExceptionNotContainingAlreadyExists_Returns422()
+    public void GetStatusCodeWithInvalidOperationExceptionNotContainingAlreadyExistsReturns422()
     {
         var exception = new InvalidOperationException("Invalid operation");
         var statusCode = GetStatusCodeForException(exception);
@@ -63,16 +63,16 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void GetStatusCode_WithGenericException_Returns500()
+    public void GetStatusCodeWithGenericExceptionReturns500()
     {
-        var exception = new Exception("Generic exception");
+        var exception = new FormatException("Generic exception");
         var statusCode = GetStatusCodeForException(exception);
 
         Assert.Equal(500, statusCode);
     }
 
     [Fact]
-    public void CreateErrorResponse_WithClientError_ReturnsActualMessage()
+    public void CreateErrorResponseWithClientErrorReturnsActualMessage()
     {
         var exception = new ArgumentException("Invalid parameter");
         var response = CreateErrorResponseForException(exception, 400);
@@ -85,9 +85,9 @@ public class GlobalExceptionMiddlewareTests
     }
 
     [Fact]
-    public void CreateErrorResponse_WithServerError_ReturnsGenericMessage()
+    public void CreateErrorResponseWithServerErrorReturnsGenericMessage()
     {
-        var exception = new Exception("Internal error details");
+        var exception = new FormatException("Internal error details");
         var response = CreateErrorResponseForException(exception, 500);
 
         var jsonElement = (JsonElement)response;
@@ -109,13 +109,13 @@ public class GlobalExceptionMiddlewareTests
             DirectoryNotFoundException => 404,
             NotSupportedException => 405,
             TimeoutException => 408,
-            InvalidOperationException when exception.Message.Contains("already exists") => 409,
+            InvalidOperationException when exception.Message.Contains("already exists", StringComparison.Ordinal) => 409,
             InvalidOperationException => 422,
             _ => 500
         };
     }
 
-    private static object CreateErrorResponseForException(Exception exception, int statusCode)
+    private static JsonElement CreateErrorResponseForException(Exception exception, int statusCode)
     {
         var errorMessage = statusCode == 500
             ? "An internal server error occurred"

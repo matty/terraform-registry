@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services.Publishing;
@@ -148,7 +149,7 @@ public class GitHubVcsService : IGitHubVcsService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to decrypt PAT for VCS connection {ConnectionId}, deactivating connection", vcsConnection.Id);
+                RegistryLog.Error(_logger, ex, "Failed to decrypt PAT for VCS connection {ConnectionId}, deactivating connection", vcsConnection.Id);
                 await _vcsConnectionService.UpdateConnectionAsync(vcsConnection.Id, null, null, null, false);
                 return ("error", "Failed to decrypt PAT; VCS connection has been deactivated", null);
             }
@@ -172,7 +173,7 @@ public class GitHubVcsService : IGitHubVcsService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to download tarball from {Url}", tarballUrl);
+            RegistryLog.Error(_logger, ex, "Failed to download tarball from {Url}", tarballUrl);
             return ("error", $"Failed to download tarball: {ex.Message}", null);
         }
 
@@ -309,7 +310,7 @@ public class GitHubVcsService : IGitHubVcsService
         catch (Exception ex)
         {
             await _vcsSourceService.UpdateSyncStateAsync(source.Id, "failed", source.LastPublishedVersion, ex.Message);
-            _logger.LogError(ex, "VCS sync failed for source {SourceId}", sourceId);
+            RegistryLog.Error(_logger, ex, "VCS sync failed for source {SourceId}", sourceId);
             throw;
         }
     }

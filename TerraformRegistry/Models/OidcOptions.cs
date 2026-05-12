@@ -11,7 +11,7 @@ public class OidcProviderOptions
     public string TokenEndpoint { get; set; } = string.Empty;
     public string UserInfoEndpoint { get; set; } = string.Empty;
     public string[] Scopes { get; set; } = [];
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; }
 }
 
 /// <summary>

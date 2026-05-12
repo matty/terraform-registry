@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
@@ -8,14 +9,14 @@ namespace TerraformRegistry.PostgreSQL.Repositories;
 
 public sealed class PostgreSqlModuleExtractionRepository(string connectionString) : IModuleExtractionRepository
 {
-    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string @namespace, string name,
+    public async Task<ModuleExtractionDocument?> GetModuleExtractionAsync(string moduleNamespace, string name,
         string provider, string version)
     {
         const string sql = @"
             SELECT e.document_json::text
             FROM module_extractions e
             JOIN modules m ON m.id = e.module_id
-            WHERE m.namespace = @namespace
+            WHERE m.namespace = @moduleNamespace
               AND m.name = @name
               AND m.provider = @provider
               AND m.version = @version";
@@ -23,7 +24,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -34,14 +35,14 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
             : JsonSerializer.Deserialize<ModuleExtractionDocument>(json);
     }
 
-    public async Task UpsertModuleExtractionAsync(string @namespace, string name, string provider, string version,
+    public async Task UpsertModuleExtractionAsync(string moduleNamespace, string name, string provider, string version,
         ModuleExtractionDocument document, string? sourceChecksum = null)
     {
         const string sql = @"
             INSERT INTO module_extractions (module_id, document_json, source_checksum, created_at, updated_at)
             SELECT id, @document, @checksum, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -54,7 +55,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -64,14 +65,14 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string @namespace, string name,
+    public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string moduleNamespace, string name,
         string provider, string version)
     {
         const string sql = @"
             SELECT c.document_json::text
             FROM module_llm_contexts c
             JOIN modules m ON m.id = c.module_id
-            WHERE m.namespace = @namespace
+            WHERE m.namespace = @moduleNamespace
               AND m.name = @name
               AND m.provider = @provider
               AND m.version = @version";
@@ -79,7 +80,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -90,14 +91,14 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
             : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);
     }
 
-    public async Task UpsertModuleLlmContextAsync(string @namespace, string name, string provider, string version,
+    public async Task UpsertModuleLlmContextAsync(string moduleNamespace, string name, string provider, string version,
         ModuleLlmContextDocument document, string? sourceChecksum = null)
     {
         const string sql = @"
             INSERT INTO module_llm_contexts (module_id, schema_version, generated_at, document_json, source_checksum, created_at, updated_at)
             SELECT id, @schemaVersion, @generatedAt, @document, @checksum, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -112,7 +113,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -124,13 +125,13 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task UpdateModuleMetadataAsync(string @namespace, string name, string provider, string version,
+    public async Task UpdateModuleMetadataAsync(string moduleNamespace, string name, string provider, string version,
         Action<ModuleArtifactMetadata> mutate)
     {
         const string selectSql = @"
             SELECT metadata::text
             FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -139,7 +140,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var selectCommand = new NpgsqlCommand(selectSql, connection);
-        selectCommand.Parameters.AddWithValue("@namespace", @namespace);
+        selectCommand.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         selectCommand.Parameters.AddWithValue("@name", name);
         selectCommand.Parameters.AddWithValue("@provider", provider);
         selectCommand.Parameters.AddWithValue("@version", version);
@@ -151,14 +152,14 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         const string updateSql = @"
             UPDATE modules
             SET metadata = @metadata
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
               AND deleted_at IS NULL";
 
         await using var updateCommand = new NpgsqlCommand(updateSql, connection);
-        updateCommand.Parameters.AddWithValue("@namespace", @namespace);
+        updateCommand.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         updateCommand.Parameters.AddWithValue("@name", name);
         updateCommand.Parameters.AddWithValue("@provider", provider);
         updateCommand.Parameters.AddWithValue("@version", version);
@@ -218,9 +219,9 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
             IncrementStatus(summary, metadata.Extraction?.Status);
             IncrementLlmStatus(summary, metadata.LlmContext?.Status);
 
-            if (Convert.ToInt32(reader.GetValue(1)) == 0)
+            if (Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) == 0)
                 summary.NeverExtracted++;
-            if (Convert.ToInt32(reader.GetValue(2)) == 0)
+            if (Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture) == 0)
                 summary.LlmNeverGenerated++;
         }
 
@@ -277,7 +278,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         };
     }
 
-    public async Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(string @namespace, string name,
+    public async Task<ModuleExtractionAdminDetail?> GetModuleExtractionAdminDetailAsync(string moduleNamespace, string name,
         string provider, string version)
     {
         const string sql = @"
@@ -285,7 +286,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
             FROM modules m
             LEFT JOIN module_extractions e ON e.module_id = m.id
             LEFT JOIN module_llm_contexts c ON c.module_id = m.id
-            WHERE m.namespace = @namespace
+            WHERE m.namespace = @moduleNamespace
               AND m.name = @name
               AND m.provider = @provider
               AND m.version = @version
@@ -294,7 +295,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);

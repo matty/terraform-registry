@@ -1,7 +1,7 @@
+using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using TerraformRegistry.Services;
-using System.Net;
 
 namespace TerraformRegistry.Tests.UnitTests;
 
@@ -11,7 +11,7 @@ public class WebhookUrlValidatorTests
     [InlineData("ftp://example.com/hook")]
     [InlineData("file:///etc/passwd")]
     [InlineData("https://user:pass@example.com/hook")]
-    public async Task ValidateOutboundWebhookUrlAsync_RejectsInvalidSchemesAndUserInfo(string url)
+    public async Task ValidateOutboundWebhookUrlAsyncRejectsInvalidSchemesAndUserInfo(string url)
     {
         var validator = new WebhookUrlValidator(
             Options.Create(new WebhookSecurityOptions()),
@@ -28,7 +28,7 @@ public class WebhookUrlValidatorTests
     [InlineData("http://127.0.0.1/hook")]
     [InlineData("http://localhost/hook")]
     [InlineData("http://169.254.169.254/latest/meta-data")]
-    public async Task ValidateOutboundWebhookUrlAsync_RejectsPrivateAndLocalTargets(string url)
+    public async Task ValidateOutboundWebhookUrlAsyncRejectsPrivateAndLocalTargets(string url)
     {
         var validator = new WebhookUrlValidator(
             Options.Create(new WebhookSecurityOptions()),
@@ -42,7 +42,7 @@ public class WebhookUrlValidatorTests
     }
 
     [Fact]
-    public async Task ValidateOutboundWebhookUrlAsync_AllowsHttpsPublicHost()
+    public async Task ValidateOutboundWebhookUrlAsyncAllowsHttpsPublicHost()
     {
         var validator = new WebhookUrlValidator(
             Options.Create(new WebhookSecurityOptions()),
@@ -57,7 +57,7 @@ public class WebhookUrlValidatorTests
     }
 
     [Fact]
-    public async Task ValidateOutboundWebhookUrlAsync_AllowsPrivateNetworkWhenConfigured()
+    public async Task ValidateOutboundWebhookUrlAsyncAllowsPrivateNetworkWhenConfigured()
     {
         var validator = new WebhookUrlValidator(
             Options.Create(new WebhookSecurityOptions { AllowPrivateNetworks = true }),

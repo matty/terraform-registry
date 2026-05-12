@@ -10,7 +10,7 @@ public class ApiKeySharingAuthorizationTests(ITestOutputHelper output) : Integra
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task UserWithoutSharedPermission_CannotListSharedKeys()
+    public async Task UserWithoutSharedPermissionCannotListSharedKeys()
     {
         var client = await CreateClientWithPermissionsAsync("shared-list-denied@test.com",
             "shared-list-denied-id",
@@ -22,7 +22,7 @@ public class ApiKeySharingAuthorizationTests(ITestOutputHelper output) : Integra
     }
 
     [Fact]
-    public async Task UserWithoutSharedPermission_CannotCreateSharedKey()
+    public async Task UserWithoutSharedPermissionCannotCreateSharedKey()
     {
         var client = await CreateClientWithPermissionsAsync("shared-create-denied@test.com",
             "shared-create-denied-id",
@@ -38,7 +38,7 @@ public class ApiKeySharingAuthorizationTests(ITestOutputHelper output) : Integra
     }
 
     [Fact]
-    public async Task UserWithoutSharedPermission_CanCreatePersonalKey()
+    public async Task UserWithoutSharedPermissionCanCreatePersonalKey()
     {
         var client = await CreateClientWithPermissionsAsync("personal-create@test.com",
             "personal-create-id",
@@ -54,7 +54,7 @@ public class ApiKeySharingAuthorizationTests(ITestOutputHelper output) : Integra
     }
 
     [Fact]
-    public async Task UserWithSharedPermission_CanCreateAndListSharedKeys()
+    public async Task UserWithSharedPermissionCanCreateAndListSharedKeys()
     {
         var client = await CreateClientWithPermissionsAsync(
             "shared-create-allowed@test.com",

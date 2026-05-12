@@ -1,10 +1,11 @@
+using System.Globalization;
 using System.Reflection;
 using DbUp;
 using DotNet.Testcontainers.Builders;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.PostgreSQL;
+using Testcontainers.PostgreSql;
 
 namespace TerraformRegistry.Tests;
 
@@ -34,7 +35,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration001_CreatesModulesAndDownloadsTablesWithFunction()
+    public async Task Migration001CreatesModulesAndDownloadsTablesWithFunction()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -76,7 +77,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration002_CreatesUsersAndApiKeysTables()
+    public async Task Migration002CreatesUsersAndApiKeysTables()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -108,7 +109,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration003_AddsDeletedAtColumnToModules()
+    public async Task Migration003AddsDeletedAtColumnToModules()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -125,7 +126,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration004_UpdatesForeignKeyToCascade()
+    public async Task Migration004UpdatesForeignKeyToCascade()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -141,7 +142,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration005_CreatesWebhooksTable()
+    public async Task Migration005CreatesWebhooksTable()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -161,7 +162,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration006_AddsFormatAndTemplateToWebhooks()
+    public async Task Migration006AddsFormatAndTemplateToWebhooks()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -176,7 +177,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration007_CreatesVcsSourcesTable()
+    public async Task Migration007CreatesVcsSourcesTable()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -200,7 +201,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration008_CreatesRbacTables()
+    public async Task Migration008CreatesRbacTables()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -227,7 +228,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration009_CreatesAuditLogsTable()
+    public async Task Migration009CreatesAuditLogsTable()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -252,7 +253,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration010_CreatesVcsConnectionsAndRebuildsVcsSources()
+    public async Task Migration010CreatesVcsConnectionsAndRebuildsVcsSources()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -286,7 +287,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration011_AddsWebhooksUserIdIndex()
+    public async Task Migration011AddsWebhooksUserIdIndex()
     {
         var connStr = CreateFreshDatabase();
         MigrateUpTo(11, connStr);
@@ -301,7 +302,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration013_AddsVcsSourceSyncStateColumnsToExistingSources()
+    public async Task Migration013AddsVcsSourceSyncStateColumnsToExistingSources()
     {
         var connectionString = CreateFreshDatabase();
         MigrateUpTo(11, connectionString);
@@ -343,7 +344,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration014_CreatesModuleExtractionAndProviderRegistryTables()
+    public async Task Migration014CreatesModuleExtractionAndProviderRegistryTables()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -393,7 +394,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration015_CreatesRuntimeSettingsTable()
+    public async Task Migration015CreatesRuntimeSettingsTable()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -413,7 +414,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migration016_CreatesModuleLlmContextsTable()
+    public async Task Migration016CreatesModuleLlmContextsTable()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -436,7 +437,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migrate_FreshPostgresDatabase_AppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
+    public async Task MigrateFreshPostgresDatabaseAppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
     {
         var connectionString = CreateFreshDatabase();
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
@@ -492,7 +493,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task FullMigration_DataOperationsSucceed()
+    public async Task FullMigrationDataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -617,7 +618,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migrate_ExistingPostgresDatabase_WithLegacySchemaVersion_BootstrapsOnlyAppliedScripts()
+    public async Task MigrateExistingPostgresDatabaseWithLegacySchemaVersionBootstrapsOnlyAppliedScripts()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -677,7 +678,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Migrate_ExistingPostgresDatabase_MarkAsExecuted_DoesNotOverMark()
+    public async Task MigrateExistingPostgresDatabaseMarkAsExecutedDoesNotOverMark()
     {
         var connectionString = CreateFreshDatabase();
 
@@ -738,7 +739,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
 
     private static void MigrateUpTo(int scriptNumber, string connectionString)
     {
-        var maxPrefix = scriptNumber.ToString("D3");
+        var maxPrefix = scriptNumber.ToString("D3", CultureInfo.InvariantCulture);
         var assembly = typeof(DbUpMigrator).Assembly;
 
         var upgrader = DeployChanges.To

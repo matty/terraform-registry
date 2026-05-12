@@ -1,16 +1,15 @@
 using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Middleware;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Publishing;
+using static Microsoft.AspNetCore.Http.Results;
 
 namespace TerraformRegistry.Handlers;
-
-using static Results;
-
 /// <summary>
 ///     Handlers for module operations
 /// </summary>
@@ -61,7 +60,7 @@ public static class ModuleHandlers
         var denied = CheckPermission(context, Permissions.ModulesRead);
         if (denied != null) return denied;
 
-        _logger.LogInformation("Listing modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
+        RegistryLog.Information(_logger, "Listing modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
             q, @namespace, provider);
 
         var request = new ModuleSearchRequest
@@ -93,7 +92,7 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Getting module: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Getting module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         var module = await moduleService.GetModuleAsync(@namespace, name, provider, version);
@@ -117,13 +116,16 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Getting versions for module: {Namespace}/{Name}/{Provider}",
+        RegistryLog.Information(_logger, "Getting versions for module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
         var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
-        if (versions == null || versions.Modules == null || !versions.Modules.Any() ||
-            versions.Modules.FirstOrDefault()?.Versions == null || !versions.Modules.FirstOrDefault()!.Versions.Any())
+        if (versions == null || versions.Modules == null || versions.Modules.Count == 0 ||
+            versions.Modules.FirstOrDefault()?.Versions == null || versions.Modules.FirstOrDefault()!.Versions.Count == 0)
+        {
             return ErrorResponseExtensions.NotFound("Module not found");
+        }
+
         return Ok(versions);
     }
 
@@ -144,7 +146,7 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         var downloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
@@ -163,7 +165,7 @@ public static class ModuleHandlers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to record download for {Namespace}/{Name}/{Provider}/{Version}",
+                RegistryLog.Error(_logger, ex, "Failed to record download for {Namespace}/{Name}/{Provider}/{Version}",
                     @namespace, name, provider, version);
             }
         });
@@ -199,7 +201,7 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Downloading latest module: {Namespace}/{Name}/{Provider}",
+        RegistryLog.Information(_logger, "Downloading latest module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
         // Get all versions and pick the latest using SemVer sort
@@ -229,13 +231,13 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
         {
-            _logger.LogWarning("Invalid version format: {Version}", version);
+            RegistryLog.Warning(_logger, "Invalid version format: {Version}", version);
             return ErrorResponseExtensions.BadRequest(
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
@@ -293,13 +295,13 @@ public static class ModuleHandlers
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning("Invalid module upload request for {Namespace}/{Name}/{Provider}/{Version}: {Message}",
+            RegistryLog.Warning(_logger, "Invalid module upload request for {Namespace}/{Name}/{Provider}/{Version}: {Message}",
                 @namespace, name, provider, version, ex.Message);
             return ErrorResponseExtensions.BadRequest(ex.Message);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists", StringComparison.Ordinal))
         {
-            _logger.LogInformation("Module version already exists: {Namespace}/{Name}/{Provider}/{Version}",
+            RegistryLog.Information(_logger, "Module version already exists: {Namespace}/{Name}/{Provider}/{Version}",
                 @namespace, name, provider, version);
             return ErrorResponseExtensions.Conflict(ex.Message);
         }
@@ -324,12 +326,12 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         if (!SemVerValidator.IsValid(version))
         {
-            _logger.LogWarning("Invalid version format: {Version}", version);
+            RegistryLog.Warning(_logger, "Invalid version format: {Version}", version);
             return ErrorResponseExtensions.BadRequest(
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
@@ -361,12 +363,12 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         if (!SemVerValidator.IsValid(version))
         {
-            _logger.LogWarning("Invalid version format: {Version}", version);
+            RegistryLog.Warning(_logger, "Invalid version format: {Version}", version);
             return ErrorResponseExtensions.BadRequest(
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
@@ -398,12 +400,12 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
+        RegistryLog.Information(_logger, "Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
         if (!SemVerValidator.IsValid(version))
         {
-            _logger.LogWarning("Invalid version format: {Version}", version);
+            RegistryLog.Warning(_logger, "Invalid version format: {Version}", version);
             return ErrorResponseExtensions.BadRequest(
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
@@ -432,7 +434,7 @@ public static class ModuleHandlers
         var denied = CheckPermission(context, Permissions.ModulesDelete);
         if (denied != null) return denied;
 
-        _logger.LogInformation(
+        RegistryLog.Information(_logger,
             "Listing deleted modules with query: {Query}, namespace: {Namespace}, provider: {Provider}",
             q, @namespace, provider);
 
@@ -463,7 +465,7 @@ public static class ModuleHandlers
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
 
-        _logger.LogInformation("Updating description for module {Namespace}/{Name}/{Provider}",
+        RegistryLog.Information(_logger, "Updating description for module {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
         try
@@ -482,7 +484,7 @@ public static class ModuleHandlers
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating description for module {Namespace}/{Name}/{Provider}",
+            RegistryLog.Error(_logger, ex, "Error updating description for module {Namespace}/{Name}/{Provider}",
                 @namespace, name, provider);
             return Error(400, "Invalid request body");
         }

@@ -1,4 +1,5 @@
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Services.ModuleExtraction;
 
 namespace TerraformRegistry.Services.Publishing;
@@ -44,7 +45,7 @@ public sealed class ModulePublishCoordinator(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 ex,
                 "Failed to queue extraction for module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,
@@ -69,7 +70,7 @@ public sealed class ModulePublishCoordinator(
             },
             null);
 
-        logger.LogInformation(
+        RegistryLog.Information(logger,
             "Published module {Namespace}/{Name}/{Provider}/{Version} via {SourceKind}",
             request.Namespace,
             request.Name,

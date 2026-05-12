@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.S3;
@@ -26,7 +27,7 @@ internal sealed class S3ModuleUploadWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error reading existing module row for {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -38,7 +39,7 @@ internal sealed class S3ModuleUploadWorkflow(
 
         if (existingModule != null && !replace)
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Module {Namespace}/{Name}/{Provider}/{Version} already exists in the database.",
                 @namespace,
                 name,
@@ -90,7 +91,7 @@ internal sealed class S3ModuleUploadWorkflow(
                 return true;
             }
 
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Module {Namespace}/{Name}/{Provider}/{Version} exists in the trash and must be restored or purged before upload.",
                 @namespace,
                 name,
@@ -100,7 +101,7 @@ internal sealed class S3ModuleUploadWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error checking deleted module row for {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -149,7 +150,7 @@ internal sealed class S3ModuleUploadWorkflow(
             {
                 await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
                 await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-                logger.LogError(
+                RegistryLog.Error(logger,
                     "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
                     newModule.Namespace,
                     newModule.Name,
@@ -162,7 +163,7 @@ internal sealed class S3ModuleUploadWorkflow(
         {
             await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
             await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
                 newModule.Namespace,
@@ -191,7 +192,7 @@ internal sealed class S3ModuleUploadWorkflow(
                 return true;
             }
 
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 "Failed to replace exact existing module row for {Namespace}/{Name}/{Provider}/{Version} after S3 finalization.",
                 existingModule.Namespace,
                 existingModule.Name,
@@ -201,7 +202,7 @@ internal sealed class S3ModuleUploadWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
+            RegistryLog.Warning(logger,
                 ex,
                 "Error replacing exact existing module row for {Namespace}/{Name}/{Provider}/{Version} after S3 finalization.",
                 existingModule.Namespace,

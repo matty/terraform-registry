@@ -7,7 +7,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ArchiveWorkspaceFactoryTests
 {
     [Fact]
-    public async Task ArchiveWorkspaceFactory_ExtractsGitHubTarballDespiteZipStorageName()
+    public async Task ArchiveWorkspaceFactoryExtractsGitHubTarballDespiteZipStorageName()
     {
         var tempDir = Directory.CreateTempSubdirectory();
         var tarGzPath = Path.Combine(tempDir.FullName, "artifact.zip");

@@ -5,17 +5,18 @@ using Microsoft.Extensions.FileProviders;
 using NSwag;
 using NSwag.Generation.Processors.Security;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.AzureBlob;
 using TerraformRegistry.Handlers;
 using TerraformRegistry.Middleware;
+using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
-using TerraformRegistry.Migrations;
+using TerraformRegistry.S3;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
 using TerraformRegistry.Services.Publishing;
 using TerraformRegistry.Startup;
-using TerraformRegistry.S3;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -59,19 +60,24 @@ var app = builder.Build();
 // Log which providers are in use
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 var config = app.Services.GetRequiredService<IConfiguration>();
-logger.LogInformation("Using {DatabaseProvider} database for module metadata",
+RegistryLog.Information(logger, "Using {DatabaseProvider} database for module metadata",
     config["DatabaseProvider"] ?? "sqlite");
-logger.LogInformation("Using {StorageProvider} storage for module storage", config["StorageProvider"] ?? "local");
+RegistryLog.Information(logger, "Using {StorageProvider} storage for module storage", config["StorageProvider"] ?? "local");
 
 var authToken = app.Configuration["AuthorizationToken"];
 if (string.IsNullOrEmpty(authToken))
+{
     throw new InvalidOperationException(
         "AuthorizationToken is missing or empty. Please set a secure token in your configuration.");
+}
+
 if (authToken == "default-auth-token"
     && !app.Environment.IsDevelopment()
     && !app.Environment.IsEnvironment("Test"))
+{
     throw new InvalidOperationException(
         "AuthorizationToken is set to the default placeholder value. Configure a unique secret before running outside Development/Test.");
+}
 
 app.Services.GetRequiredService<IModuleService>();
 
@@ -82,11 +88,13 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 var webFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "web");
 if (Directory.Exists(webFolderPath))
+{
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = new PhysicalFileProvider(webFolderPath),
         RequestPath = ""
     });
+}
 
 // Portal authentication middleware (validates JWT sessions for portal routes)
 var jwtService = app.Services.GetRequiredService<JwtService>();

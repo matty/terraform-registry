@@ -35,9 +35,9 @@ public class LlmEndpointTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task LlmTxt_ReturnsDiscoveryGuide()
+    public async Task LlmTxtReturnsDiscoveryGuide()
     {
-        var response = await _factory.CreateClient().GetAsync("/llm.txt");
+        var response = await Factory.CreateClient().GetAsync("/llm.txt");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
@@ -48,15 +48,15 @@ public class LlmEndpointTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task ListModules_WithoutAuthentication_ReturnsUnauthorized()
+    public async Task ListModulesWithoutAuthenticationReturnsUnauthorized()
     {
-        var response = await _factory.CreateClient().GetAsync("/v1/llm/modules");
+        var response = await Factory.CreateClient().GetAsync("/v1/llm/modules");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task ModuleContext_WithReadPermission_ReturnsStoredArtifact()
+    public async Task ModuleContextWithReadPermissionReturnsStoredArtifact()
     {
         var client = await CreateClientWithPermissionsAsync(
             "llm-read@test.com",
@@ -86,7 +86,7 @@ public class LlmEndpointTests(ITestOutputHelper output) : IntegrationTestBase(ou
     }
 
     [Fact]
-    public async Task ModuleContext_WhenArtifactMissing_ReturnsConflict()
+    public async Task ModuleContextWhenArtifactMissingReturnsConflict()
     {
         var client = await CreateClientWithPermissionsAsync(
             "llm-missing@test.com",
@@ -102,7 +102,7 @@ public class LlmEndpointTests(ITestOutputHelper output) : IntegrationTestBase(ou
 
     private async Task SeedModuleOnlyAsync(string @namespace, string name, string provider, string version)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var inserted = await database.AddModuleAsync(new ModuleStorage
@@ -126,7 +126,7 @@ public class LlmEndpointTests(ITestOutputHelper output) : IntegrationTestBase(ou
 
     private async Task SeedModuleWithLlmContextAsync(string @namespace, string name, string provider, string version)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var inserted = await database.AddModuleAsync(new ModuleStorage

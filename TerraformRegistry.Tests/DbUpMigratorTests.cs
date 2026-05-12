@@ -25,10 +25,11 @@ public class DbUpMigratorTests : IDisposable
     public void Dispose()
     {
         _connection.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
-    public void Migrate_FreshSqliteDatabase_CreatesAllTables()
+    public void MigrateFreshSqliteDatabaseCreatesAllTables()
     {
         var migrator = new DbUpMigrator(_logger);
 
@@ -60,7 +61,7 @@ public class DbUpMigratorTests : IDisposable
     }
 
     [Fact]
-    public async Task Migrate_FreshSqliteDatabase_AppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
+    public async Task MigrateFreshSqliteDatabaseAppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
     {
         var migrator = new DbUpMigrator(_logger);
 
@@ -111,7 +112,7 @@ public class DbUpMigratorTests : IDisposable
     }
 
     [Fact]
-    public void Migrate_RunTwice_IsIdempotent()
+    public void MigrateRunTwiceIsIdempotent()
     {
         var migrator = new DbUpMigrator(_logger);
 
@@ -127,7 +128,7 @@ public class DbUpMigratorTests : IDisposable
     }
 
     [Fact]
-    public void Migrate_ExistingSqliteDatabase_WithLegacySchemaVersion_BootstrapsOnlyAppliedScripts()
+    public void MigrateExistingSqliteDatabaseWithLegacySchemaVersionBootstrapsOnlyAppliedScripts()
     {
         // Simulate a database that had 2 legacy migrations applied (like production on main)
         // by creating the tables those migrations would have created, plus the schema_version table
@@ -211,7 +212,7 @@ public class DbUpMigratorTests : IDisposable
     }
 
     [Fact]
-    public void Migrate_UnsupportedProvider_ThrowsArgumentException()
+    public void MigrateUnsupportedProviderThrowsArgumentException()
     {
         var migrator = new DbUpMigrator(_logger);
 

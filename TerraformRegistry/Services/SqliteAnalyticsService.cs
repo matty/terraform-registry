@@ -103,7 +103,7 @@ public class SqliteAnalyticsService : IAnalyticsService
         return new DownloadTrendsResult(period, interval, data);
     }
 
-    public async Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string @namespace, string name, string provider, string period)
+    public async Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string moduleNamespace, string name, string provider, string period)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -118,7 +118,7 @@ public class SqliteAnalyticsService : IAnalyticsService
             {andPeriod}";
 
         await using var totalCmd = new SqliteCommand(totalSql, connection);
-        totalCmd.Parameters.AddWithValue("$namespace", @namespace);
+        totalCmd.Parameters.AddWithValue("$namespace", moduleNamespace);
         totalCmd.Parameters.AddWithValue("$name", name);
         totalCmd.Parameters.AddWithValue("$provider", provider);
 
@@ -138,7 +138,7 @@ public class SqliteAnalyticsService : IAnalyticsService
             ORDER BY downloads DESC";
 
         await using var versionCmd = new SqliteCommand(versionSql, connection);
-        versionCmd.Parameters.AddWithValue("$namespace", @namespace);
+        versionCmd.Parameters.AddWithValue("$namespace", moduleNamespace);
         versionCmd.Parameters.AddWithValue("$name", name);
         versionCmd.Parameters.AddWithValue("$provider", provider);
 
@@ -164,7 +164,7 @@ public class SqliteAnalyticsService : IAnalyticsService
             ORDER BY date";
 
         await using var trendCmd = new SqliteCommand(trendSql, connection);
-        trendCmd.Parameters.AddWithValue("$namespace", @namespace);
+        trendCmd.Parameters.AddWithValue("$namespace", moduleNamespace);
         trendCmd.Parameters.AddWithValue("$name", name);
         trendCmd.Parameters.AddWithValue("$provider", provider);
 
@@ -178,7 +178,7 @@ public class SqliteAnalyticsService : IAnalyticsService
             ));
         }
 
-        return new ModuleAnalyticsResult(@namespace, name, provider, total, versions, trend);
+        return new ModuleAnalyticsResult(moduleNamespace, name, provider, total, versions, trend);
     }
 
     private static string GetPeriodFilter(string period) => period switch

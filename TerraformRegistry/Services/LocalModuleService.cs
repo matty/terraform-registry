@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 
@@ -14,7 +15,7 @@ namespace TerraformRegistry.Services;
 public class LocalModuleService : ModuleService
 {
     // Token storage for download links
-    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens = new();
+    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens = new(StringComparer.Ordinal);
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(10);
     private readonly IDatabaseService _databaseService;
     private readonly ILogger<LocalModuleService> _logger;
@@ -33,7 +34,7 @@ public class LocalModuleService : ModuleService
         _moduleStorageRoot = Path.GetFullPath(_moduleStoragePath);
 
         // Log the storage path being used
-        _logger.LogInformation("Using local module storage path: {Path}", _moduleStorageRoot);
+        RegistryLog.Information(_logger, "Using local module storage path: {Path}", _moduleStorageRoot);
 
         // Ensure module storage directory exists
         if (!Directory.Exists(_moduleStorageRoot)) Directory.CreateDirectory(_moduleStorageRoot);
@@ -58,13 +59,14 @@ public class LocalModuleService : ModuleService
                 var namespaceName = Path.GetFileName(namespaceDir);
                 if (!ModuleIdentifierValidator.IsValidSegment(namespaceName))
                 {
-                    _logger.LogWarning("Skipping module namespace directory with invalid name: {Namespace}",
+                    RegistryLog.Warning(_logger, "Skipping module namespace directory with invalid name: {Namespace}",
                         namespaceName);
                     continue;
                 }
 
                 // Scan for module zip files
                 foreach (var zipFile in Directory.GetFiles(namespaceDir, "*.zip"))
+                {
                     try
                     {
                         LoadModuleFromZip(zipFile, namespaceName);
@@ -72,16 +74,17 @@ public class LocalModuleService : ModuleService
                     catch (Exception ex)
                     {
                         // Log the error but continue processing other files
-                        _logger.LogError(ex, "Error loading module from {ZipFile}", zipFile);
+                        RegistryLog.Error(_logger, ex, "Error loading module from {ZipFile}", zipFile);
                     }
+                }
             }
 
-            _logger.LogInformation("Loaded modules from disk.");
+            RegistryLog.Information(_logger, "Loaded modules from disk.");
         }
         catch (Exception ex)
         {
             // Log any errors during initialization
-            _logger.LogError(ex, "Error scanning module directory");
+            RegistryLog.Error(_logger, ex, "Error scanning module directory");
         }
     }
 
@@ -97,7 +100,7 @@ public class LocalModuleService : ModuleService
 
         if (parts.Length < 3)
         {
-            _logger.LogWarning("Invalid module filename format: {FileName}", fileName);
+            RegistryLog.Warning(_logger, "Invalid module filename format: {FileName}", fileName);
             return;
         }
 
@@ -111,14 +114,14 @@ public class LocalModuleService : ModuleService
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(namespaceName, name, provider);
         if (coordinateError != null)
         {
-            _logger.LogWarning("Skipping module {FileName}: {Message}", fileName, coordinateError);
+            RegistryLog.Warning(_logger, "Skipping module {FileName}: {Message}", fileName, coordinateError);
             return;
         }
 
         // Validate the version string against SemVer 2.0.0 specification
         if (!SemVerValidator.IsValid(version))
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Skipping module {FileName}: Version '{Version}' is not a valid Semantic Version (SemVer 2.0.0)",
                 fileName, version);
             return;
@@ -181,33 +184,33 @@ public class LocalModuleService : ModuleService
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public override Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _databaseService.GetModuleAsync(@namespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
     }
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
     {
-        return _databaseService.GetModuleVersionsAsync(@namespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
     }
 
     /// <summary>
     ///     Gets the download path for a specific module version
     /// </summary>
-    public override async Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider,
+    public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
             return null;
         if (!IsInsideStorageRoot(moduleStorage.FilePath))
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Refusing to create download token for module outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
-                @namespace, name, provider, version);
+                moduleNamespace, name, provider, version);
             return null;
         }
 
@@ -220,18 +223,18 @@ public class LocalModuleService : ModuleService
         return $"/module/download?token={token}";
     }
 
-    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null || !File.Exists(moduleStorage.FilePath))
             return null;
 
         if (!IsInsideStorageRoot(moduleStorage.FilePath))
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Refusing to open module package outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
-                @namespace, name, provider, version);
+                moduleNamespace, name, provider, version);
             return null;
         }
 
@@ -258,14 +261,14 @@ public class LocalModuleService : ModuleService
     /// <summary>
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
-    protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
+    protected override async Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
-        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(@namespace, name, provider);
+        var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(moduleNamespace, name, provider);
         if (coordinateError != null)
             throw new ArgumentException(coordinateError);
 
-        var namespaceDir = GetNamespaceDirectory(@namespace);
+        var namespaceDir = GetNamespaceDirectory(moduleNamespace);
         if (!Directory.Exists(namespaceDir)) Directory.CreateDirectory(namespaceDir);
 
         var fileName = $"{name}-{provider}-{version}.zip";
@@ -282,7 +285,7 @@ public class LocalModuleService : ModuleService
 
             var module = new ModuleStorage
             {
-                Namespace = @namespace,
+                Namespace = moduleNamespace,
                 Name = name,
                 Provider = provider,
                 Version = version,
@@ -299,23 +302,27 @@ public class LocalModuleService : ModuleService
                 {
                     await _databaseService.RemoveModuleAsync(module);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore DB remove failures here; Add will handle existence
+                    RegistryLog.Warning(_logger, ex,
+                        "Failed to remove existing database module {Namespace}/{Name}/{Provider}/{Version}; continuing with add",
+                        moduleNamespace, name, provider, version);
                 }
 
                 try
                 {
                     if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore file delete errors; we'll overwrite if possible
+                    RegistryLog.Warning(_logger, ex,
+                        "Failed to delete existing module file {Path}; continuing with overwrite", finalFilePath);
                 }
             }
 
             var dbResult = await _databaseService.AddModuleAsync(module);
             if (dbResult)
+            {
                 try
                 {
                     if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
@@ -330,53 +337,54 @@ public class LocalModuleService : ModuleService
                     }
                     catch (Exception dbRollbackEx)
                     {
-                        _logger.LogError(dbRollbackEx,
+                        RegistryLog.Error(_logger, dbRollbackEx,
                             "Failed to rollback DB entry after file move failure for {Namespace}/{Name}/{Provider}/{Version}",
-                            @namespace, name, provider, version);
+                            moduleNamespace, name, provider, version);
                     }
 
-                    _logger.LogError(fileMoveEx,
+                    RegistryLog.Error(_logger, fileMoveEx,
                         "Failed to move file, rolled back DB entry for {Namespace}/{Name}/{Provider}/{Version}",
-                        @namespace, name, provider, version);
+                        moduleNamespace, name, provider, version);
                     if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
                     return false;
                 }
+            }
 
             File.Delete(tempFilePath);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to upload module {Namespace}/{Name}/{Provider}/{Version}", @namespace, name,
+            RegistryLog.Error(_logger, ex, "Failed to upload module {Namespace}/{Name}/{Provider}/{Version}", moduleNamespace, name,
                 provider, version);
             if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             return false;
         }
     }
 
-    public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version)
+    public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _databaseService.SoftDeleteModuleAsync(@namespace, name, provider, version);
+        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+    public override Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        return _databaseService.RestoreModuleAsync(@namespace, name, provider, version);
+        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider,
+    public override async Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         var moduleStorage =
-            await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+            await _databaseService.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
             return false;
         if (!IsInsideStorageRoot(moduleStorage.FilePath))
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Refusing to purge module with file path outside storage root: {Namespace}/{Name}/{Provider}/{Version}",
-                @namespace, name, provider, version);
+                moduleNamespace, name, provider, version);
             return false;
         }
 
@@ -393,8 +401,8 @@ public class LocalModuleService : ModuleService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete file for purged module {Namespace}/{Name}/{Provider}/{Version}",
-                @namespace, name, provider, version);
+            RegistryLog.Error(_logger, ex, "Failed to delete file for purged module {Namespace}/{Name}/{Provider}/{Version}",
+                moduleNamespace, name, provider, version);
             // DB deletion succeeded, file deletion may have failed - still return true
         }
 
@@ -406,10 +414,10 @@ public class LocalModuleService : ModuleService
         return _databaseService.ListDeletedModulesAsync(request);
     }
 
-    public override Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+    public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
         string description)
     {
-        return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
     }
 
     public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
@@ -429,11 +437,11 @@ public class LocalModuleService : ModuleService
         }
     }
 
-    private string GetNamespaceDirectory(string @namespace)
+    private string GetNamespaceDirectory(string moduleNamespace)
     {
-        var path = Path.GetFullPath(Path.Combine(_moduleStorageRoot, @namespace));
+        var path = Path.GetFullPath(Path.Combine(_moduleStorageRoot, moduleNamespace));
         if (!IsInsideStorageRoot(path))
-            throw new ArgumentException("Module namespace resolves outside the storage root.", nameof(@namespace));
+            throw new ArgumentException("Module namespace resolves outside the storage root.", nameof(moduleNamespace));
 
         return path;
     }

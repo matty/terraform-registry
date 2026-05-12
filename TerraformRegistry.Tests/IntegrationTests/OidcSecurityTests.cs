@@ -18,9 +18,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task GetOrCreateOidcUser_RejectsEmptyEmail()
+    public async Task GetOrCreateOidcUserRejectsEmptyEmail()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -28,9 +28,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task GetOrCreateOidcUser_RejectsCrossProviderEmailCollision()
+    public async Task GetOrCreateOidcUserRejectsCrossProviderEmailCollision()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await apiKeyService.GetOrCreateOidcUserAsync("admin@example.com", "github", "gh-1");
@@ -42,9 +42,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task GetOrCreateOidcUser_CanonicalizesEmailBeforeCollisionChecks()
+    public async Task GetOrCreateOidcUserCanonicalizesEmailBeforeCollisionChecks()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var created = await apiKeyService.GetOrCreateOidcUserAsync("Admin@Example.com", "github", "gh-1");
@@ -59,9 +59,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task GetOrCreateOidcUser_FindsLegacyMixedCaseStoredEmail()
+    public async Task GetOrCreateOidcUserFindsLegacyMixedCaseStoredEmail()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
         var legacyUser = new User
@@ -83,12 +83,12 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task GetOrCreateOidcUser_RejectsAmbiguousLegacyCaseVariantRows()
+    public async Task GetOrCreateOidcUserRejectsAmbiguousLegacyCaseVariantRows()
     {
         await InsertLegacyUserAsync("Admin@Example.com", "github", "gh-legacy-1", DateTime.UtcNow.AddDays(-10));
         await InsertLegacyUserAsync("admin@example.com", "github", "gh-legacy-2", DateTime.UtcNow.AddDays(-9));
 
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -98,9 +98,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task GetOrCreateOidcUser_AllowsRepeatLoginForSameProviderIdentity()
+    public async Task GetOrCreateOidcUserAllowsRepeatLoginForSameProviderIdentity()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var first = await apiKeyService.GetOrCreateOidcUserAsync("user@example.com", "github", "gh-1");
@@ -110,9 +110,9 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task Callback_OnAccountCollision_RedirectsWithoutSessionCookie()
+    public async Task CallbackOnAccountCollisionRedirectsWithoutSessionCookie()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -143,16 +143,16 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
 
         Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
         Assert.Equal("/login?error=account_link_required", context.Response.Headers.Location.ToString());
-        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value.Contains("tf-session=", StringComparison.Ordinal));
+        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value?.Contains("tf-session=", StringComparison.Ordinal) == true);
     }
 
     [Fact]
-    public async Task Callback_WhenLegacyDuplicateCaseEmailsExist_RedirectsWithoutSessionCookie()
+    public async Task CallbackWhenLegacyDuplicateCaseEmailsExistRedirectsWithoutSessionCookie()
     {
         await InsertLegacyUserAsync("Admin@Example.com", "github", "gh-legacy-1", DateTime.UtcNow.AddDays(-10));
         await InsertLegacyUserAsync("admin@example.com", "azuread", "aad-legacy-2", DateTime.UtcNow.AddDays(-9));
 
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -181,13 +181,13 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
 
         Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
         Assert.Equal("/login?error=account_link_required", context.Response.Headers.Location.ToString());
-        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value.Contains("tf-session=", StringComparison.Ordinal));
+        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value?.Contains("tf-session=", StringComparison.Ordinal) == true);
     }
 
     [Fact]
-    public async Task Callback_WhenOAuthExchangeProducesNoUsableEmail_RedirectsWithoutSessionCookie()
+    public async Task CallbackWhenOAuthExchangeProducesNoUsableEmailRedirectsWithoutSessionCookie()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -217,13 +217,13 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
 
         Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
         Assert.Equal("/login?error=exchange_failed", context.Response.Headers.Location.ToString());
-        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value.Contains("tf-session=", StringComparison.Ordinal));
+        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value?.Contains("tf-session=", StringComparison.Ordinal) == true);
     }
 
     [Fact]
-    public async Task Callback_WhenAzureAdExchangeProducesNoUsableEmail_RedirectsWithoutSessionCookie()
+    public async Task CallbackWhenAzureAdExchangeProducesNoUsableEmailRedirectsWithoutSessionCookie()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -252,7 +252,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
 
         Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
         Assert.Equal("/login?error=exchange_failed", context.Response.Headers.Location.ToString());
-        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value.Contains("tf-session=", StringComparison.Ordinal));
+        Assert.DoesNotContain(context.Response.Headers.SetCookie, value => value?.Contains("tf-session=", StringComparison.Ordinal) == true);
     }
 
     private static OAuthService CreateGitHubOAuthService(IConfiguration configuration, HttpMessageHandler handler)
@@ -319,7 +319,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
 
     private async Task InsertLegacyUserAsync(string email, string provider, string providerId, DateTime createdAt)
     {
-        await using var connection = new NpgsqlConnection(_postgresContainer.GetConnectionString());
+        await using var connection = new NpgsqlConnection(PostgresContainer.GetConnectionString());
         await connection.OpenAsync();
 
         const string sql =

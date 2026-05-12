@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Services;
 
@@ -69,7 +70,7 @@ public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Provider artifact local storage health check failed");
+            RegistryLog.Error(_logger, ex, "Provider artifact local storage health check failed");
             return Task.FromResult((false, (string?)ex.Message));
         }
     }

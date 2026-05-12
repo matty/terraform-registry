@@ -39,7 +39,7 @@ public class SemVerValidatorTests
     [InlineData("a.b.c", false)] // Non-numeric major/minor/patch
     [InlineData("1.0.0 ", false)] // Trailing space
     [InlineData(" 1.0.0", false)] // Leading space
-    public void IsValid_ReturnsExpectedResult(string? version, bool expected)
+    public void IsValidReturnsExpectedResult(string? version, bool expected)
     {
         Assert.Equal(expected, SemVerValidator.IsValid(version!));
     }
@@ -49,7 +49,7 @@ public class SemVerValidatorTests
     [InlineData("10.20.30-alpha.1", 10, 20, 30, "alpha.1", null)]
     [InlineData("1.0.0+build.123", 1, 0, 0, null, "build.123")]
     [InlineData("2.5.0-rc.2+meta.data", 2, 5, 0, "rc.2", "meta.data")]
-    public void TryParse_ValidVersion_ReturnsTrueAndCorrectComponents(string version, int expMajor, int expMinor,
+    public void TryParseValidVersionReturnsTrueAndCorrectComponents(string version, int expMajor, int expMinor,
         int expPatch, string? expPrerelease, string? expBuild)
     {
         var result = SemVerValidator.TryParse(version, out var major, out var minor, out var patch, out var prerelease,
@@ -68,14 +68,14 @@ public class SemVerValidatorTests
     [InlineData("invalid")]
     [InlineData("")]
     // [InlineData(null)] // Cannot use null directly in InlineData for string?
-    public void TryParse_InvalidVersion_ReturnsFalse(string version)
+    public void TryParseInvalidVersionReturnsFalse(string version)
     {
         var result = SemVerValidator.TryParse(version, out _, out _, out _, out _, out _);
         Assert.False(result);
     }
 
     [Fact]
-    public void TryParse_NullVersion_ReturnsFalse()
+    public void TryParseNullVersionReturnsFalse()
     {
         var result = SemVerValidator.TryParse(null!, out _, out _, out _, out _, out _);
         Assert.False(result);
@@ -118,7 +118,7 @@ public class SemVerValidatorTests
     [InlineData("1.0.0", "invalid", null)]
     [InlineData("invalid", "1.0.0", null)]
     [InlineData("invalid", "also.invalid", null)]
-    public void Compare_ReturnsExpectedResult(string version1, string version2, int? expected)
+    public void CompareReturnsExpectedResult(string version1, string version2, int? expected)
     {
         Assert.Equal(expected, SemVerValidator.Compare(version1, version2));
     }

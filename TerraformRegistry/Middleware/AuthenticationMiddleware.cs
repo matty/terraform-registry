@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Middleware;
@@ -45,7 +46,7 @@ public class AuthenticationMiddleware(
                 var devUser = GetDevUserPrincipal();
                 context.User = devUser;
                 await LoadPermissionsIntoClaims(context);
-                logger.LogWarning("DEV AUTH BYPASS: Auto-authenticated as dev user for {Path}", path);
+                RegistryLog.Warning(logger, "DEV AUTH BYPASS: Auto-authenticated as dev user for {Path}", path);
                 await next(context);
                 return;
             }
@@ -57,7 +58,7 @@ public class AuthenticationMiddleware(
             {
                 if (!StaticTokenPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
                 {
-                    logger.LogWarning("Static token rejected for non-module path {Path} from {RemoteIp}", path,
+                    RegistryLog.Warning(logger, "Static token rejected for non-module path {Path} from {RemoteIp}", path,
                         context.Connection.RemoteIpAddress);
                     await WriteUnauthorizedResponseAsync(context, path);
                     return;
@@ -75,7 +76,7 @@ public class AuthenticationMiddleware(
 
                 // Heuristic: JWTs usually have 2 dots. API keys don't.
                 // If it doesn't look like a JWT, try API key validation first.
-                if (!token.Contains('.') || token.Count(c => c == '.') != 2)
+                if (!token.Contains('.', StringComparison.Ordinal) || token.Count(c => c == '.') != 2)
                 {
                     using var scope = context.RequestServices.CreateScope(); // Service is scoped usually
                     var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -110,32 +111,32 @@ public class AuthenticationMiddleware(
             var sessionToken = context.Request.Cookies[SessionCookieName];
             if (!string.IsNullOrEmpty(sessionToken))
             {
-                logger.LogInformation("Processing request for {Path}. Found session cookie.", path);
+                RegistryLog.Information(logger, "Processing request for {Path}. Found session cookie.", path);
                 var principal = jwtService.ValidateToken(sessionToken);
                 if (principal != null)
                 {
                     context.User = principal;
                     await LoadPermissionsIntoClaims(context);
-                    logger.LogInformation(
+                    RegistryLog.Information(logger,
                         "Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
                         path,
                         principal.Identity?.Name,
                         context.User.Identity?.IsAuthenticated,
                         context.User.Identity?.AuthenticationType);
 
-                    logger.LogInformation("AuthenticationMiddleware: Calling next middleware for {Path}", path);
+                    RegistryLog.Information(logger, "AuthenticationMiddleware: Calling next middleware for {Path}", path);
                     await next(context);
                     return;
                 }
                 else
                 {
-                    logger.LogWarning("Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path,
+                    RegistryLog.Warning(logger, "Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path,
                         sessionToken.Substring(0, Math.Min(10, sessionToken.Length)));
                 }
             }
             else
             {
-                logger.LogInformation("Processing request for {Path}. No session cookie found.", path);
+                RegistryLog.Information(logger, "Processing request for {Path}. No session cookie found.", path);
             }
 
             // Check 4: JWT in Authorization header (Bearer token)
@@ -144,7 +145,7 @@ public class AuthenticationMiddleware(
                 var jwtToken = header.Substring(BearerPrefix.Length);
                 // If we are here, it might be a JWT (or an invalid API key)
                 // Only try JWT validation if it looks like one
-                if (jwtToken.Contains('.') && jwtToken.Count(c => c == '.') == 2)
+                if (jwtToken.Contains('.', StringComparison.Ordinal) && jwtToken.Count(c => c == '.') == 2)
                 {
                     var principal = jwtService.ValidateToken(jwtToken);
                     if (principal != null)
@@ -158,7 +159,7 @@ public class AuthenticationMiddleware(
             }
 
             // No valid authentication found
-            logger.LogWarning("Unauthorized request to {Path} from {RemoteIp}", path,
+            RegistryLog.Warning(logger, "Unauthorized request to {Path} from {RemoteIp}", path,
                 context.Connection.RemoteIpAddress);
 
             // For /api/keys, we let the [Authorize] attribute handle the challenge

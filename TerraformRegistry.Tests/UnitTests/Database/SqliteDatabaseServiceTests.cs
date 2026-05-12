@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -14,6 +14,8 @@ namespace TerraformRegistry.Tests.UnitTests.Database;
 
 public class SqliteDatabaseServiceTests : IAsyncLifetime
 {
+    private static readonly string[] ExpectedSemVerDescendingVersions = ["1.10.0", "1.2.0", "1.1.1", "1.0.0"];
+
     private string _dbPath = null!;
     private string _connectionString = null!;
 
@@ -37,9 +39,9 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
                 if (Directory.Exists(dir)) Directory.Delete(dir, true);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore cleanup issues
+            Console.Error.WriteLine($"Failed to clean up SQLite test directory: {ex.Message}");
         }
 
         return Task.CompletedTask;
@@ -77,7 +79,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Service_ImplementsNarrowDatabaseContracts()
+    public void ServiceImplementsNarrowDatabaseContracts()
     {
         var svc = CreateService("Data Source=:memory:");
 
@@ -89,7 +91,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task InitializeDatabase_CreatesSchemaAndAllowsInsertAndFetch()
+    public async Task InitializeDatabaseCreatesSchemaAndAllowsInsertAndFetch()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -109,7 +111,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AddModule_ReturnsFalseOnDuplicate_AndKeepsOriginalMetadata()
+    public async Task AddModuleReturnsFalseOnDuplicateAndKeepsOriginalMetadata()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -127,7 +129,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListModules_ReturnsLatestVersionPerTuple_AndSupportsFilters()
+    public async Task ListModulesReturnsLatestVersionPerTupleAndSupportsFilters()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -156,7 +158,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListModules_UsesSemVerPrecedenceForLatestVersion()
+    public async Task ListModulesUsesSemVerPrecedenceForLatestVersion()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -171,7 +173,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetModuleVersions_ReturnsSemVerDescendingVersionList()
+    public async Task GetModuleVersionsReturnsSemVerDescendingVersionList()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -184,11 +186,11 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         var versions = await svc.GetModuleVersionsAsync("hashicorp", "vpc", "aws");
         var list = versions.Modules.Single().Versions.Select(v => v.Version).ToList();
 
-        Assert.Equal(new[] { "1.10.0", "1.2.0", "1.1.1", "1.0.0" }, list);
+        Assert.Equal(ExpectedSemVerDescendingVersions, list);
     }
 
     [Fact]
-    public async Task GetModuleStorage_ReturnsDependenciesAndFields()
+    public async Task GetModuleStorageReturnsDependenciesAndFields()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -203,7 +205,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertModuleExtraction_PersistsDocumentAndUpdatesMetadata()
+    public async Task UpsertModuleExtractionPersistsDocumentAndUpdatesMetadata()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -248,7 +250,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UpsertModuleLlmContext_PersistsStoredArtifact()
+    public async Task UpsertModuleLlmContextPersistsStoredArtifact()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -279,7 +281,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveModule_DeletesRow()
+    public async Task RemoveModuleDeletesRow()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -295,7 +297,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveModuleExact_OnlyDeletesMatchingRow()
+    public async Task RemoveModuleExactOnlyDeletesMatchingRow()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -318,7 +320,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveModuleExact_DeletesSnapshotFetchedFromDatabase()
+    public async Task RemoveModuleExactDeletesSnapshotFetchedFromDatabase()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -336,7 +338,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ReplaceModuleExact_UpdatesSnapshotFetchedFromDatabase()
+    public async Task ReplaceModuleExactUpdatesSnapshotFetchedFromDatabase()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -370,7 +372,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveDeletedModule_DeletesOnlySoftDeletedRow()
+    public async Task RemoveDeletedModuleDeletesOnlySoftDeletedRow()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -384,7 +386,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task AddDeletedModule_AddsSoftDeletedRow()
+    public async Task AddDeletedModuleAddsSoftDeletedRow()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -397,7 +399,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveDeletedModule_ReturnsFalseForActiveRow()
+    public async Task RemoveDeletedModuleReturnsFalseForActiveRow()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -410,7 +412,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetModule_ReturnsNullAfterSoftDelete()
+    public async Task GetModuleReturnsNullAfterSoftDelete()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -425,7 +427,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetUserByEmail_IsCaseInsensitiveForLegacyMixedCaseRows()
+    public async Task GetUserByEmailIsCaseInsensitiveForLegacyMixedCaseRows()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();
@@ -450,7 +452,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetUsersByEmailCaseInsensitive_ReturnsAllLegacyCaseVariants()
+    public async Task GetUsersByEmailCaseInsensitiveReturnsAllLegacyCaseVariants()
     {
         var svc = CreateService(_connectionString);
         await (svc as IInitializableDb).InitializeDatabase();

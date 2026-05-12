@@ -10,7 +10,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModuleExtractionQueueRuntimeTests
 {
     [Fact]
-    public async Task QueueAsync_ReturnsFalseAndDoesNotQueueWhenExtractionDisabled()
+    public async Task QueueAsyncReturnsFalseAndDoesNotQueueWhenExtractionDisabled()
     {
         var config = new Mock<IModuleExtractionConfigService>();
         config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(false);
@@ -24,7 +24,7 @@ public class ModuleExtractionQueueRuntimeTests
     }
 
     [Fact]
-    public async Task QueueBackfillAsync_QueuesBoundedModulesWhenEnabled()
+    public async Task QueueBackfillAsyncQueuesBoundedModulesWhenEnabled()
     {
         var config = new Mock<IModuleExtractionConfigService>();
         config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
@@ -61,7 +61,7 @@ public class ModuleExtractionQueueRuntimeTests
     }
 
     [Fact]
-    public async Task QueueBackfillAsync_MarksQueuedModulesPendingWithoutClearingErrors()
+    public async Task QueueBackfillAsyncMarksQueuedModulesPendingWithoutClearingErrors()
     {
         var config = new Mock<IModuleExtractionConfigService>();
         config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);

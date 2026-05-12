@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API;
@@ -33,7 +34,7 @@ public class SqlitePermissionService : IPermissionService
             allPermissions.AddRange(permissions);
         }
 
-        return allPermissions.Distinct().ToArray();
+        return allPermissions.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     public async Task<IEnumerable<Role>> GetUserRolesAsync(string userId)
@@ -59,8 +60,8 @@ public class SqlitePermissionService : IPermissionService
                 Description = reader.IsDBNull(2) ? null : reader.GetString(2),
                 Permissions = permissions,
                 IsSystem = reader.GetInt32(4) == 1,
-                CreatedAt = DateTime.Parse(reader.GetString(5)),
-                UpdatedAt = DateTime.Parse(reader.GetString(6))
+                CreatedAt = DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
+                UpdatedAt = DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture)
             });
         }
 
@@ -77,7 +78,7 @@ public class SqlitePermissionService : IPermissionService
                             VALUES ($userId, $roleId, $assignedAt, $assignedBy)";
         cmd.Parameters.AddWithValue("$userId", userId);
         cmd.Parameters.AddWithValue("$roleId", roleId.ToString());
-        cmd.Parameters.AddWithValue("$assignedAt", DateTime.UtcNow.ToString("o"));
+        cmd.Parameters.AddWithValue("$assignedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$assignedBy", (object?)assignedBy ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
@@ -145,7 +146,7 @@ public class SqlitePermissionService : IPermissionService
                                   VALUES ($userId, $roleId, $assignedAt)";
         assignCmd.Parameters.AddWithValue("$userId", userId);
         assignCmd.Parameters.AddWithValue("$roleId", roleId);
-        assignCmd.Parameters.AddWithValue("$assignedAt", DateTime.UtcNow.ToString("o"));
+        assignCmd.Parameters.AddWithValue("$assignedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
 
         await assignCmd.ExecuteNonQueryAsync();
     }

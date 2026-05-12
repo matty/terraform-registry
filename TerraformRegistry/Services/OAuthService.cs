@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -110,6 +112,7 @@ public class OAuthService
         var tokenRequest = new HttpRequestMessage(HttpMethod.Post, config.TokenEndpoint);
         tokenRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         tokenRequest.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+(StringComparer.Ordinal)
         {
             ["client_id"] = config.ClientId,
             ["client_secret"] = config.ClientSecret,
@@ -120,7 +123,7 @@ public class OAuthService
         var tokenResponse = await client.SendAsync(tokenRequest);
         if (!tokenResponse.IsSuccessStatusCode)
         {
-            _logger.LogError("GitHub token exchange failed: {Status}", tokenResponse.StatusCode);
+            RegistryLog.Error(_logger, "GitHub token exchange failed: {Status}", tokenResponse.StatusCode);
             return null;
         }
 
@@ -130,7 +133,7 @@ public class OAuthService
 
         if (string.IsNullOrEmpty(accessToken))
         {
-            _logger.LogError("GitHub did not return an access token");
+            RegistryLog.Error(_logger, "GitHub did not return an access token");
             return null;
         }
 
@@ -142,7 +145,7 @@ public class OAuthService
         var userResponse = await client.SendAsync(userRequest);
         if (!userResponse.IsSuccessStatusCode)
         {
-            _logger.LogError("GitHub user info request failed: {Status}", userResponse.StatusCode);
+            RegistryLog.Error(_logger, "GitHub user info request failed: {Status}", userResponse.StatusCode);
             return null;
         }
 
@@ -159,13 +162,13 @@ public class OAuthService
 
         if (string.IsNullOrWhiteSpace(email))
         {
-            _logger.LogWarning("GitHub login rejected because no email address was available for the authenticated user.");
+            RegistryLog.Warning(_logger, "GitHub login rejected because no email address was available for the authenticated user.");
             return null;
         }
 
         return new UserInfo
         {
-            Id = root.GetProperty("id").GetInt64().ToString(),
+            Id = root.GetProperty("id").GetInt64().ToString(CultureInfo.InvariantCulture),
             Email = email,
             Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? root.GetProperty("login").GetString() ?? "" : root.GetProperty("login").GetString() ?? "",
             Provider = "github",
@@ -209,7 +212,7 @@ public class OAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("Failed to get GitHub primary email: {Message}", ex.Message);
+            RegistryLog.Warning(_logger, "Failed to get GitHub primary email: {Message}", ex.Message);
         }
 
         return null;
@@ -222,6 +225,7 @@ public class OAuthService
         // Exchange code for access token
         var tokenRequest = new HttpRequestMessage(HttpMethod.Post, config.TokenEndpoint);
         tokenRequest.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+(StringComparer.Ordinal)
         {
             ["client_id"] = config.ClientId,
             ["client_secret"] = config.ClientSecret,
@@ -233,7 +237,7 @@ public class OAuthService
         var tokenResponse = await client.SendAsync(tokenRequest);
         if (!tokenResponse.IsSuccessStatusCode)
         {
-            _logger.LogError("Azure AD token exchange failed: {Status}", tokenResponse.StatusCode);
+            RegistryLog.Error(_logger, "Azure AD token exchange failed: {Status}", tokenResponse.StatusCode);
             return null;
         }
 
@@ -243,7 +247,7 @@ public class OAuthService
 
         if (string.IsNullOrEmpty(accessToken))
         {
-            _logger.LogError("Azure AD did not return an access token");
+            RegistryLog.Error(_logger, "Azure AD did not return an access token");
             return null;
         }
 
@@ -254,7 +258,7 @@ public class OAuthService
         var userResponse = await client.SendAsync(userRequest);
         if (!userResponse.IsSuccessStatusCode)
         {
-            _logger.LogError("Azure AD user info request failed: {Status}", userResponse.StatusCode);
+            RegistryLog.Error(_logger, "Azure AD user info request failed: {Status}", userResponse.StatusCode);
             return null;
         }
 
@@ -266,7 +270,7 @@ public class OAuthService
 
         if (string.IsNullOrWhiteSpace(email))
         {
-            _logger.LogWarning("Azure AD login rejected because no email address was available for the authenticated user.");
+            RegistryLog.Warning(_logger, "Azure AD login rejected because no email address was available for the authenticated user.");
             return null;
         }
 
@@ -280,7 +284,7 @@ public class OAuthService
         };
     }
 
-    private string? GetProviderKey(string provider)
+    private static string? GetProviderKey(string provider)
     {
         return provider.ToLowerInvariant() switch
         {

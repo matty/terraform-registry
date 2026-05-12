@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace TerraformRegistry.API.Utilities;
@@ -12,7 +13,8 @@ public static class SemVerValidator
     // Major.Minor.Patch[-Prerelease][+BuildMetadata]
     private static readonly Regex SemVerPattern = new(
         @"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled,
+        TimeSpan.FromSeconds(1));
 
     /// <summary>
     ///     Determines whether the specified version string is a valid SemVer 2.0.0.
@@ -50,9 +52,9 @@ public static class SemVerValidator
         if (!match.Success)
             return false;
 
-        major = int.Parse(match.Groups[1].Value);
-        minor = int.Parse(match.Groups[2].Value);
-        patch = int.Parse(match.Groups[3].Value);
+        major = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        minor = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+        patch = int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
 
         if (match.Groups[4].Success)
             prerelease = match.Groups[4].Value;
@@ -79,7 +81,9 @@ public static class SemVerValidator
     {
         if (!TryParse(version1, out var major1, out var minor1, out var patch1, out var prerelease1, out _) ||
             !TryParse(version2, out var major2, out var minor2, out var patch2, out var prerelease2, out _))
+        {
             return null;
+        }
 
         // Compare major.minor.patch
         var result = major1.CompareTo(major2);

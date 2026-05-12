@@ -12,7 +12,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModuleDocsHandlersTests
 {
     [Fact]
-    public async Task Summary_RequiresReadPermission()
+    public async Task SummaryRequiresReadPermission()
     {
         var context = CreateContext([]);
 
@@ -26,7 +26,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task Requeue_RequiresManagePermission()
+    public async Task RequeueRequiresManagePermission()
     {
         var context = CreateContext([Permissions.ModuleDocsRead]);
 
@@ -46,7 +46,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task RegenerateLlmContext_RequiresManagePermission()
+    public async Task RegenerateLlmContextRequiresManagePermission()
     {
         var context = CreateContext([Permissions.ModuleDocsRead]);
 
@@ -66,7 +66,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task UpdateConfig_RequiresConfigurePermission()
+    public async Task UpdateConfigRequiresConfigurePermission()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
         context.Request.Body = new MemoryStream("""{"enabled":false}"""u8.ToArray());
@@ -83,7 +83,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task Requeue_PreservesExistingErrorUntilProcessingStarts()
+    public async Task RequeuePreservesExistingErrorUntilProcessingStarts()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
         var metadata = new ModuleArtifactMetadata
@@ -134,7 +134,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task Requeue_AuditDetailsIncludeCoordinatesAndEnabledState()
+    public async Task RequeueAuditDetailsIncludeCoordinatesAndEnabledState()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
 
@@ -196,7 +196,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task Backfill_AuditDetailsIncludeRequestedLimitQueuedCountAndEnabledState()
+    public async Task BackfillAuditDetailsIncludeRequestedLimitQueuedCountAndEnabledState()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
         context.Request.Body = new MemoryStream("""{"limit":7}"""u8.ToArray());
@@ -236,7 +236,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task RegenerateLlmContext_WithStoredExtraction_RegeneratesImmediately()
+    public async Task RegenerateLlmContextWithStoredExtractionRegeneratesImmediately()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
 
@@ -280,7 +280,7 @@ public class ModuleDocsHandlersTests
     }
 
     [Fact]
-    public async Task RegenerateLlmContext_WithoutStoredExtraction_QueuesFullExtractionWhenEnabled()
+    public async Task RegenerateLlmContextWithoutStoredExtractionQueuesFullExtractionWhenEnabled()
     {
         var context = CreateContext([Permissions.ModuleDocsManage]);
 

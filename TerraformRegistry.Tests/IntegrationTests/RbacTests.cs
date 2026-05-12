@@ -15,7 +15,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task Roles_ListRoles_ReturnsDefaultRoles()
+    public async Task RolesListRolesReturnsDefaultRoles()
     {
         var client = await CreateAdminClientAsync();
 
@@ -34,7 +34,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task Roles_CreateCustomRole_ReturnsCreated()
+    public async Task RolesCreateCustomRoleReturnsCreated()
     {
         var client = await CreateAdminClientAsync();
 
@@ -53,7 +53,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task Roles_DeleteSystemRole_Fails()
+    public async Task RolesDeleteSystemRoleFails()
     {
         var client = await CreateAdminClientAsync();
 
@@ -69,9 +69,9 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task Users_AssignRole_ReturnsOk()
+    public async Task UsersAssignRoleReturnsOk()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         // Create a target user to assign role to
@@ -98,7 +98,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task Permission_UserWithoutUpload_Gets403()
+    public async Task PermissionUserWithoutUploadGets403()
     {
         // Create a custom role without modules.upload
         var client = await CreateAdminClientAsync();
@@ -125,7 +125,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task Permission_UserWithUpload_Succeeds()
+    public async Task PermissionUserWithUploadSucceeds()
     {
         // Create a custom role with modules.upload
         var client = await CreateAdminClientAsync();
@@ -153,7 +153,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
     }
 
     [Fact]
-    public async Task AuthMe_ReturnsPermissions()
+    public async Task AuthMeReturnsPermissions()
     {
         // This test uses session-based auth (JWT cookie) since /api/auth/me reads session cookies.
         // For API-key-based auth, we verify that roles and permissions are visible via admin endpoints.
@@ -164,7 +164,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         // Also verify the user's own roles via the admin endpoint
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var permService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
         // Get permissions for the admin user we created
@@ -183,7 +183,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
 
     private async Task<HttpClient> CreateAdminClientAsync()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
         var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
@@ -195,14 +195,14 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
         var adminRole = roles.First(r => r.Name == "admin");
         await permissionService.AssignRoleAsync(user.Id, adminRole.Id, null);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
         return client;
     }
 
     private async Task<HttpClient> CreateClientWithRoleAsync(string email, string providerId, Guid roleId)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
@@ -211,7 +211,7 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
 
         await permissionService.AssignRoleAsync(user.Id, roleId, null);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
         return client;
     }

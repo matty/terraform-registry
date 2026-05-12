@@ -8,7 +8,7 @@ public class EnvironmentVariablesTests
     // (e.g., DatabaseProvider, StorageProvider, BaseUrl, ModuleStoragePath, AuthorizationToken)
     // are correctly picked up by the configuration builder when using the "TF_REG_" prefix.
     [Fact]
-    public void ProgramEnvironmentVariables_AreAcceptedByConfiguration()
+    public void ProgramEnvironmentVariablesAreAcceptedByConfiguration()
     {
         // Arrange
         var envVars = new[]

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.S3;
@@ -23,7 +24,7 @@ internal sealed class S3ModulePurgeWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error reading module row for purge {Namespace}/{Name}/{Provider}/{Version}.",
                 @namespace,
@@ -60,7 +61,7 @@ internal sealed class S3ModulePurgeWorkflow(
             var removed = await databaseService.RemoveModuleExactAsync(activeModuleStorage);
             if (!removed)
             {
-                logger.LogWarning(
+                RegistryLog.Warning(logger,
                     "Failed to remove exact active module row during purge for {Namespace}/{Name}/{Provider}/{Version}.",
                     activeModuleStorage.Namespace,
                     activeModuleStorage.Name,
@@ -80,7 +81,7 @@ internal sealed class S3ModulePurgeWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error removing exact active module row during purge for {Namespace}/{Name}/{Provider}/{Version}.",
                 activeModuleStorage.Namespace,
@@ -102,7 +103,7 @@ internal sealed class S3ModulePurgeWorkflow(
                 moduleStorage.Version);
             if (!removed)
             {
-                logger.LogWarning(
+                RegistryLog.Warning(logger,
                     "Failed to remove deleted module row during purge for {Namespace}/{Name}/{Provider}/{Version}.",
                     moduleStorage.Namespace,
                     moduleStorage.Name,
@@ -122,7 +123,7 @@ internal sealed class S3ModulePurgeWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error removing deleted module row during purge for {Namespace}/{Name}/{Provider}/{Version}.",
                 moduleStorage.Namespace,
@@ -140,7 +141,7 @@ internal sealed class S3ModulePurgeWorkflow(
             var restored = await databaseService.AddModuleAsync(module);
             if (!restored)
             {
-                logger.LogError(
+                RegistryLog.Error(logger,
                     "Failed to restore active module row during purge rollback for {Namespace}/{Name}/{Provider}/{Version}.",
                     module.Namespace,
                     module.Name,
@@ -150,7 +151,7 @@ internal sealed class S3ModulePurgeWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error restoring active module row during purge rollback for {Namespace}/{Name}/{Provider}/{Version}.",
                 module.Namespace,
@@ -167,7 +168,7 @@ internal sealed class S3ModulePurgeWorkflow(
             var restored = await databaseService.AddDeletedModuleAsync(module);
             if (!restored)
             {
-                logger.LogError(
+                RegistryLog.Error(logger,
                     "Failed to restore deleted module row during purge rollback for {Namespace}/{Name}/{Provider}/{Version}.",
                     module.Namespace,
                     module.Name,
@@ -177,7 +178,7 @@ internal sealed class S3ModulePurgeWorkflow(
         }
         catch (Exception ex)
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 ex,
                 "Error restoring deleted module row during purge rollback for {Namespace}/{Name}/{Provider}/{Version}.",
                 module.Namespace,

@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.PostgreSQL;
 
@@ -41,11 +43,11 @@ public class PostgreSqlAuditService : IAuditService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to write audit log entry for action {Action}", action);
+            RegistryLog.Error(_logger, ex, "Failed to write audit log entry for action {Action}", action);
         }
     }
 
-    public async Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? to, int limit = 50, int offset = 0)
+    public async Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? toTimestamp, int limit = 50, int offset = 0)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -77,10 +79,10 @@ public class PostgreSqlAuditService : IAuditService
             parameters.Add(new NpgsqlParameter("@from", from.Value));
         }
 
-        if (to.HasValue)
+        if (toTimestamp.HasValue)
         {
             conditions.Add("timestamp <= @to");
-            parameters.Add(new NpgsqlParameter("@to", to.Value));
+            parameters.Add(new NpgsqlParameter("@to", toTimestamp.Value));
         }
 
         var whereClause = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
@@ -89,7 +91,7 @@ public class PostgreSqlAuditService : IAuditService
         var countSql = $"SELECT COUNT(*) FROM audit_logs {whereClause}";
         await using var countCmd = new NpgsqlCommand(countSql, connection);
         foreach (var p in parameters) countCmd.Parameters.Add(p.Clone());
-        var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+        var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
 
         // Data query
         var dataSql = $@"SELECT id, user_id, action, resource_type, resource_id, details, ip_address, timestamp

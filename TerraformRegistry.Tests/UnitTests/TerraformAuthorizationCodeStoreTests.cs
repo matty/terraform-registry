@@ -5,7 +5,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class TerraformAuthorizationCodeStoreTests
 {
     [Fact]
-    public void ConsumeCode_WithMatchingClientAndRedirectUri_Succeeds_OnlyOnce()
+    public void ConsumeCodeWithMatchingClientAndRedirectUriSucceedsOnlyOnce()
     {
         var store = new InMemoryTerraformAuthorizationCodeStore(new TerraformLoginOptions
         {
@@ -29,7 +29,7 @@ public class TerraformAuthorizationCodeStoreTests
     }
 
     [Fact]
-    public void ConsumeCode_WithMismatchedRedirectUri_Fails()
+    public void ConsumeCodeWithMismatchedRedirectUriFails()
     {
         var store = new InMemoryTerraformAuthorizationCodeStore(new TerraformLoginOptions
         {

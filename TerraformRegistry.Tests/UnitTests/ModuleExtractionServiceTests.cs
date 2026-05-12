@@ -10,7 +10,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModuleExtractionServiceTests
 {
     [Fact]
-    public async Task ExtractAsync_SavesDocumentAndMarksModuleSucceeded()
+    public async Task ExtractAsyncSavesDocumentAndMarksModuleSucceeded()
     {
         var moduleService = new Mock<IModuleService>();
         moduleService
@@ -48,7 +48,7 @@ public class ModuleExtractionServiceTests
             ],
             Submodules =
             [
-                new ModuleSubmodule { Path = "modules/vpc", Providers = new Dictionary<string, string>() }
+                new ModuleSubmodule { Path = "modules/vpc", Providers = new Dictionary<string, string>(StringComparer.Ordinal) }
             ],
             Examples =
             [
@@ -61,7 +61,7 @@ public class ModuleExtractionServiceTests
             .Setup(x => x.InspectAsync(tempRoot, It.IsAny<CancellationToken>()))
             .ReturnsAsync(document);
 
-        var module = new Module
+        var module = new TerraformModule
         {
             Id = "acme/network/aws/1.2.3",
             Owner = "acme",
@@ -73,7 +73,7 @@ public class ModuleExtractionServiceTests
             Versions = ["1.2.3"],
             Root = "/",
             Submodules = [],
-            Providers = new Dictionary<string, string>(),
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal),
             Description = "Network module"
         };
 
@@ -163,7 +163,7 @@ public class ModuleExtractionServiceTests
     }
 
     [Fact]
-    public async Task ExtractAsync_MarksModuleFailedWhenInspectionFails()
+    public async Task ExtractAsyncMarksModuleFailedWhenInspectionFails()
     {
         var moduleService = new Mock<IModuleService>();
         moduleService

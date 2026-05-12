@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
@@ -58,7 +59,7 @@ public class PortalAuthenticationMiddleware(
                 }
             }
 
-            logger.LogWarning("DEV AUTH BYPASS (Portal): Auto-authenticated as dev user for {Path}", path);
+            RegistryLog.Warning(logger, "DEV AUTH BYPASS (Portal): Auto-authenticated as dev user for {Path}", path);
             await next(context);
             return;
         }
@@ -87,7 +88,7 @@ public class PortalAuthenticationMiddleware(
             if (principal != null)
             {
                 context.User = principal;
-                logger.LogInformation("Portal session validated for {Path}. User: {User}", path,
+                RegistryLog.Information(logger, "Portal session validated for {Path}. User: {User}", path,
                     principal.Identity?.Name);
             }
         }
@@ -98,7 +99,7 @@ public class PortalAuthenticationMiddleware(
             if (context.User.Identity?.IsAuthenticated != true)
             {
                 // For API requests, return 401; for page requests, redirect to login
-                if (context.Request.Headers.Accept.ToString().Contains("application/json"))
+                if (context.Request.Headers.Accept.ToString().Contains("application/json", StringComparison.Ordinal))
                 {
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     await context.Response.WriteAsJsonAsync(new { error = "Not authenticated" });

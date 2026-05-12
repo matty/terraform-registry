@@ -21,6 +21,7 @@ public class S3ModuleServiceUploadTests
 
     public S3ModuleServiceUploadTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockS3Client
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ReturnsAsync(new ListObjectsV2Response());
@@ -34,6 +35,7 @@ public class S3ModuleServiceUploadTests
     {
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["S3:BucketName"] = BucketName,
                 ["S3:Region"] = "eu-west-2",
@@ -88,7 +90,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_When_Database_Row_Already_Exists_And_Replace_Is_False()
+    public async Task UploadModuleAsyncReturnsFalseWhenDatabaseRowAlreadyExistsAndReplaceIsFalse()
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -108,7 +110,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Adds_Database_Row_With_Unique_Final_Key_And_Finalizes_From_Temp_On_Create_Success()
+    public async Task UploadModuleAsyncAddsDatabaseRowWithUniqueFinalKeyAndFinalizesFromTempOnCreateSuccess()
     {
         PutObjectRequest? putRequest = null;
         CopyObjectRequest? finalizeRequest = null;
@@ -179,7 +181,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Deletes_Unique_Final_Object_When_Create_Db_Add_Fails()
+    public async Task UploadModuleAsyncDeletesUniqueFinalObjectWhenCreateDbAddFails()
     {
         PutObjectRequest? putRequest = null;
         string? finalKey = null;
@@ -218,7 +220,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Allows_Replace_When_Current_Database_Row_Is_Missing()
+    public async Task UploadModuleAsyncAllowsReplaceWhenCurrentDatabaseRowIsMissing()
     {
         ModuleStorage? addedModule = null;
 
@@ -251,7 +253,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_When_Module_Row_Exists_In_Trash()
+    public async Task UploadModuleAsyncReturnsFalseWhenModuleRowExistsInTrash()
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "aws", "1.0.0"))
@@ -270,7 +272,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Removes_Db_Row_And_Deletes_Temp_Key_When_Create_Finalize_Copy_Fails()
+    public async Task UploadModuleAsyncRemovesDbRowAndDeletesTempKeyWhenCreateFinalizeCopyFails()
     {
         PutObjectRequest? putRequest = null;
         CopyObjectRequest? copyRequest = null;
@@ -310,7 +312,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Continues_When_Create_Finalize_Copy_Throws_But_Final_Metadata_Matches_Upload()
+    public async Task UploadModuleAsyncContinuesWhenCreateFinalizeCopyThrowsButFinalMetadataMatchesUpload()
     {
         PutObjectRequest? putRequest = null;
         string? finalKey = null;
@@ -329,6 +331,7 @@ public class S3ModuleServiceUploadTests
                 finalKey = request.DestinationKey;
                 finalObjectExists = true;
                 finalObjectMetadata = new Dictionary<string, string>
+(StringComparer.Ordinal)
                 {
                     ["namespace"] = putRequest!.Metadata["namespace"],
                     ["name"] = putRequest.Metadata["name"],
@@ -385,7 +388,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Replaces_With_New_Unique_Final_Key_And_Deletes_Previous_Object()
+    public async Task UploadModuleAsyncReplacesWithNewUniqueFinalKeyAndDeletesPreviousObject()
     {
         var existingModule = CreateExistingModuleStorage();
         string? tempKey = null;
@@ -440,7 +443,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_And_Cleans_Up_When_Replace_Update_Returns_False()
+    public async Task UploadModuleAsyncReturnsFalseAndCleansUpWhenReplaceUpdateReturnsFalse()
     {
         var existingModule = CreateExistingModuleStorage();
         string? tempKey = null;
@@ -486,7 +489,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_And_Cleans_Up_When_Replace_Update_Throws()
+    public async Task UploadModuleAsyncReturnsFalseAndCleansUpWhenReplaceUpdateThrows()
     {
         var existingModule = CreateExistingModuleStorage();
         string? tempKey = null;
@@ -532,7 +535,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_And_Deletes_Unique_Final_Object_When_Replace_Finalize_Copy_Fails()
+    public async Task UploadModuleAsyncReturnsFalseAndDeletesUniqueFinalObjectWhenReplaceFinalizeCopyFails()
     {
         var existingModule = CreateExistingModuleStorage();
         string? tempKey = null;
@@ -577,7 +580,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_And_Deletes_Unique_Final_Object_When_Replace_Update_Fails_After_Finalize()
+    public async Task UploadModuleAsyncReturnsFalseAndDeletesUniqueFinalObjectWhenReplaceUpdateFailsAfterFinalize()
     {
         var existingModule = CreateExistingModuleStorage();
         string? tempKey = null;
@@ -623,7 +626,7 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_Logs_When_Temp_Key_Cleanup_Delete_Fails()
+    public async Task UploadModuleAsyncLogsWhenTempKeyCleanupDeleteFails()
     {
         _mockS3Client
             .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))

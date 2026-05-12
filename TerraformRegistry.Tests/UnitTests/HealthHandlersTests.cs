@@ -11,7 +11,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class HealthHandlersTests
 {
     [Fact]
-    public async Task HandleReady_WithDetailAndAuth_IncludesProviderArtifactStorageCheck()
+    public async Task HandleReadyWithDetailAndAuthIncludesProviderArtifactStorageCheck()
     {
         var database = new Mock<IDatabaseService>();
         database.Setup(service => service.CheckConnectionAsync()).ReturnsAsync(true);
@@ -42,7 +42,7 @@ public class HealthHandlersTests
     }
 
     [Fact]
-    public async Task HandleReady_WhenProviderArtifactStorageIsUnhealthy_Returns503WithReason()
+    public async Task HandleReadyWhenProviderArtifactStorageIsUnhealthyReturns503WithReason()
     {
         var database = new Mock<IDatabaseService>();
         database.Setup(service => service.CheckConnectionAsync()).ReturnsAsync(true);
@@ -91,6 +91,7 @@ public class HealthHandlersTests
     {
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["AuthorizationToken"] = "ready-test-token"
             })

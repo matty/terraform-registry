@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -37,7 +38,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         return sources;
     }
 
-    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
+    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string moduleNamespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -46,7 +47,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Namespace = @namespace,
+            Namespace = moduleNamespace,
             Name = name,
             Provider = provider,
             RepoOwner = repoOwner,
@@ -69,8 +70,8 @@ public class SqliteVcsSourceService : IVcsSourceService
         cmd.Parameters.AddWithValue("$repoName", vcsSource.RepoName);
         cmd.Parameters.AddWithValue("$connectionId", vcsSource.ConnectionId.ToString());
         cmd.Parameters.AddWithValue("$isActive", vcsSource.IsActive ? 1 : 0);
-        cmd.Parameters.AddWithValue("$createdAt", vcsSource.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$updatedAt", vcsSource.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$createdAt", vcsSource.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updatedAt", vcsSource.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
         return vcsSource;
@@ -95,7 +96,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         {
             new("$id", id.ToString()),
             new("$userId", userId),
-            new("$updatedAt", DateTime.UtcNow.ToString("o"))
+            new("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture))
         };
 
         if (repoOwner != null)
@@ -195,7 +196,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         return MapVcsSource(reader);
     }
 
-    public async Task<VcsSource?> GetByModuleAsync(string @namespace, string name, string provider)
+    public async Task<VcsSource?> GetByModuleAsync(string moduleNamespace, string name, string provider)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -207,7 +208,7 @@ public class SqliteVcsSourceService : IVcsSourceService
                             FROM vcs_sources
                             WHERE namespace = $namespace AND name = $name AND provider = $provider AND is_active = 1
                             LIMIT 1";
-        cmd.Parameters.AddWithValue("$namespace", @namespace);
+        cmd.Parameters.AddWithValue("$namespace", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$provider", provider);
 
@@ -216,7 +217,7 @@ public class SqliteVcsSourceService : IVcsSourceService
         return MapVcsSource(reader);
     }
 
-    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? error)
+    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? errorMessage)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -232,9 +233,9 @@ public class SqliteVcsSourceService : IVcsSourceService
         cmd.Parameters.AddWithValue("$id", id.ToString());
         cmd.Parameters.AddWithValue("$status", status);
         cmd.Parameters.AddWithValue("$lastPublishedVersion", (object?)lastPublishedVersion ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$error", (object?)error ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$lastSyncAt", DateTime.UtcNow.ToString("o"));
-        cmd.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("o"));
+        cmd.Parameters.AddWithValue("$error", (object?)errorMessage ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$lastSyncAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
 
         var rows = await cmd.ExecuteNonQueryAsync();
         if (rows == 0) return null;
@@ -258,10 +259,10 @@ public class SqliteVcsSourceService : IVcsSourceService
             TagPattern = reader.GetString(9),
             LastPublishedVersion = reader.IsDBNull(10) ? null : reader.GetString(10),
             LastSyncStatus = reader.GetString(11),
-            LastSyncAt = reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12)),
+            LastSyncAt = reader.IsDBNull(12) ? null : DateTime.Parse(reader.GetString(12), CultureInfo.InvariantCulture),
             LastSyncError = reader.IsDBNull(13) ? null : reader.GetString(13),
-            CreatedAt = DateTime.Parse(reader.GetString(14)),
-            UpdatedAt = DateTime.Parse(reader.GetString(15))
+            CreatedAt = DateTime.Parse(reader.GetString(14), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(15), CultureInfo.InvariantCulture)
         };
     }
 }

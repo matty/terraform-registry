@@ -1,3 +1,4 @@
+using System.Globalization;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 
@@ -35,13 +37,13 @@ public class AzureBlobModuleService : ModuleService
 
         // Get Azure Storage configuration values
         _containerName = configuration["AzureStorage:ContainerName"]
-                         ?? throw new ArgumentNullException("AzureStorage:ContainerName",
-                             "Azure Storage container name is required.");
+                         ?? throw new ArgumentNullException(nameof(configuration),
+                             "AzureStorage:ContainerName configuration value is required.");
 
-        _sasTokenExpiryMinutes = int.Parse(configuration["AzureStorage:SasTokenExpiryMinutes"] ?? "5");
+        _sasTokenExpiryMinutes = int.Parse(configuration["AzureStorage:SasTokenExpiryMinutes"] ?? "5", CultureInfo.InvariantCulture);
         if (_sasTokenExpiryMinutes <= 0)
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "AzureStorage:SasTokenExpiryMinutes must be a positive integer, but was configured as {ConfiguredValue}. Defaulting to 5 minutes.",
                 _sasTokenExpiryMinutes);
             _sasTokenExpiryMinutes = 5;
@@ -51,12 +53,12 @@ public class AzureBlobModuleService : ModuleService
 
         if (blobServiceClient != null)
         {
-            _logger.LogInformation("Using provided BlobServiceClient instance.");
+            RegistryLog.Information(_logger, "Using provided BlobServiceClient instance.");
             clientToUse = blobServiceClient;
         }
         else
         {
-            _logger.LogInformation("BlobServiceClient not provided; attempting to create one based on configuration.");
+            RegistryLog.Information(_logger, "BlobServiceClient not provided; attempting to create one based on configuration.");
             // Get Azure Storage connection settings from configuration
             var connectionString = configuration["AzureStorage:ConnectionString"];
             var accountName = configuration["AzureStorage:AccountName"];
@@ -68,11 +70,11 @@ public class AzureBlobModuleService : ModuleService
                 {
                     const string errorMessage =
                         "Azure Storage AccountName ('AzureStorage:AccountName') is required when connection string is not provided (for Managed Identity).";
-                    _logger.LogError(errorMessage);
-                    throw new ArgumentNullException("AzureStorage:AccountName", errorMessage);
+                    RegistryLog.Error(_logger, "{ErrorMessage}", errorMessage);
+                    throw new ArgumentNullException(nameof(configuration), errorMessage);
                 }
 
-                _logger.LogInformation(
+                RegistryLog.Information(_logger,
                     "Azure Storage connection string not found. Attempting to use Managed Identity for account: {AccountName}.",
                     accountName);
                 // Use Managed Identity
@@ -81,7 +83,7 @@ public class AzureBlobModuleService : ModuleService
             }
             else
             {
-                _logger.LogInformation("Using Azure Storage connection string to create BlobServiceClient.");
+                RegistryLog.Information(_logger, "Using Azure Storage connection string to create BlobServiceClient.");
                 clientToUse = new BlobServiceClient(connectionString);
             }
         }
@@ -92,13 +94,13 @@ public class AzureBlobModuleService : ModuleService
         // Ensure container exists
         try
         {
-            _logger.LogInformation("Ensuring blob container '{ContainerName}' exists...", _containerName);
+            RegistryLog.Information(_logger, "Ensuring blob container '{ContainerName}' exists...", _containerName);
             _containerClient.CreateIfNotExists();
-            _logger.LogInformation("Blob container '{ContainerName}' is ready.", _containerName);
+            RegistryLog.Information(_logger, "Blob container '{ContainerName}' is ready.", _containerName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            RegistryLog.Error(_logger, ex,
                 "Failed to create or verify blob container '{ContainerName}'. This may prevent module operations.",
                 _containerName);
             throw; // Re-throw as this is a critical failure for the service's operation.
@@ -118,31 +120,32 @@ public class AzureBlobModuleService : ModuleService
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public override Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _databaseService.GetModuleAsync(@namespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
     }
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
     {
-        return _databaseService.GetModuleVersionsAsync(@namespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
     }
 
     /// <summary>
     ///     Gets the download URL for a specific module version using SAS token
     /// </summary>
-    public override async Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider,
+    public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         // First query the database to get storage metadata
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
         {
             // Module not found in database
-            _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} not found in database");
+            RegistryLog.Warning(_logger, "Module {Namespace}/{Name}/{Provider}/{Version} not found in database",
+                moduleNamespace, name, provider, version);
             return null;
         }
 
@@ -156,8 +159,9 @@ public class AzureBlobModuleService : ModuleService
             if (!await blobClient.ExistsAsync())
             {
                 // This indicates data inconsistency - database record exists but no blob
-                _logger.LogWarning(
-                    $"Module {@namespace}/{name}/{provider}/{version} exists in database but blob not found at {blobPath}");
+                RegistryLog.Warning(_logger,
+                    "Module {Namespace}/{Name}/{Provider}/{Version} exists in database but blob not found at {BlobPath}",
+                    moduleNamespace, name, provider, version, blobPath);
                 return null;
             }
 
@@ -179,24 +183,25 @@ public class AzureBlobModuleService : ModuleService
             }
             catch (InvalidOperationException)
             {
-                _logger.LogWarning(
+                RegistryLog.Warning(_logger,
                     "Blob client for {Namespace}/{Name}/{Provider}/{Version} cannot generate SAS URIs directly. Falling back to blob URI.",
-                    @namespace, name, provider, version);
+                    moduleNamespace, name, provider, version);
                 return blobClient.Uri.ToString();
             }
         }
         catch (Exception ex)
         {
             // Log any errors during SAS token generation
-            _logger.LogError(ex, $"Error generating SAS token for module {@namespace}/{name}/{provider}/{version}");
+            RegistryLog.Error(_logger, ex, "Error generating SAS token for module {Namespace}/{Name}/{Provider}/{Version}",
+                moduleNamespace, name, provider, version);
             return null;
         }
     }
 
-    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
             return null;
 
@@ -217,11 +222,11 @@ public class AzureBlobModuleService : ModuleService
     ///     The database stores metadata and a reference to the blob path, while the
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
-    protected override async Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
+    protected override async Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         // Create a consistent blob path format for easy retrieval
-        var blobPath = $"{@namespace}/{name}-{provider}-{version}.zip";
+        var blobPath = $"{moduleNamespace}/{name}-{provider}-{version}.zip";
         var blobClient = _containerClient.GetBlobClient(blobPath);
 
         // Check if blob already exists to avoid duplication or allow replacement
@@ -229,7 +234,8 @@ public class AzureBlobModuleService : ModuleService
         {
             if (!replace)
             {
-                _logger.LogWarning($"Module {@namespace}/{name}/{provider}/{version} already exists in blob storage");
+                RegistryLog.Warning(_logger, "Module {Namespace}/{Name}/{Provider}/{Version} already exists in blob storage",
+                    moduleNamespace, name, provider, version);
                 return false;
             }
 
@@ -240,7 +246,8 @@ public class AzureBlobModuleService : ModuleService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Failed to delete existing blob for {@namespace}/{name}/{provider}/{version}");
+                RegistryLog.Error(_logger, ex, "Failed to delete existing blob for {Namespace}/{Name}/{Provider}/{Version}",
+                    moduleNamespace, name, provider, version);
                 return false;
             }
         }
@@ -252,20 +259,21 @@ public class AzureBlobModuleService : ModuleService
             await blobClient.UploadAsync(moduleContent, new BlobUploadOptions
             {
                 Metadata = new Dictionary<string, string>
+(StringComparer.Ordinal)
                 {
-                    { "namespace", @namespace },
+                    { "namespace", moduleNamespace },
                     { "name", name },
                     { "provider", provider },
                     { "version", version },
                     { "description", description },
-                    { "publishedAt", DateTime.UtcNow.ToString("o") }
+                    { "publishedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }
                 }
             });
 
             // Step 2: Store module metadata in PostgreSQL database with a reference to the blob
             var module = new ModuleStorage
             {
-                Namespace = @namespace,
+                Namespace = moduleNamespace,
                 Name = name,
                 Provider = provider,
                 Version = version,
@@ -282,9 +290,11 @@ public class AzureBlobModuleService : ModuleService
                 {
                     await _databaseService.RemoveModuleAsync(module);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore DB remove failures; Add will handle upsert where supported
+                    RegistryLog.Warning(_logger, ex,
+                        "Failed to remove existing database module {Namespace}/{Name}/{Provider}/{Version}; continuing with upsert",
+                        moduleNamespace, name, provider, version);
                 }
             }
 
@@ -295,8 +305,9 @@ public class AzureBlobModuleService : ModuleService
             {
                 // Clean up the blob if database insertion fails to maintain consistency
                 await blobClient.DeleteAsync();
-                _logger.LogError(
-                    $"Failed to add module {@namespace}/{name}/{provider}/{version} to database, cleaned up blob storage");
+                RegistryLog.Error(_logger,
+                    "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database, cleaned up blob storage",
+                    moduleNamespace, name, provider, version);
             }
 
             return result;
@@ -304,16 +315,19 @@ public class AzureBlobModuleService : ModuleService
         catch (Exception ex)
         {
             // Log any errors during upload
-            _logger.LogError(ex, $"Error uploading module {@namespace}/{name}/{provider}/{version}");
+            RegistryLog.Error(_logger, ex, "Error uploading module {Namespace}/{Name}/{Provider}/{Version}",
+                moduleNamespace, name, provider, version);
 
             // Try to clean up the blob if an error occurred
             try
             {
                 if (await blobClient.ExistsAsync()) await blobClient.DeleteAsync();
             }
-            catch
+            catch (Exception cleanupEx)
             {
-                // Ignore cleanup errors
+                RegistryLog.Warning(_logger, cleanupEx,
+                    "Failed to clean up blob for module {Namespace}/{Name}/{Provider}/{Version} after upload error",
+                    moduleNamespace, name, provider, version);
             }
 
             return false;
@@ -333,11 +347,12 @@ public class AzureBlobModuleService : ModuleService
     {
         try
         {
-            _logger.LogInformation("Starting synchronization between Azure Blob Storage and PostgreSQL database...");
+            RegistryLog.Information(_logger, "Starting synchronization between Azure Blob Storage and PostgreSQL database...");
             var syncCount = 0;
 
             // List all blobs in the container
             await foreach (var blobItem in _containerClient.GetBlobsAsync())
+            {
                 try
                 {
                     // Get the blob client
@@ -358,6 +373,7 @@ public class AzureBlobModuleService : ModuleService
                             metadata.TryGetValue("provider", out var provider) &&
                             metadata.TryGetValue("version", out var version) &&
                             metadata.TryGetValue("description", out var description))
+                        {
                             // Create module storage object from blob metadata
                             module = new ModuleStorage
                             {
@@ -370,6 +386,7 @@ public class AzureBlobModuleService : ModuleService
                                 PublishedAt = properties.Value.LastModified.DateTime,
                                 Dependencies = new List<string>() // Simplified, no dependencies
                             };
+                        }
                     }
 
                     // Fallback method: try to extract module information from the blob name pattern
@@ -421,8 +438,9 @@ public class AzureBlobModuleService : ModuleService
                             if (result)
                             {
                                 syncCount++;
-                                _logger.LogInformation(
-                                    $"Synchronized module {module.Namespace}/{module.Name}/{module.Provider}/{module.Version} from blob storage to database");
+                                RegistryLog.Information(_logger,
+                                    "Synchronized module {Namespace}/{Name}/{Provider}/{Version} from blob storage to database",
+                                    module.Namespace, module.Name, module.Provider, module.Version);
                             }
                         }
                     }
@@ -430,35 +448,37 @@ public class AzureBlobModuleService : ModuleService
                 catch (Exception ex)
                 {
                     // Log the error but continue processing other blobs
-                    _logger.LogError(ex, $"Error processing blob {blobItem.Name}");
+                    RegistryLog.Error(_logger, ex, "Error processing blob {BlobName}", blobItem.Name);
                 }
+            }
 
-            _logger.LogInformation(
-                $"Synchronization complete. Added {syncCount} modules from Azure Blob Storage to the database.");
+            RegistryLog.Information(_logger,
+                "Synchronization complete. Added {SyncCount} modules from Azure Blob Storage to the database.",
+                syncCount);
         }
         catch (Exception ex)
         {
             // Log any errors during initialization
-            _logger.LogError(ex, "Error during blob storage/database synchronization");
+            RegistryLog.Error(_logger, ex, "Error during blob storage/database synchronization");
         }
     }
 
-    public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider, string version)
+    public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _databaseService.SoftDeleteModuleAsync(@namespace, name, provider, version);
+        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+    public override Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        return _databaseService.RestoreModuleAsync(@namespace, name, provider, version);
+        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider,
+    public override async Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         var moduleStorage =
-            await _databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider, version);
+            await _databaseService.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
             return false;
 
@@ -475,8 +495,8 @@ public class AzureBlobModuleService : ModuleService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete blob for purged module {Namespace}/{Name}/{Provider}/{Version}",
-                @namespace, name, provider, version);
+            RegistryLog.Error(_logger, ex, "Failed to delete blob for purged module {Namespace}/{Name}/{Provider}/{Version}",
+                moduleNamespace, name, provider, version);
             // DB deletion succeeded, blob deletion may have failed - still return true
         }
 
@@ -488,10 +508,10 @@ public class AzureBlobModuleService : ModuleService
         return _databaseService.ListDeletedModulesAsync(request);
     }
 
-    public override Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+    public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
         string description)
     {
-        return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
     }
 
     public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()

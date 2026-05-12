@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -54,7 +56,7 @@ public class JwtService
             new(ClaimTypes.Name, name), // Map to standard .NET identity name
             new("provider", provider),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(),
+            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
                 ClaimValueTypes.Integer64)
         };
 
@@ -109,7 +111,7 @@ public class JwtService
         }
         catch (Exception ex)
         {
-            _logger.LogError("JWT validation failed: {Message}. Token: {TokenPrefix}...", ex.Message, token.Substring(0, Math.Min(10, token.Length)));
+            RegistryLog.Error(_logger, "JWT validation failed: {Message}. Token: {TokenPrefix}...", ex.Message, token.Substring(0, Math.Min(10, token.Length)));
             return null;
         }
     }

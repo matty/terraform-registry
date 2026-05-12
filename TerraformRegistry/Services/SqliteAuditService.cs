@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Services;
 
@@ -36,17 +38,17 @@ public class SqliteAuditService : IAuditService
             cmd.Parameters.AddWithValue("$resourceId", (object?)resourceId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$details", (object?)detailsJson ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$ipAddress", (object?)ipAddress ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("$timestamp", DateTime.UtcNow.ToString("o"));
+            cmd.Parameters.AddWithValue("$timestamp", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
 
             await cmd.ExecuteNonQueryAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to write audit log entry for action {Action}", action);
+            RegistryLog.Error(_logger, ex, "Failed to write audit log entry for action {Action}", action);
         }
     }
 
-    public async Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? to, int limit = 50, int offset = 0)
+    public async Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? toTimestamp, int limit = 50, int offset = 0)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -75,13 +77,13 @@ public class SqliteAuditService : IAuditService
         if (from.HasValue)
         {
             conditions.Add("timestamp >= $from");
-            parameters.Add(new SqliteParameter("$from", from.Value.ToString("o")));
+            parameters.Add(new SqliteParameter("$from", from.Value.ToString("o", CultureInfo.InvariantCulture)));
         }
 
-        if (to.HasValue)
+        if (toTimestamp.HasValue)
         {
             conditions.Add("timestamp <= $to");
-            parameters.Add(new SqliteParameter("$to", to.Value.ToString("o")));
+            parameters.Add(new SqliteParameter("$to", toTimestamp.Value.ToString("o", CultureInfo.InvariantCulture)));
         }
 
         var whereClause = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
@@ -90,7 +92,7 @@ public class SqliteAuditService : IAuditService
         await using var countCmd = connection.CreateCommand();
         countCmd.CommandText = $"SELECT COUNT(*) FROM audit_logs {whereClause}";
         foreach (var p in parameters) countCmd.Parameters.Add(new SqliteParameter(p.ParameterName, p.Value));
-        var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync());
+        var total = Convert.ToInt32(await countCmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
 
         // Data query
         await using var dataCmd = connection.CreateCommand();
@@ -115,7 +117,7 @@ public class SqliteAuditService : IAuditService
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                DateTime.Parse(reader.GetString(7))
+                DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture)
             ));
         }
 
@@ -142,7 +144,7 @@ public class SqliteAuditService : IAuditService
             reader.IsDBNull(4) ? null : reader.GetString(4),
             reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.IsDBNull(6) ? null : reader.GetString(6),
-            DateTime.Parse(reader.GetString(7))
+            DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture)
         );
     }
 }

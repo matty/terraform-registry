@@ -104,7 +104,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
         return idClaim ?? string.Empty;
     }
 
-    private ApiKeyResponse MapApiKey(ApiKey key, User? owner)
+    private static ApiKeyResponse MapApiKey(ApiKey key, User? owner)
     {
         return new ApiKeyResponse
         {
@@ -140,7 +140,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
 
     private async Task<Dictionary<string, User?>> LoadOwners(IEnumerable<ApiKey> keys)
     {
-        var owners = new Dictionary<string, User?>();
+        var owners = new Dictionary<string, User?>(StringComparer.Ordinal);
 
         foreach (var key in keys)
         {

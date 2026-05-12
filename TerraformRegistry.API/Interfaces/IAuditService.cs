@@ -3,7 +3,7 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IAuditService
 {
     Task LogAsync(string? userId, string action, string resourceType, string? resourceId, object? details, string? ipAddress);
-    Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? to, int limit = 50, int offset = 0);
+    Task<AuditLogPage> QueryAsync(string? action, string? userId, string? resourceType, DateTime? from, DateTime? toTimestamp, int limit = 50, int offset = 0);
     Task<AuditLogEntry?> GetAsync(Guid id);
 }
 

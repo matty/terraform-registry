@@ -9,15 +9,15 @@ public class ProviderProtocolAuthorizationTests(ITestOutputHelper output) : Inte
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task ProviderVersions_WithoutAuthorization_ReturnsUnauthorized()
+    public async Task ProviderVersionsWithoutAuthorizationReturnsUnauthorized()
     {
-        var response = await _client.GetAsync("/v1/providers/acme/example/versions");
+        var response = await Client.GetAsync("/v1/providers/acme/example/versions");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task ProviderVersions_UserWithoutProvidersRead_ReturnsForbidden()
+    public async Task ProviderVersionsUserWithoutProvidersReadReturnsForbidden()
     {
         var client = await CreateClientWithPermissionsAsync(
             "no-provider-read@example.com",

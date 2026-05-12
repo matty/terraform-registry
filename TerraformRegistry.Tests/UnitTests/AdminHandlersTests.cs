@@ -13,7 +13,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class AdminHandlersTests
 {
     [Fact]
-    public async Task RemoveUserRole_AllowsRemoval_WhenAdminEmailMatchesMultipleLegacyUsers()
+    public async Task RemoveUserRoleAllowsRemovalWhenAdminEmailMatchesMultipleLegacyUsers()
     {
         var roleId = Guid.NewGuid();
         var targetUserId = Guid.NewGuid().ToString();
@@ -41,7 +41,7 @@ public class AdminHandlersTests
             .Returns(Task.CompletedTask);
 
         var context = CreateHttpContext(
-            new Dictionary<string, string?> { ["AdminEmails"] = "admin@example.com" },
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["AdminEmails"] = "admin@example.com" },
             dbService.Object);
 
         var result = await AdminHandlers.RemoveUserRole(targetUserId, roleId, permissionService.Object, roleService.Object, auditService.Object, context);

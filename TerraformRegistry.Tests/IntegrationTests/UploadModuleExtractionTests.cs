@@ -22,9 +22,9 @@ public class UploadModuleExtractionTests(ITestOutputHelper output) : UploadModul
     }
 
     [Fact]
-    public async Task UploadModule_QueuesExtractionWithoutFailingThePublish()
+    public async Task UploadModuleQueuesExtractionWithoutFailingThePublish()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         using var content = CreateModuleUploadContent();
@@ -32,7 +32,7 @@ public class UploadModuleExtractionTests(ITestOutputHelper output) : UploadModul
         var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.9.0", content);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        _output.WriteLine($"Response content: {responseContent}");
+        Output.WriteLine($"Response content: {responseContent}");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }

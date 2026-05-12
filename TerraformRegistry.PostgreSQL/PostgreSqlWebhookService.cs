@@ -51,7 +51,7 @@ public class PostgreSqlWebhookService : IWebhookService
         return webhooks;
     }
 
-    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? template = null)
+    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? payloadTemplate = null)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -67,7 +67,7 @@ public class PostgreSqlWebhookService : IWebhookService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Format = format,
-            Template = template
+            Template = payloadTemplate
         };
 
         var sql = @"INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at, format, template)
@@ -83,13 +83,13 @@ public class PostgreSqlWebhookService : IWebhookService
         cmd.Parameters.AddWithValue("@createdAt", webhook.CreatedAt);
         cmd.Parameters.AddWithValue("@updatedAt", webhook.UpdatedAt);
         cmd.Parameters.AddWithValue("@format", format);
-        cmd.Parameters.AddWithValue("@template", (object?)template ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@template", (object?)payloadTemplate ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
         return webhook;
     }
 
-    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? template)
+    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? payloadTemplate)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -133,10 +133,10 @@ public class PostgreSqlWebhookService : IWebhookService
             parameters.Add(new NpgsqlParameter("@format", format));
         }
 
-        if (template != null)
+        if (payloadTemplate != null)
         {
             setClauses.Add("template = @template");
-            parameters.Add(new NpgsqlParameter("@template", template));
+            parameters.Add(new NpgsqlParameter("@template", payloadTemplate));
         }
 
         var sql = $"UPDATE webhooks SET {string.Join(", ", setClauses)} WHERE id = @id AND user_id = @userId RETURNING id, user_id, url, secret, events, is_active, created_at, updated_at, format, template";

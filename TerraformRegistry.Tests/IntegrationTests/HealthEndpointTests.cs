@@ -9,9 +9,9 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task Health_ReturnsOk()
+    public async Task HealthReturnsOk()
     {
-        var response = await _client.GetAsync("/health");
+        var response = await Client.GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -19,9 +19,9 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Ready_ReturnsOkWithMinimalResponse()
+    public async Task ReadyReturnsOkWithMinimalResponse()
     {
-        var response = await _client.GetAsync("/ready");
+        var response = await Client.GetAsync("/ready");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -32,9 +32,9 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Ready_WithDetailAndAuth_ReturnsComponentBreakdown()
+    public async Task ReadyWithDetailAndAuthReturnsComponentBreakdown()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var response = await client.GetAsync("/ready?detail=true");
@@ -47,9 +47,9 @@ public class HealthEndpointTests(ITestOutputHelper output) : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Ready_WithDetailButNoAuth_ReturnsMinimalResponse()
+    public async Task ReadyWithDetailButNoAuthReturnsMinimalResponse()
     {
-        var response = await _client.GetAsync("/ready?detail=true");
+        var response = await Client.GetAsync("/ready?detail=true");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();

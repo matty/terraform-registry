@@ -18,6 +18,7 @@ public class S3ModuleServiceDownloadTests
 
     public S3ModuleServiceDownloadTests()
     {
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockS3Client
             .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ReturnsAsync(new ListObjectsV2Response());
@@ -27,6 +28,7 @@ public class S3ModuleServiceDownloadTests
     {
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["S3:BucketName"] = "modules",
                 ["S3:Region"] = "eu-west-2",
@@ -59,7 +61,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_When_Module_Is_Not_In_Database()
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenModuleIsNotInDatabase()
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -76,7 +78,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_When_Object_Is_Missing_In_S3()
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenObjectIsMissingInS3()
     {
         var moduleStorage = CreateModuleStorage();
 
@@ -110,7 +112,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_A_Presigned_Get_Url_When_Module_And_Object_Exist()
+    public async Task GetModuleDownloadPathAsyncReturnsAPresignedGetUrlWhenModuleAndObjectExist()
     {
         const string expectedUrl = "https://example.invalid/presigned";
         var moduleStorage = CreateModuleStorage();
@@ -159,7 +161,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_When_Presigning_Throws()
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenPresigningThrows()
     {
         var moduleStorage = CreateModuleStorage();
 
@@ -202,7 +204,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_Returns_Null_And_Logs_Error_When_Metadata_Lookup_Throws_Non404()
+    public async Task GetModuleDownloadPathAsyncReturnsNullAndLogsErrorWhenMetadataLookupThrowsNon404()
     {
         var moduleStorage = CreateModuleStorage();
 
@@ -244,7 +246,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task OpenModulePackageStreamAsync_Returns_Null_When_Module_Is_Not_In_Database()
+    public async Task OpenModulePackageStreamAsyncReturnsNullWhenModuleIsNotInDatabase()
     {
         _mockDatabaseService
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
@@ -260,7 +262,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task OpenModulePackageStreamAsync_Returns_Null_When_Object_Is_Missing_In_S3()
+    public async Task OpenModulePackageStreamAsyncReturnsNullWhenObjectIsMissingInS3()
     {
         var moduleStorage = CreateModuleStorage();
 
@@ -292,7 +294,7 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task OpenModulePackageStreamAsync_Returns_Object_Stream_When_Module_And_Object_Exist()
+    public async Task OpenModulePackageStreamAsyncReturnsObjectStreamWhenModuleAndObjectExist()
     {
         var moduleStorage = CreateModuleStorage();
         await using var objectStream = new MemoryStream([1, 2, 3]);

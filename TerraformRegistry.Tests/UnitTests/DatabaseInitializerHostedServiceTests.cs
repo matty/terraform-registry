@@ -13,7 +13,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class DatabaseInitializerHostedServiceTests
 {
     [Fact]
-    public async Task StartAsync_SkipsBootstrapAdminAssignment_WhenEmailMatchesMultipleLegacyUsers()
+    public async Task StartAsyncSkipsBootstrapAdminAssignmentWhenEmailMatchesMultipleLegacyUsers()
     {
         var dbService = new Mock<IDatabaseService>();
         dbService.As<IInitializableDb>()
@@ -38,7 +38,7 @@ public class DatabaseInitializerHostedServiceTests
             dbService.As<IInitializableDb>().Object,
             roleService.Object,
             permissionService.Object,
-            new Dictionary<string, string?> { ["AdminEmails"] = "admin@example.com" });
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["AdminEmails"] = "admin@example.com" });
 
         await hostedService.StartAsync(CancellationToken.None);
 
@@ -48,7 +48,7 @@ public class DatabaseInitializerHostedServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_BootstrapsAdmin_WhenEmailResolvesToSingleUser()
+    public async Task StartAsyncBootstrapsAdminWhenEmailResolvesToSingleUser()
     {
         var user = CreateUser("admin@example.com", "github", "gh-1");
         var adminRole = new Role { Id = Guid.NewGuid(), Name = RoleNames.Admin };
@@ -73,7 +73,7 @@ public class DatabaseInitializerHostedServiceTests
             dbService.As<IInitializableDb>().Object,
             roleService.Object,
             permissionService.Object,
-            new Dictionary<string, string?> { ["AdminEmails"] = "admin@example.com" });
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["AdminEmails"] = "admin@example.com" });
 
         await hostedService.StartAsync(CancellationToken.None);
 

@@ -9,9 +9,9 @@ public class GetModuleVersionsUnauthorizedTests(ITestOutputHelper output) : Inte
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task GetModuleVersions_InvalidAuthorization_ReturnsUnauthorized()
+    public async Task GetModuleVersionsInvalidAuthorizationReturnsUnauthorized()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invalid-token");
 
         var response = await client.GetAsync("/v1/modules/test-ns/test-name/test-provider/versions");

@@ -15,7 +15,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModulePublishCoordinatorTests
 {
     [Fact]
-    public async Task PublishAsync_UploadsModuleAndQueuesExtraction()
+    public async Task PublishAsyncUploadsModuleAndQueuesExtraction()
     {
         var moduleService = new Mock<IModuleService>();
         moduleService
@@ -46,7 +46,7 @@ public class ModulePublishCoordinatorTests
             webhookService.Object,
             new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
             new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?> { ["BaseUrl"] = "https://registry.example.com" })
+                .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["BaseUrl"] = "https://registry.example.com" })
                 .Build(),
             new WebhookUrlValidator(
                 Options.Create(new WebhookSecurityOptions { AllowPrivateNetworks = true }),
@@ -93,7 +93,7 @@ public class ModulePublishCoordinatorTests
     }
 
     [Fact]
-    public async Task PublishAsync_ReturnsFalse_WhenStorageRejectsDuplicate()
+    public async Task PublishAsyncReturnsFalseWhenStorageRejectsDuplicate()
     {
         var moduleService = new Mock<IModuleService>();
         moduleService
@@ -120,7 +120,7 @@ public class ModulePublishCoordinatorTests
                 webhookService.Object,
                 new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
                 new ConfigurationBuilder()
-                    .AddInMemoryCollection(new Dictionary<string, string?>())
+                    .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal))
                     .Build(),
                 new WebhookUrlValidator(
                     Options.Create(new WebhookSecurityOptions { AllowPrivateNetworks = true }),

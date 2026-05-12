@@ -10,7 +10,7 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public class SecurityStartupTests
 {
     [Fact]
-    public void ProductionStartup_WithDefaultAuthorizationToken_Throws()
+    public void ProductionStartupWithDefaultAuthorizationTokenThrows()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-auth-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -54,7 +54,7 @@ public class SecurityStartupTests
     }
 
     [Fact]
-    public void ProductionStartup_WithPlaceholderJwtSecret_Throws()
+    public void ProductionStartupWithPlaceholderJwtSecretThrows()
     {
         const string placeholderJwtSecretKey = "your-256-bit-secret-key-here-minimum-32-chars";
         var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-startup-{Guid.NewGuid():N}");

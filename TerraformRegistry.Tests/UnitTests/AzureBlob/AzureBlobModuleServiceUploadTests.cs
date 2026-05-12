@@ -26,6 +26,7 @@ public class AzureBlobModuleServiceUploadTests
     {
         _mockDatabaseService = new Mock<IDatabaseService>();
         _mockLogger = new Mock<ILogger<AzureBlobModuleService>>();
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockConfiguration = new Mock<IConfiguration>();
         _mockBlobServiceClient = new Mock<BlobServiceClient>(); // Initialized
         _mockContainerClient = new Mock<BlobContainerClient>();
@@ -58,7 +59,7 @@ public class AzureBlobModuleServiceUploadTests
 
     // Test: Should return false and log a warning if the blob already exists in storage
     [Fact]
-    public async Task UploadModuleAsync_Returns_False_If_Blob_Already_Exists()
+    public async Task UploadModuleAsyncReturnsFalseIfBlobAlreadyExists()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
@@ -89,7 +90,7 @@ public class AzureBlobModuleServiceUploadTests
 
     // Test: Should return true on successful upload to blob storage and successful database add
     [Fact]
-    public async Task UploadModuleAsync_Returns_True_On_Successful_Upload_And_Db_Add()
+    public async Task UploadModuleAsyncReturnsTrueOnSuccessfulUploadAndDbAdd()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
@@ -121,7 +122,7 @@ public class AzureBlobModuleServiceUploadTests
 
     // Test: Should delete the blob and return false if the database add fails after upload
     [Fact]
-    public async Task UploadModuleAsync_Deletes_Blob_And_Returns_False_If_Db_Add_Fails()
+    public async Task UploadModuleAsyncDeletesBlobAndReturnsFalseIfDbAddFails()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
@@ -166,7 +167,7 @@ public class AzureBlobModuleServiceUploadTests
 
     // Test: Should handle exceptions during blob upload, attempt cleanup, and return false
     [Fact]
-    public async Task UploadModuleAsync_Handles_Exception_During_Blob_Upload_And_Cleans_Up()
+    public async Task UploadModuleAsyncHandlesExceptionDuringBlobUploadAndCleansUp()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();

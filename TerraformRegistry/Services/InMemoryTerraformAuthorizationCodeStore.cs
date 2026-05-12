@@ -5,14 +5,14 @@ namespace TerraformRegistry.Services;
 
 public class InMemoryTerraformAuthorizationCodeStore(TerraformLoginOptions options) : ITerraformAuthorizationCodeStore
 {
-    private readonly ConcurrentDictionary<string, TerraformAuthorizationCode> _codes = new();
+    private readonly ConcurrentDictionary<string, TerraformAuthorizationCode> _codes = new(StringComparer.Ordinal);
 
     public TerraformAuthorizationCode Create(TerraformAuthorizationCodeCreateRequest request)
     {
         var code = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-            .Replace("+", "-")
-            .Replace("/", "_")
-            .Replace("=", string.Empty);
+            .Replace("+", "-", StringComparison.Ordinal)
+            .Replace("/", "_", StringComparison.Ordinal)
+            .Replace("=", string.Empty, StringComparison.Ordinal);
 
         var issued = new TerraformAuthorizationCode(
             code,

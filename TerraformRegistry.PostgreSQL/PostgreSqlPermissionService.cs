@@ -31,7 +31,7 @@ public class PostgreSqlPermissionService : IPermissionService
             allPermissions.AddRange(permissions);
         }
 
-        return allPermissions.Distinct().ToArray();
+        return allPermissions.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     public async Task<IEnumerable<Role>> GetUserRolesAsync(string userId)

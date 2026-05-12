@@ -1,3 +1,4 @@
+using System.Globalization;
 using DbUp.Engine.Output;
 using Microsoft.Extensions.Logging;
 
@@ -17,31 +18,73 @@ public class DbUpLogger : IUpgradeLog
 
     public void LogTrace(string format, params object[] args)
     {
-        _logger.LogTrace(format, args);
+        if (_logger.IsEnabled(LogLevel.Trace))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Trace(_logger, message);
+        }
     }
 
     public void LogDebug(string format, params object[] args)
     {
-        _logger.LogDebug(format, args);
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Debug(_logger, message);
+        }
     }
 
     public void LogInformation(string format, params object[] args)
     {
-        _logger.LogInformation(format, args);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Information(_logger, message);
+        }
     }
 
     public void LogWarning(string format, params object[] args)
     {
-        _logger.LogWarning(format, args);
+        if (_logger.IsEnabled(LogLevel.Warning))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Warning(_logger, message);
+        }
     }
 
     public void LogError(string format, params object[] args)
     {
-        _logger.LogError(format, args);
+        if (_logger.IsEnabled(LogLevel.Error))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Error(_logger, message);
+        }
     }
 
     public void LogError(Exception ex, string format, params object[] args)
     {
-        _logger.LogError(ex, format, args);
+        if (_logger.IsEnabled(LogLevel.Error))
+        {
+            var message = FormatMessage(format, args);
+            MigrationLog.Error(_logger, ex, message);
+        }
+    }
+
+    private static string FormatMessage(string format, object[] args)
+    {
+        ArgumentNullException.ThrowIfNull(format);
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (args.Length == 0)
+            return format;
+
+        try
+        {
+            return string.Format(CultureInfo.InvariantCulture, format, args);
+        }
+        catch (FormatException)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{format} [{string.Join(", ", args)}]");
+        }
     }
 }

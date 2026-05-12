@@ -15,9 +15,9 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task Analytics_Unauthenticated_Returns401()
+    public async Task AnalyticsUnauthenticatedReturns401()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         // No auth header
 
         var response = await client.GetAsync("/api/analytics/downloads/summary");
@@ -25,7 +25,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     }
 
     [Fact]
-    public async Task Analytics_Summary_ReturnsValidJson()
+    public async Task AnalyticsSummaryReturnsValidJson()
     {
         var client = await CreateAnalyticsClientAsync("analytics-summary@example.com", "analytics-summary-id");
 
@@ -41,7 +41,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     }
 
     [Fact]
-    public async Task Analytics_TopModules_ReturnsValidJson()
+    public async Task AnalyticsTopModulesReturnsValidJson()
     {
         var client = await CreateAnalyticsClientAsync("analytics-top@example.com", "analytics-top-id");
 
@@ -54,7 +54,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     }
 
     [Fact]
-    public async Task Analytics_Trends_ReturnsValidJson()
+    public async Task AnalyticsTrendsReturnsValidJson()
     {
         var client = await CreateAnalyticsClientAsync("analytics-trends@example.com", "analytics-trends-id");
 
@@ -68,7 +68,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     }
 
     [Fact]
-    public async Task Analytics_AfterDownload_ReflectsInSummary()
+    public async Task AnalyticsAfterDownloadReflectsInSummary()
     {
         var client = await CreateAnalyticsClientAsync("analytics-download@example.com", "analytics-download-id",
             Permissions.ModulesRead, Permissions.ModulesUpload);
@@ -84,19 +84,30 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
             downloadResponse.IsSuccessStatusCode || downloadResponse.StatusCode == HttpStatusCode.NoContent,
             $"Expected success status but got {downloadResponse.StatusCode}");
 
-        // Wait for fire-and-forget recording to complete
-        await Task.Delay(1000);
-
-        // Check analytics summary
-        var summaryResponse = await client.GetAsync("/api/analytics/downloads/summary");
-        Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
-
-        var json = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
-        var totalDownloads = json.GetProperty("totalDownloads").GetInt64();
+        var totalDownloads = await WaitForDownloadCountAsync(client);
         Assert.True(totalDownloads > 0, $"Expected totalDownloads > 0 but got {totalDownloads}");
     }
 
-    private async Task UploadTestModule(HttpClient client, string version)
+    private static async Task<long> WaitForDownloadCountAsync(HttpClient client)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+
+        while (true)
+        {
+            var summaryResponse = await client.GetAsync("/api/analytics/downloads/summary");
+            Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
+
+            var json = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var totalDownloads = json.GetProperty("totalDownloads").GetInt64();
+            if (totalDownloads > 0 || DateTime.UtcNow >= deadline)
+                return totalDownloads;
+
+            await timer.WaitForNextTickAsync();
+        }
+    }
+
+    private static async Task UploadTestModule(HttpClient client, string version)
     {
         var projectDir = GetProjectDirectory();
         var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
@@ -118,10 +129,11 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
         return CreateClientWithPermissionsAsync(email, providerId, permissions);
     }
 
-    private string GetProjectDirectory()
+    private static string GetProjectDirectory()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var assemblyDirectory = Path.GetDirectoryName(assembly.Location);
+        var assemblyDirectory = Path.GetDirectoryName(assembly.Location)
+            ?? throw new DirectoryNotFoundException("Could not locate the test assembly directory.");
         var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName;
 
         if (string.IsNullOrEmpty(projectDir) || !Directory.Exists(projectDir))

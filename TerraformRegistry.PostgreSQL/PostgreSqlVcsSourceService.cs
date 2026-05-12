@@ -37,7 +37,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         return sources;
     }
 
-    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string @namespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
+    public async Task<VcsSource> CreateVcsSourceAsync(string userId, string moduleNamespace, string name, string provider, string repoOwner, string repoName, Guid connectionId)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -46,7 +46,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Namespace = @namespace,
+            Namespace = moduleNamespace,
             Name = name,
             Provider = provider,
             RepoOwner = repoOwner,
@@ -58,12 +58,12 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         };
 
         var sql = @"INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
-                    VALUES (@id, @userId, @namespace, @name, @provider, @repoOwner, @repoName, @connectionId, @isActive, @createdAt, @updatedAt)";
+                    VALUES (@id, @userId, @moduleNamespace, @name, @provider, @repoOwner, @repoName, @connectionId, @isActive, @createdAt, @updatedAt)";
 
         await using var cmd = new NpgsqlCommand(sql, connection);
         cmd.Parameters.AddWithValue("@id", vcsSource.Id);
         cmd.Parameters.AddWithValue("@userId", vcsSource.UserId);
-        cmd.Parameters.AddWithValue("@namespace", vcsSource.Namespace);
+        cmd.Parameters.AddWithValue("moduleNamespace", vcsSource.Namespace);
         cmd.Parameters.AddWithValue("@name", vcsSource.Name);
         cmd.Parameters.AddWithValue("@provider", vcsSource.Provider);
         cmd.Parameters.AddWithValue("@repoOwner", vcsSource.RepoOwner);
@@ -187,7 +187,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         return MapVcsSource(reader);
     }
 
-    public async Task<VcsSource?> GetByModuleAsync(string @namespace, string name, string provider)
+    public async Task<VcsSource?> GetByModuleAsync(string moduleNamespace, string name, string provider)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -196,10 +196,10 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
                            tag_pattern, last_published_version, last_sync_status, last_sync_at, last_sync_error,
                            created_at, updated_at
                     FROM vcs_sources
-                    WHERE namespace = @namespace AND name = @name AND provider = @provider AND is_active = true
+                    WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND is_active = true
                     LIMIT 1";
         await using var cmd = new NpgsqlCommand(sql, connection);
-        cmd.Parameters.AddWithValue("@namespace", @namespace);
+        cmd.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         cmd.Parameters.AddWithValue("@name", name);
         cmd.Parameters.AddWithValue("@provider", provider);
 
@@ -208,7 +208,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         return MapVcsSource(reader);
     }
 
-    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? error)
+    public async Task<VcsSource?> UpdateSyncStateAsync(Guid id, string status, string? lastPublishedVersion, string? errorMessage)
     {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -224,7 +224,7 @@ public class PostgreSqlVcsSourceService : IVcsSourceService
         cmd.Parameters.AddWithValue("@id", id);
         cmd.Parameters.AddWithValue("@status", status);
         cmd.Parameters.AddWithValue("@lastPublishedVersion", (object?)lastPublishedVersion ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@error", (object?)error ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@error", (object?)errorMessage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@lastSyncAt", DateTime.UtcNow);
         cmd.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
 

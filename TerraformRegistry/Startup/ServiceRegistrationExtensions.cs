@@ -2,15 +2,16 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.AzureBlob;
 using TerraformRegistry.Middleware;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
+using TerraformRegistry.S3;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
 using TerraformRegistry.Services.Publishing;
-using TerraformRegistry.S3;
 
 namespace TerraformRegistry.Startup;
 
@@ -161,7 +162,7 @@ internal static class ServiceRegistrationExtensions
         return services;
     }
 
-    private static IModuleService CreateLocalModuleService(
+    private static LocalModuleService CreateLocalModuleService(
         IConfiguration config,
         IDatabaseService db,
         ILogger<LocalModuleService> logger)
@@ -169,7 +170,7 @@ internal static class ServiceRegistrationExtensions
         var storagePath = config["ModuleStoragePath"];
         if (string.IsNullOrEmpty(storagePath))
         {
-            logger.LogError(
+            RegistryLog.Error(logger,
                 "ModuleStoragePath is missing or empty. Please check your configuration. Application cannot start.");
             throw new InvalidOperationException(
                 "ModuleStoragePath is missing or empty. Please check your configuration.");

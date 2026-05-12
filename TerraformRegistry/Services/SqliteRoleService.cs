@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API;
@@ -71,8 +72,8 @@ public class SqliteRoleService : IRoleService
         cmd.Parameters.AddWithValue("$description", (object?)role.Description ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$permissions", JsonSerializer.Serialize(role.Permissions));
         cmd.Parameters.AddWithValue("$isSystem", role.IsSystem ? 1 : 0);
-        cmd.Parameters.AddWithValue("$createdAt", role.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$updatedAt", role.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$createdAt", role.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updatedAt", role.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
         return role;
@@ -90,13 +91,13 @@ public class SqliteRoleService : IRoleService
         var result = await checkCmd.ExecuteScalarAsync();
         if (result == null) return null;
 
-        var isSystem = Convert.ToInt32(result) == 1;
+        var isSystem = Convert.ToInt32(result, CultureInfo.InvariantCulture) == 1;
 
         var setClauses = new List<string> { "updated_at = $updatedAt" };
         var parameters = new List<SqliteParameter>
         {
             new("$id", id.ToString()),
-            new("$updatedAt", DateTime.UtcNow.ToString("o"))
+            new("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture))
         };
 
         // If system role, reject name changes but allow permission updates
@@ -187,8 +188,8 @@ public class SqliteRoleService : IRoleService
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Permissions = permissions,
             IsSystem = reader.GetInt32(4) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(5)),
-            UpdatedAt = DateTime.Parse(reader.GetString(6))
+            CreatedAt = DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture)
         };
     }
 }

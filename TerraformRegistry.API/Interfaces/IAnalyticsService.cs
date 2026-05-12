@@ -5,7 +5,7 @@ public interface IAnalyticsService
     Task<DownloadSummary> GetDownloadSummaryAsync();
     Task<TopModulesResult> GetTopModulesAsync(int limit, string period);
     Task<DownloadTrendsResult> GetDownloadTrendsAsync(string period, string interval);
-    Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string @namespace, string name, string provider, string period);
+    Task<ModuleAnalyticsResult?> GetModuleAnalyticsAsync(string moduleNamespace, string name, string provider, string period);
 }
 
 public record DownloadSummary(long TotalDownloads, long DownloadsToday, long DownloadsThisWeek, long DownloadsThisMonth, long UniqueModules);

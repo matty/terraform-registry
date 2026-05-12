@@ -19,18 +19,20 @@ public class LocalModuleServiceTests
     {
         _mockDbService = new Mock<IDatabaseService>();
         _mockLogger = new Mock<ILogger<LocalModuleService>>();
-        var inMemorySettings = new Dictionary<string, string>
+        var testModulePath = Path.Combine(Path.GetTempPath(), "modules_test");
+        var inMemorySettings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
-            { "ModuleStoragePath", Path.Combine(Path.GetTempPath(), "modules_test") }
+            { "ModuleStoragePath", testModulePath }
         };
         _configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
-        _testModulePath = _configuration["ModuleStoragePath"];
+        _testModulePath = testModulePath;
         if (Directory.Exists(_testModulePath)) Directory.Delete(_testModulePath, true);
     }
 
     // Verifies that the constructor creates the module storage directory if it does not exist
     [Fact]
-    public void Constructor_CreatesModuleStorageDirectory()
+    public void ConstructorCreatesModuleStorageDirectory()
     {
         // Arrange/Act
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -40,24 +42,19 @@ public class LocalModuleServiceTests
 
     // Verifies that the constructor logs the storage path being used
     [Fact]
-    public void Constructor_LogsStoragePath()
+    public void ConstructorLogsStoragePath()
     {
         // Arrange/Act
-        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var logger = new CapturingLogger<LocalModuleService>();
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, logger);
+
         // Assert
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Information,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString().Contains(_testModulePath)),
-                null,
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.AtLeastOnce());
+        Assert.Contains(logger.Messages, message => message.Contains(_testModulePath, StringComparison.Ordinal));
     }
 
     // Verifies that ListModulesAsync delegates to the database service and returns the expected result
     [Fact]
-    public async Task ListModulesAsync_DelegatesToDatabaseService()
+    public async Task ListModulesAsyncDelegatesToDatabaseService()
     {
         // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -65,7 +62,7 @@ public class LocalModuleServiceTests
         var expected = new ModuleList
         {
             Modules = new List<ModuleListItem>(),
-            Meta = new Dictionary<string, string>()
+            Meta = new Dictionary<string, string>(StringComparer.Ordinal)
         };
         _mockDbService.Setup(x => x.ListModulesAsync(request)).ReturnsAsync(expected);
         // Act
@@ -76,11 +73,11 @@ public class LocalModuleServiceTests
 
     // Verifies that GetModuleAsync delegates to the database service and returns the expected module
     [Fact]
-    public async Task GetModuleAsync_DelegatesToDatabaseService()
+    public async Task GetModuleAsyncDelegatesToDatabaseService()
     {
         // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
-        var expected = new Module
+        var expected = new TerraformModule
         {
             Id = "id",
             Owner = "owner",
@@ -94,7 +91,7 @@ public class LocalModuleServiceTests
             Versions = new List<string>(),
             Root = "root",
             Submodules = new List<ModuleSubmodule>(),
-            Providers = new Dictionary<string, string>(),
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal),
             DownloadUrl = null
         };
         _mockDbService.Setup(x => x.GetModuleAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(expected);
@@ -106,7 +103,7 @@ public class LocalModuleServiceTests
 
     // Verifies that GetModuleVersionsAsync delegates to the database service and returns the expected versions
     [Fact]
-    public async Task GetModuleVersionsAsync_DelegatesToDatabaseService()
+    public async Task GetModuleVersionsAsyncDelegatesToDatabaseService()
     {        // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
         var expected = new ModuleVersions
@@ -128,7 +125,7 @@ public class LocalModuleServiceTests
 
     // Verifies that GetModuleDownloadPathAsync returns null if the module is not found in the database
     [Fact]
-    public async Task GetModuleDownloadPathAsync_ReturnsNullIfModuleNotFound()
+    public async Task GetModuleDownloadPathAsyncReturnsNullIfModuleNotFound()
     {
         // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -142,7 +139,7 @@ public class LocalModuleServiceTests
 
     // Verifies that GetModuleDownloadPathAsync returns a download link and stores a token if the module exists
     [Fact]
-    public async Task GetModuleDownloadPathAsync_ReturnsDownloadLinkAndStoresToken()
+    public async Task GetModuleDownloadPathAsyncReturnsDownloadLinkAndStoresToken()
     {
         // Arrange
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -167,7 +164,7 @@ public class LocalModuleServiceTests
 
     // Verifies that TryGetFilePathFromToken returns false and an empty file path for an invalid token
     [Fact]
-    public void TryGetFilePathFromToken_ReturnsFalseForInvalidToken()
+    public void TryGetFilePathFromTokenReturnsFalseForInvalidToken()
     {
         // Act
         var found = LocalModuleService.TryGetFilePathFromToken("notatoken", out var filePath);
@@ -176,9 +173,9 @@ public class LocalModuleServiceTests
         Assert.Equal(string.Empty, filePath);
     }
 
-    // Verifies that UploadModuleAsyncImpl saves the file and adds the module to the database
+    // Verifies that UploadModuleAsyncCore saves the file and adds the module to the database
     [Fact]
-    public async Task UploadModuleAsyncImpl_SavesFileAndAddsToDatabase()
+    public async Task UploadModuleAsyncCoreSavesFileAndAddsToDatabase()
     {
         // Arrange
         var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -190,7 +187,7 @@ public class LocalModuleServiceTests
         var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
         _mockDbService.Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>())).ReturnsAsync(true);
         // Act
-        var result = await service.CallUploadModuleAsyncImpl(ns, name, provider, version, content, desc);
+        var result = await service.CallUploadModuleAsyncCore(ns, name, provider, version, content, desc);
         // Assert
         Assert.True(result);
         var filePath = Path.Combine(_testModulePath, ns, $"{name}-{provider}-{version}.zip");
@@ -198,7 +195,7 @@ public class LocalModuleServiceTests
     }
 
     [Fact]
-    public async Task UploadModuleAsync_RejectsTraversalNamespace()
+    public async Task UploadModuleAsyncRejectsTraversalNamespace()
     {
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
         await using var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
@@ -211,7 +208,7 @@ public class LocalModuleServiceTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsync_ReturnsNullForPathOutsideStorageRoot()
+    public async Task GetModuleDownloadPathAsyncReturnsNullForPathOutsideStorageRoot()
     {
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
         var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}.zip");
@@ -234,7 +231,7 @@ public class LocalModuleServiceTests
     }
 
     [Fact]
-    public async Task OpenModulePackageStreamAsync_ReturnsStoredZipContent()
+    public async Task OpenModulePackageStreamAsyncReturnsStoredZipContent()
     {
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
         var namespacePath = Path.Combine(_testModulePath, "ns");
@@ -261,17 +258,32 @@ public class LocalModuleServiceTests
     }
 
     // Helper to expose protected method for testing
-    private class TestableLocalModuleService : LocalModuleService
+    private sealed class TestableLocalModuleService : LocalModuleService
     {
         public TestableLocalModuleService(IConfiguration c, IDatabaseService d, ILogger<LocalModuleService> l) : base(c,
             d, l)
         {
         }
 
-        public Task<bool> CallUploadModuleAsyncImpl(string ns, string name, string provider, string version,
+        public Task<bool> CallUploadModuleAsyncCore(string ns, string name, string provider, string version,
             Stream content, string desc, bool replace = false)
         {
-            return base.UploadModuleAsyncImpl(ns, name, provider, version, content, desc, replace, null);
+            return base.UploadModuleAsyncCore(ns, name, provider, version, content, desc, replace, null);
+        }
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add(formatter(state, exception));
         }
     }
 }

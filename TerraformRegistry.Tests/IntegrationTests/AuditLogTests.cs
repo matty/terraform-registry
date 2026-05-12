@@ -15,15 +15,15 @@ public class AuditLogTests(ITestOutputHelper output) : IntegrationTestBase(outpu
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task AuditLog_Unauthenticated_Returns401()
+    public async Task AuditLogUnauthenticatedReturns401()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         var response = await client.GetAsync("/api/admin/audit");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task AuditLog_WithAdminPermission_ReturnsOk()
+    public async Task AuditLogWithAdminPermissionReturnsOk()
     {
         var client = await CreateAdminClientAsync();
 
@@ -37,7 +37,7 @@ public class AuditLogTests(ITestOutputHelper output) : IntegrationTestBase(outpu
     }
 
     [Fact]
-    public async Task AuditLog_FilterByAction_Works()
+    public async Task AuditLogFilterByActionWorks()
     {
         var client = await CreateAdminClientAsync();
 
@@ -50,15 +50,7 @@ public class AuditLogTests(ITestOutputHelper output) : IntegrationTestBase(outpu
         });
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
-        // Give background Task.Run a moment to persist
-        await Task.Delay(500);
-
-        // Filter by action
-        var response = await client.GetAsync("/api/admin/audit?action=role.created");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var auditEntries = json.GetProperty("entries").EnumerateArray().ToList();
+        var auditEntries = await WaitForAuditEntriesAsync(client);
         Assert.True(auditEntries.Count > 0, "Expected at least one role.created audit entry");
 
         foreach (var entry in auditEntries)
@@ -67,9 +59,28 @@ public class AuditLogTests(ITestOutputHelper output) : IntegrationTestBase(outpu
         }
     }
 
+    private static async Task<List<JsonElement>> WaitForAuditEntriesAsync(HttpClient client)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+
+        while (true)
+        {
+            var response = await client.GetAsync("/api/admin/audit?action=role.created");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var auditEntries = json.GetProperty("entries").EnumerateArray().ToList();
+            if (auditEntries.Count > 0 || DateTime.UtcNow >= deadline)
+                return auditEntries;
+
+            await timer.WaitForNextTickAsync();
+        }
+    }
+
     private async Task<HttpClient> CreateAdminClientAsync()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
         var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
@@ -81,7 +92,7 @@ public class AuditLogTests(ITestOutputHelper output) : IntegrationTestBase(outpu
         var adminRole = roles.First(r => r.Name == "admin");
         await permissionService.AssignRoleAsync(user.Id, adminRole.Id, null);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
         return client;
     }

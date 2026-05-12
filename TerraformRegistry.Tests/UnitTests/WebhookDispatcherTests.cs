@@ -13,7 +13,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class WebhookDispatcherTests
 {
     [Fact]
-    public async Task SendTestAsync_ReturnsFailure_OnNonSuccessStatusCode()
+    public async Task SendTestAsyncReturnsFailureOnNonSuccessStatusCode()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway));
         var dispatcher = CreateDispatcher(
@@ -29,7 +29,7 @@ public class WebhookDispatcherTests
     }
 
     [Fact]
-    public async Task SendTestAsync_AttachesValidatedAddressesToRequest()
+    public async Task SendTestAsyncAttachesValidatedAddressesToRequest()
     {
         IReadOnlyList<IPAddress>? pinnedAddresses = null;
         var handler = new RecordingHandler(request =>
@@ -52,7 +52,7 @@ public class WebhookDispatcherTests
     }
 
     [Fact]
-    public async Task SendTestAsync_ReturnsFailure_WhenDeliveryTimeValidationFails()
+    public async Task SendTestAsyncReturnsFailureWhenDeliveryTimeValidationFails()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
         var dispatcher = CreateDispatcher(
@@ -67,7 +67,7 @@ public class WebhookDispatcherTests
     }
 
     [Fact]
-    public async Task OpenConnectionAsync_UsesPinnedAddressesInsteadOfDnsEndpoint()
+    public async Task OpenConnectionAsyncUsesPinnedAddressesInsteadOfDnsEndpoint()
     {
         var connector = new RecordingConnector();
         var helper = new WebhookPinnedConnectionHelper(connector);
@@ -87,7 +87,7 @@ public class WebhookDispatcherTests
         var client = new HttpClient(handler);
         var factory = new TestHttpClientFactory(client);
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["BaseUrl"] = "https://registry.example.com" })
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["BaseUrl"] = "https://registry.example.com" })
             .Build();
 
         return new WebhookDispatcher(

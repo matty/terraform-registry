@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
@@ -28,7 +29,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         // Generate random token
         var randomBytes = RandomNumberGenerator.GetBytes(TokenLength);
         var tokenCore = Convert.ToBase64String(randomBytes)
-            .Replace("+", "-").Replace("/", "_").Replace("=", ""); // URL-safe base64
+            .Replace("+", "-", StringComparison.Ordinal).Replace("/", "_", StringComparison.Ordinal).Replace("=", "", StringComparison.Ordinal); // URL-safe base64
         var rawToken = tokenCore; // No prefix
 
         // Hash token using Argon2id
@@ -48,7 +49,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
         await dbService.AddApiKeyAsync(apiKey);
 
-        logger.LogInformation("Created new API key {KeyId} for user {UserId}", apiKey.Id, userId);
+        RegistryLog.Information(logger, "Created new API key {KeyId} for user {UserId}", apiKey.Id, userId);
 
         return (rawToken, apiKey);
     }
@@ -107,7 +108,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         if (key.UserId != userId)
         {
             // TODO: Allow admin override when implemented
-            logger.LogWarning("User {UserId} attempted to revoke key {KeyId} owned by {OwnerId}", userId, keyId, key.UserId);
+            RegistryLog.Warning(logger, "User {UserId} attempted to revoke key {KeyId} owned by {OwnerId}", userId, keyId, key.UserId);
             return false;
         }
 
@@ -123,7 +124,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
         if (key.UserId != requestingUserId)
         {
-            logger.LogWarning("User {UserId} attempted to update key {KeyId} owned by {OwnerId}", requestingUserId,
+            RegistryLog.Warning(logger, "User {UserId} attempted to update key {KeyId} owned by {OwnerId}", requestingUserId,
                 keyId, key.UserId);
             return new ApiKeyUpdateResult(ApiKeyUpdateStatus.Forbidden, null);
         }
@@ -206,7 +207,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return email.Trim().ToLowerInvariant();
     }
 
-    private string HashToken(string password)
+    private static string HashToken(string password)
     {
         // Salt is randomly generated, but for stateless verification we usually store salt with hash.
         // Simpler Argon2 wrappers often handle "$argon2id$..." format strings containing params, salt, and hash.
@@ -226,7 +227,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return $"{Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
     }
 
-    private bool VerifyHash(string password, string storedHash)
+    private static bool VerifyHash(string password, string storedHash)
     {
         try
         {

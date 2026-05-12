@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
@@ -51,7 +52,7 @@ public class SqliteWebhookService : IWebhookService
         return webhooks;
     }
 
-    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? template = null)
+    public async Task<Webhook> CreateWebhookAsync(string userId, string url, string[] events, string? secret, string format = "generic", string? payloadTemplate = null)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -67,7 +68,7 @@ public class SqliteWebhookService : IWebhookService
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Format = format,
-            Template = template
+            Template = payloadTemplate
         };
 
         await using var cmd = connection.CreateCommand();
@@ -79,16 +80,16 @@ public class SqliteWebhookService : IWebhookService
         cmd.Parameters.AddWithValue("$secret", (object?)webhook.Secret ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$events", JsonSerializer.Serialize(webhook.Events));
         cmd.Parameters.AddWithValue("$isActive", webhook.IsActive ? 1 : 0);
-        cmd.Parameters.AddWithValue("$createdAt", webhook.CreatedAt.ToString("o"));
-        cmd.Parameters.AddWithValue("$updatedAt", webhook.UpdatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$createdAt", webhook.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$updatedAt", webhook.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$format", format);
-        cmd.Parameters.AddWithValue("$template", (object?)template ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$template", (object?)payloadTemplate ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
         return webhook;
     }
 
-    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? template)
+    public async Task<Webhook?> UpdateWebhookAsync(Guid webhookId, string userId, string? url, string[]? events, string? secret, bool? isActive, string? format, string? payloadTemplate)
     {
         await using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -107,7 +108,7 @@ public class SqliteWebhookService : IWebhookService
         {
             new("$id", webhookId.ToString()),
             new("$userId", userId),
-            new("$updatedAt", DateTime.UtcNow.ToString("o"))
+            new("$updatedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture))
         };
 
         if (url != null)
@@ -140,10 +141,10 @@ public class SqliteWebhookService : IWebhookService
             parameters.Add(new SqliteParameter("$format", format));
         }
 
-        if (template != null)
+        if (payloadTemplate != null)
         {
             setClauses.Add("template = $template");
-            parameters.Add(new SqliteParameter("$template", template));
+            parameters.Add(new SqliteParameter("$template", payloadTemplate));
         }
 
         var sql = $"UPDATE webhooks SET {string.Join(", ", setClauses)} WHERE id = $id AND user_id = $userId";
@@ -226,8 +227,8 @@ public class SqliteWebhookService : IWebhookService
             Secret = reader.IsDBNull(3) ? null : reader.GetString(3),
             Events = events,
             IsActive = reader.GetInt32(5) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(6)),
-            UpdatedAt = DateTime.Parse(reader.GetString(7)),
+            CreatedAt = DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture),
             Format = reader.GetString(8),
             Template = reader.IsDBNull(9) ? null : reader.GetString(9)
         };

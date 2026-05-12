@@ -13,7 +13,7 @@ public class S3ProviderArtifactStorageTests
     private readonly Mock<IAmazonS3> _s3Client = new();
 
     [Fact]
-    public async Task SaveAsync_StoresArtifactUnderProvidersPrefixAndReturnsRelativeStoragePath()
+    public async Task SaveAsyncStoresArtifactUnderProvidersPrefixAndReturnsRelativeStoragePath()
     {
         PutObjectRequest? capturedRequest = null;
         _s3Client
@@ -41,7 +41,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task CreateDownloadUrlAsync_ReturnsPresignedUrlForStoredArtifact()
+    public async Task CreateDownloadUrlAsyncReturnsPresignedUrlForStoredArtifact()
     {
         const string expectedUrl = "https://example.invalid/provider.zip";
         GetPreSignedUrlRequest? capturedRequest = null;
@@ -72,7 +72,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task CreateDownloadUrlAsync_ThrowsFileNotFoundWhenArtifactIsMissing()
+    public async Task CreateDownloadUrlAsyncThrowsFileNotFoundWhenArtifactIsMissing()
     {
         _s3Client
             .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), It.IsAny<CancellationToken>()))
@@ -86,7 +86,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task OpenReadAsync_ReturnsObjectResponseStream()
+    public async Task OpenReadAsyncReturnsObjectResponseStream()
     {
         _s3Client
             .Setup(x => x.GetObjectAsync(
@@ -106,7 +106,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task OpenReadAsync_ReturnsNullWhenObjectIsMissing()
+    public async Task OpenReadAsyncReturnsNullWhenObjectIsMissing()
     {
         _s3Client
             .Setup(x => x.GetObjectAsync(It.IsAny<GetObjectRequest>(), It.IsAny<CancellationToken>()))
@@ -120,7 +120,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task ExistsAsync_ReturnsTrueWhenMetadataExists()
+    public async Task ExistsAsyncReturnsTrueWhenMetadataExists()
     {
         _s3Client
             .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), It.IsAny<CancellationToken>()))
@@ -132,7 +132,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task ExistsAsync_ReturnsFalseWhenMetadataIsMissing()
+    public async Task ExistsAsyncReturnsFalseWhenMetadataIsMissing()
     {
         _s3Client
             .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), It.IsAny<CancellationToken>()))
@@ -144,7 +144,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task DeleteAsync_RemovesObjectFromProvidersPrefix()
+    public async Task DeleteAsyncRemovesObjectFromProvidersPrefix()
     {
         DeleteObjectRequest? capturedRequest = null;
         _s3Client
@@ -165,7 +165,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ReturnsFalseWhenObjectIsMissing()
+    public async Task DeleteAsyncReturnsFalseWhenObjectIsMissing()
     {
         _s3Client
             .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), It.IsAny<CancellationToken>()))
@@ -180,7 +180,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task CheckStorageAsync_ReturnsHealthyWhenProbeWriteReadAndDeleteSucceed()
+    public async Task CheckStorageAsyncReturnsHealthyWhenProbeWriteReadAndDeleteSucceed()
     {
         string? probeKey = null;
         _s3Client
@@ -219,7 +219,7 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
-    public async Task CheckStorageAsync_ReturnsUnhealthyWhenProbeWriteFails()
+    public async Task CheckStorageAsyncReturnsUnhealthyWhenProbeWriteFails()
     {
         _s3Client
             .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
@@ -239,7 +239,7 @@ public class S3ProviderArtifactStorageTests
     [InlineData("/absolute.zip")]
     [InlineData("acme/../outside.zip")]
     [InlineData("")]
-    public async Task SaveAsync_RejectsPathsOutsideProviderPrefix(string storagePath)
+    public async Task SaveAsyncRejectsPathsOutsideProviderPrefix(string storagePath)
     {
         var storage = CreateStorage();
         await using var content = new MemoryStream([1]);
@@ -260,6 +260,7 @@ public class S3ProviderArtifactStorageTests
     {
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
+(StringComparer.Ordinal)
             {
                 ["S3:BucketName"] = "registry-artifacts",
                 ["S3:Region"] = "eu-west-2",

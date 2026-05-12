@@ -16,7 +16,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public void ExpectedProviderPackageFilename_ReturnsTerraformRegistryFilename()
+    public void ExpectedProviderPackageFilenameReturnsTerraformRegistryFilename()
     {
         Assert.Equal(
             "terraform-provider-example_1.0.0_linux_amd64.zip",
@@ -24,7 +24,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public async Task ValidatePackageSha256Async_ReturnsExpectedHash()
+    public async Task ValidatePackageSha256AsyncReturnsExpectedHash()
     {
         await using var stream = new MemoryStream([1, 2, 3]);
 
@@ -35,7 +35,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public void ParseShasums_FindsExactFilename()
+    public void ParseShasumsFindsExactFilename()
     {
         const string shasums = "abc123  terraform-provider-example_1.0.0_linux_amd64.zip\n";
 
@@ -45,7 +45,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public void ValidatePackageMetadata_RejectsMismatchedFilename()
+    public void ValidatePackageMetadataRejectsMismatchedFilename()
     {
         var result = ProviderPackageValidator.ValidatePackageMetadata(
             "example",
@@ -54,14 +54,14 @@ public class ProviderPackageValidatorTests
             "amd64",
             "wrong.zip",
             "abc123",
-            new Dictionary<string, string> { ["wrong.zip"] = "abc123" });
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["wrong.zip"] = "abc123" });
 
         Assert.False(result.Valid);
         Assert.Contains("filename", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void ValidatePackageMetadata_RejectsShasumsWithoutFilename()
+    public void ValidatePackageMetadataRejectsShasumsWithoutFilename()
     {
         var result = ProviderPackageValidator.ValidatePackageMetadata(
             "example",
@@ -70,14 +70,14 @@ public class ProviderPackageValidatorTests
             "amd64",
             "terraform-provider-example_1.0.0_linux_amd64.zip",
             "abc123",
-            new Dictionary<string, string>());
+            new Dictionary<string, string>(StringComparer.Ordinal));
 
         Assert.False(result.Valid);
         Assert.Contains("SHA256SUMS", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task ValidatePackageAsync_VerifiesDetachedSignatureWhenGpgIsAvailable()
+    public async Task ValidatePackageAsyncVerifiesDetachedSignatureWhenGpgIsAvailable()
     {
         if (!await CommandSucceedsAsync("gpg", "--version", null))
         {

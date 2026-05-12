@@ -19,16 +19,16 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task VcsSources_Unauthenticated_Returns401()
+    public async Task VcsSourcesUnauthenticatedReturns401()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
 
         var response = await client.GetAsync("/api/vcs/sources");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task VcsSources_Create_ReturnsCreated()
+    public async Task VcsSourcesCreateReturnsCreated()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-create@example.com", "vcs-create-id");
 
@@ -53,7 +53,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsConnections_Summaries_WithVcsManage_ReturnsActiveConnectionsOnly()
+    public async Task VcsConnectionsSummariesWithVcsManageReturnsActiveConnectionsOnly()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-summary@example.com", "vcs-summary-id");
 
@@ -69,7 +69,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsConnections_Summaries_WithoutVcsManage_Returns403()
+    public async Task VcsConnectionsSummariesWithoutVcsManageReturns403()
     {
         var client = await CreateClientWithPermissionsAsync(
             "vcs-summary-denied@example.com",
@@ -82,7 +82,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Create_WithInactiveConnection_ReturnsBadRequest()
+    public async Task VcsSourcesCreateWithInactiveConnectionReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-inactive-create@example.com", "vcs-inactive-create-id");
         var connectionId = await CreateTestConnectionAsync(isActive: false);
@@ -101,7 +101,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_List_ReturnsCreatedSource()
+    public async Task VcsSourcesListReturnsCreatedSource()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-list@example.com", "vcs-list-id");
 
@@ -128,7 +128,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Update_ReturnsUpdated()
+    public async Task VcsSourcesUpdateReturnsUpdated()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-update@example.com", "vcs-update-id");
 
@@ -160,7 +160,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Update_WithInactiveConnection_ReturnsBadRequest()
+    public async Task VcsSourcesUpdateWithInactiveConnectionReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-inactive-update@example.com", "vcs-inactive-update-id");
 
@@ -188,7 +188,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Delete_ReturnsNoContent()
+    public async Task VcsSourcesDeleteReturnsNoContent()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-delete@example.com", "vcs-delete-id");
 
@@ -213,7 +213,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Create_MissingFields_ReturnsBadRequest()
+    public async Task VcsSourcesCreateMissingFieldsReturnsBadRequest()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-bad@example.com", "vcs-bad-id");
 
@@ -227,7 +227,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSource_ByModule_ReturnsLinkedSourceAndSyncState()
+    public async Task VcsSourceByModuleReturnsLinkedSourceAndSyncState()
     {
         var client = await CreateAuthenticatedClientAsync("vcs-module@example.com", "vcs-module-id");
 
@@ -253,7 +253,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSource_ByModule_ForDifferentOwner_ReturnsNotFound()
+    public async Task VcsSourceByModuleForDifferentOwnerReturnsNotFound()
     {
         var ownerClient = await CreateAuthenticatedClientAsync("vcs-module-owner@example.com", "vcs-module-owner-id");
         var otherClient = await CreateAuthenticatedClientAsync("vcs-module-other@example.com", "vcs-module-other-id");
@@ -276,7 +276,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Create_WithSyncExistingTags_ReturnsSyncSummary()
+    public async Task VcsSourcesCreateWithSyncExistingTagsReturnsSyncSummary()
     {
         var client = await CreateClientWithFakeGitHubSyncAsync(
             "vcs-sync-create@example.com",
@@ -304,7 +304,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSources_Create_WithSyncExistingTagsFailure_ReturnsCreatedWithFailedSyncPayload()
+    public async Task VcsSourcesCreateWithSyncExistingTagsFailureReturnsCreatedWithFailedSyncPayload()
     {
         var client = await CreateClientWithFakeGitHubSyncFailureAsync(
             "vcs-sync-create-failure@example.com",
@@ -332,7 +332,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSource_Sync_ForDifferentOwner_ReturnsNotFound()
+    public async Task VcsSourceSyncForDifferentOwnerReturnsNotFound()
     {
         var ownerClient = await CreateAuthenticatedClientAsync("vcs-sync-owner@example.com", "vcs-sync-owner-id");
         var otherClient = await CreateAuthenticatedClientAsync("vcs-sync-other@example.com", "vcs-sync-other-id");
@@ -358,7 +358,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task VcsSource_Sync_ReturnsSyncSummary()
+    public async Task VcsSourceSyncReturnsSyncSummary()
     {
         var client = await CreateClientWithFakeGitHubSyncAsync(
             "vcs-sync-success@example.com",
@@ -396,10 +396,10 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task GitHubWebhook_InvalidSignature_ReturnsError()
+    public async Task GitHubWebhookInvalidSignatureReturnsError()
     {
         // Create a VCS connection and source directly via DI so webhook lookup works
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var vcsService = scope.ServiceProvider.GetRequiredService<IVcsSourceService>();
         var connectionService = scope.ServiceProvider.GetRequiredService<IVcsConnectionService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -422,7 +422,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             }
         });
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/vcs/github/webhook")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -438,9 +438,9 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task GitHubWebhook_InactiveConnection_ReturnsSkipped()
+    public async Task GitHubWebhookInactiveConnectionReturnsSkipped()
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var vcsService = scope.ServiceProvider.GetRequiredService<IVcsSourceService>();
         var connectionService = scope.ServiceProvider.GetRequiredService<IVcsConnectionService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -465,7 +465,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
             }
         });
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/vcs/github/webhook")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -481,7 +481,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
     }
 
     [Fact]
-    public async Task GitHubWebhook_NonTagPush_ReturnsSkipped()
+    public async Task GitHubWebhookNonTagPushReturnsSkipped()
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -494,7 +494,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
         });
 
         // Compute a valid signature (won't matter since it's not a tag push, but include for completeness)
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/vcs/github/webhook")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
@@ -511,7 +511,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
     private async Task<Guid> CreateTestConnectionAsync(string label = "test-connection", bool isActive = true)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var connectionService = scope.ServiceProvider.GetRequiredService<IVcsConnectionService>();
         var connection = await connectionService.CreateConnectionAsync(
             null, label, "github", null, null, "test-webhook-secret");
@@ -543,7 +543,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
     private async Task<HttpClient> CreateClientWithFakeGitHubSyncAsync(string email, string providerId, Func<SyncRequest, Task<SyncVcsSourceResult>> syncHandler)
     {
-        var factory = _factory.WithWebHostBuilder(builder =>
+        var factory = Factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {

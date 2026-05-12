@@ -14,7 +14,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class GitHubVcsServiceSyncTests
 {
     [Fact]
-    public async Task SyncSourceAsync_PublishesMissingTagsAndUpdatesSyncState()
+    public async Task SyncSourceAsyncPublishesMissingTagsAndUpdatesSyncState()
     {
         var source = new VcsSource
         {
@@ -107,7 +107,7 @@ public class GitHubVcsServiceSyncTests
             connectionService.Object,
             publishCoordinator.Object,
             httpFactory,
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)).Build(),
             NullLogger<GitHubVcsService>.Instance);
 
         var result = await service.SyncSourceAsync(source.Id, null, false, "user-123", CancellationToken.None);
@@ -120,7 +120,7 @@ public class GitHubVcsServiceSyncTests
     }
 
     [Fact]
-    public async Task SyncSourceAsync_FollowsPaginatedGitHubTagResults()
+    public async Task SyncSourceAsyncFollowsPaginatedGitHubTagResults()
     {
         var source = new VcsSource
         {
@@ -202,7 +202,7 @@ public class GitHubVcsServiceSyncTests
             moduleService.Object,
             publishCoordinator.Object,
             httpFactory,
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)).Build(),
             NullLogger<GitHubVcsService>.Instance);
 
         var result = await service.SyncSourceAsync(source.Id, null, false, "user-123", CancellationToken.None);

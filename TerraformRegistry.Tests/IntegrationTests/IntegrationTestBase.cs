@@ -3,9 +3,9 @@ using System.Text;
 using DotNet.Testcontainers.Builders;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -20,43 +20,43 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 public abstract class IntegrationTestBase : IAsyncLifetime
 {
     private readonly string _authToken;
-    private readonly CancellationTokenSource _logMonitorCts = new();
-    protected readonly ITestOutputHelper _output;
-    protected HttpClient _client = null!;
-    protected WebApplicationFactory<Program> _factory = null!;
-    protected XunitLoggerProvider _loggerProvider = null!;
-    protected PostgreSqlContainer _postgresContainer = null!;
+    private CancellationTokenSource LogMonitorCts { get; } = new();
+    protected ITestOutputHelper Output { get; }
+    protected HttpClient Client { get; private set; } = null!;
+    protected WebApplicationFactory<Program> Factory { get; private set; } = null!;
+    protected PostgreSqlContainer PostgresContainer { get; private set; } = null!;
+    private XunitLoggerProvider LoggerProvider { get; set; } = null!;
 
     protected IntegrationTestBase(ITestOutputHelper output, string authToken)
     {
-        _output = output;
+        Output = output;
         _authToken = authToken;
     }
 
     public virtual async Task InitializeAsync()
     {
-        _output.WriteLine("Starting PostgreSQL test container...");
+        Output.WriteLine("Starting PostgreSQL test container...");
 
-        var randomSuffix = Path.GetRandomFileName().Replace(".", "");
+        var randomSuffix = Path.GetRandomFileName().Replace(".", "", StringComparison.Ordinal);
         var moduleStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"modules/{randomSuffix}");
         var providerStoragePath = Path.Combine(Directory.GetCurrentDirectory(), $"providers/{randomSuffix}");
         if (!string.IsNullOrEmpty(moduleStoragePath) && Directory.Exists(moduleStoragePath))
         {
             Directory.Delete(moduleStoragePath, true);
-            _output.WriteLine($"Cleared directory: {moduleStoragePath}");
+            Output.WriteLine($"Cleared directory: {moduleStoragePath}");
         }
         if (Directory.Exists(providerStoragePath))
         {
             Directory.Delete(providerStoragePath, true);
-            _output.WriteLine($"Cleared directory: {providerStoragePath}");
+            Output.WriteLine($"Cleared directory: {providerStoragePath}");
         }
 
-        _factory = new WebApplicationFactory<Program>()
+        Factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureAppConfiguration((_, config) =>
                 {
-                    var connStr = _postgresContainer.GetConnectionString();
+                    var connStr = PostgresContainer.GetConnectionString();
                     config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                     {
                         ["PostgreSQL:ConnectionString"] = connStr,
@@ -84,7 +84,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                 builder.ConfigureLogging(logging =>
                 {
                     logging.ClearProviders();
-                    logging.AddProvider(_loggerProvider);
+                    logging.AddProvider(LoggerProvider);
                     logging.SetMinimumLevel(LogLevel.Information);
                     logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
                     logging.AddFilter("Testcontainers", LogLevel.Information);
@@ -95,9 +95,9 @@ public abstract class IntegrationTestBase : IAsyncLifetime
             });
 
         var testOutputConsumer = Consume.RedirectStdoutAndStderrToStream(
-            new OutputToTestConsoleStream(_output), new OutputToTestConsoleStream(_output));
+            new OutputToTestConsoleStream(Output), new OutputToTestConsoleStream(Output));
 
-        _postgresContainer = new PostgreSqlBuilder()
+        PostgresContainer = new PostgreSqlBuilder()
             .WithDatabase("testdb")
             .WithUsername("postgres")
             .WithPassword("postgres")
@@ -107,22 +107,22 @@ public abstract class IntegrationTestBase : IAsyncLifetime
 
         try
         {
-            await _postgresContainer.StartAsync();
-            _output.WriteLine(
-                $"PostgreSQL container started successfully. Connection string: {_postgresContainer.GetConnectionString()}");
+            await PostgresContainer.StartAsync();
+            Output.WriteLine(
+                $"PostgreSQL container started successfully. Connection string: {PostgresContainer.GetConnectionString()}");
 
             // Optionally, start monitoring logs in the background
             // _ = MonitorContainerLogsAsync();
         }
         catch (Exception ex)
         {
-            _output.WriteLine($"Failed to start PostgreSQL container: {ex}");
+            Output.WriteLine($"Failed to start PostgreSQL container: {ex}");
             throw;
         }
 
-        _loggerProvider = new XunitLoggerProvider(_output, (_, _) => true);
+        LoggerProvider = new XunitLoggerProvider(Output, (_, _) => true);
 
-        _client = _factory.CreateClient();
+        Client = Factory.CreateClient();
     }
 
     protected virtual void ConfigureTestApp(IWebHostBuilder builder)
@@ -132,7 +132,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     protected async Task<HttpClient> CreateClientWithPermissionsAsync(string email, string providerId,
         string[] permissions)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
         var roleService = scope.ServiceProvider.GetRequiredService<IRoleService>();
@@ -142,32 +142,34 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         var role = await roleService.CreateRoleAsync($"test-role-{Guid.NewGuid():N}", null, permissions);
         await permissionService.AssignRoleAsync(user.Id, role.Id, null);
 
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
         return client;
     }
 
     public virtual async Task DisposeAsync()
     {
-        _logMonitorCts.Cancel();
-        _logMonitorCts.Dispose();
+        LogMonitorCts.Cancel();
+        LogMonitorCts.Dispose();
 
-        _client?.Dispose();
-        _factory?.Dispose();
+        Client?.Dispose();
+        Factory?.Dispose();
 
-        if (_postgresContainer != null)
+        if (PostgresContainer != null)
+        {
             try
             {
-                _output.WriteLine("Stopping PostgreSQL container...");
-                await _postgresContainer.DisposeAsync();
-                _output.WriteLine("PostgreSQL container stopped.");
+                Output.WriteLine("Stopping PostgreSQL container...");
+                await PostgresContainer.DisposeAsync();
+                Output.WriteLine("PostgreSQL container stopped.");
             }
             catch (Exception ex)
             {
-                _output.WriteLine($"Error stopping PostgreSQL container: {ex.Message}");
+                Output.WriteLine($"Error stopping PostgreSQL container: {ex.Message}");
             }
+        }
 
-        _loggerProvider?.Dispose();
+        LoggerProvider?.Dispose();
     }
 
     // Monitor container logs in the background
@@ -175,34 +177,34 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     {
         try
         {
-            while (!_logMonitorCts.Token.IsCancellationRequested && _postgresContainer != null)
+            while (!LogMonitorCts.Token.IsCancellationRequested && PostgresContainer != null)
             {
                 try
                 {
                     // Get logs since the last minute
                     var since = DateTime.UtcNow.AddMinutes(-1);
-                    var (stdout, stderr) = await _postgresContainer.GetLogsAsync(since);
+                    var (stdout, stderr) = await PostgresContainer.GetLogsAsync(since);
 
-                    if (!string.IsNullOrEmpty(stdout)) _output.WriteLine($"PostgreSQL Container Stdout: {stdout}");
+                    if (!string.IsNullOrEmpty(stdout)) Output.WriteLine($"PostgreSQL Container Stdout: {stdout}");
 
-                    if (!string.IsNullOrEmpty(stderr)) _output.WriteLine($"PostgreSQL Container Stderr: {stderr}");
+                    if (!string.IsNullOrEmpty(stderr)) Output.WriteLine($"PostgreSQL Container Stderr: {stderr}");
                 }
                 catch (Exception ex)
                 {
-                    _output.WriteLine($"Error retrieving container logs: {ex.Message}");
+                    Output.WriteLine($"Error retrieving container logs: {ex.Message}");
                 }
 
                 // Wait before checking logs again
-                await Task.Delay(5000, _logMonitorCts.Token);
+                await Task.Delay(5000, LogMonitorCts.Token);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            // Expected when cancellation token is triggered
+            Output.WriteLine($"Container log monitoring stopped: {ex.Message}");
         }
-        catch (Exception ex) when (!_logMonitorCts.Token.IsCancellationRequested)
+        catch (Exception ex) when (!LogMonitorCts.Token.IsCancellationRequested)
         {
-            _output.WriteLine($"Error monitoring container logs: {ex.Message}");
+            Output.WriteLine($"Error monitoring container logs: {ex.Message}");
         }
     }
 }
@@ -262,9 +264,9 @@ public class OutputToTestConsoleStream : Stream
                 {
                     _output.WriteLine($"[Container] {_lineBuffer}");
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Ignore write errors during test cleanup
+                    System.Diagnostics.Debug.WriteLine($"Failed to write container output during test cleanup: {ex.Message}");
                 }
 
                 _lineBuffer.Clear();

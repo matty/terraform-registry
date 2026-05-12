@@ -21,6 +21,7 @@ public class AzureBlobModuleServiceConstructorTests
     {
         _mockDatabaseService = new Mock<IDatabaseService>();
         _mockLogger = new Mock<ILogger<AzureBlobModuleService>>();
+        _mockLogger.Setup(x => x.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         _mockBlobServiceClient = new Mock<BlobServiceClient>();
         _mockBlobContainerClient = new Mock<BlobContainerClient>();
 
@@ -35,23 +36,27 @@ public class AzureBlobModuleServiceConstructorTests
             .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
 
-    private IConfiguration CreateConfiguration(Dictionary<string, string?>? azureStorageSettings)
+    private static IConfiguration CreateConfiguration(Dictionary<string, string?>? azureStorageSettings)
     {
         var configBuilder = new ConfigurationBuilder();
         if (azureStorageSettings != null)
+        {
             configBuilder.AddInMemoryCollection(
                 azureStorageSettings.Select(kvp =>
                     new KeyValuePair<string, string?>($"AzureStorage:{kvp.Key}", kvp.Value))
             );
+        }
+
         return configBuilder.Build();
     }
 
     // Test: Should initialize clients and create the container if it does not exist
     [Fact]
-    public void Constructor_Initializes_Clients_And_Creates_Container_IfNotExists()
+    public void ConstructorInitializesClientsAndCreatesContainerIfNotExists()
     {
         // Arrange
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             { "ContainerName", _containerName },
             { "SasTokenExpiryMinutes", "5" }
@@ -74,10 +79,11 @@ public class AzureBlobModuleServiceConstructorTests
 
     // Test: Should throw ArgumentNullException if ContainerName is missing from configuration
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_For_Missing_ContainerName()
+    public void ConstructorThrowsArgumentNullExceptionForMissingContainerName()
     {
         // Arrange
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             // ContainerName is missing
             { "SasTokenExpiryMinutes", "5" }
@@ -88,15 +94,17 @@ public class AzureBlobModuleServiceConstructorTests
         var ex = Assert.Throws<ArgumentNullException>(() =>
             new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
                 _mockBlobServiceClient.Object));
-        Assert.Equal("AzureStorage:ContainerName", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("AzureStorage:ContainerName", ex.Message, StringComparison.Ordinal);
     }
 
     // Test: Should use the default value for SasTokenExpiryMinutes if it is missing from configuration
     [Fact]
-    public void Constructor_UsesDefault_SasTokenExpiryMinutes_When_Missing()
+    public void ConstructorUsesDefaultSasTokenExpiryMinutesWhenMissing()
     {
         // Arrange
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             { "ContainerName", _containerName }
             // SasTokenExpiryMinutes is missing, should default to "5"
@@ -115,10 +123,11 @@ public class AzureBlobModuleServiceConstructorTests
 
     // Test: Should throw FormatException if SasTokenExpiryMinutes is not a valid integer
     [Fact]
-    public void Constructor_ThrowsFormatException_For_Invalid_SasTokenExpiryMinutes()
+    public void ConstructorThrowsFormatExceptionForInvalidSasTokenExpiryMinutes()
     {
         // Arrange
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             { "ContainerName", _containerName },
             { "SasTokenExpiryMinutes", "not-an-integer" }
@@ -133,7 +142,7 @@ public class AzureBlobModuleServiceConstructorTests
 
     // Test: Should throw ArgumentNullException if both connection string and account name are missing
     [Fact]
-    public void Constructor_ThrowsArgumentNullException_If_ConnectionString_And_AccountName_Missing()
+    public void ConstructorThrowsArgumentNullExceptionIfConnectionStringAndAccountNameMissing()
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -147,7 +156,8 @@ public class AzureBlobModuleServiceConstructorTests
         // Pass null for blobServiceClient to hit the Managed Identity path
         var ex = Assert.Throws<ArgumentNullException>(() =>
             new AzureBlobModuleService(config, _mockDatabaseService.Object, _mockLogger.Object));
-        Assert.Equal("AzureStorage:AccountName", ex.ParamName);
+        Assert.Equal("configuration", ex.ParamName);
+        Assert.Contains("AzureStorage:AccountName", ex.Message, StringComparison.Ordinal);
         _mockLogger.Verify(x => x.Log(
             LogLevel.Error,
             It.IsAny<EventId>(),
@@ -158,21 +168,22 @@ public class AzureBlobModuleServiceConstructorTests
 
     // Test: Should log and rethrow if CreateIfNotExists throws
     [Fact]
-    public void Constructor_Logs_And_Rethrows_If_CreateIfNotExists_Fails()
+    public void ConstructorLogsAndRethrowsIfCreateIfNotExistsFails()
     {
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             { "ContainerName", _containerName },
             { "SasTokenExpiryMinutes", "5" }
         };
         var configuration = CreateConfiguration(settings);
-        var testException = new Exception("fail");
+        var testException = new InvalidOperationException("fail");
         _mockBlobContainerClient.Setup(c =>
                 c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()))
             .Throws(testException);
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName))
             .Returns(_mockBlobContainerClient.Object);
-        var ex = Assert.Throws<Exception>(() =>
+        var ex = Assert.Throws<InvalidOperationException>(() =>
             new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
                 _mockBlobServiceClient.Object));
         Assert.Equal(testException, ex);
@@ -185,9 +196,10 @@ public class AzureBlobModuleServiceConstructorTests
     }
 
     [Fact]
-    public void Constructor_Synchronizes_Existing_Blobs_Into_Database()
+    public void ConstructorSynchronizesExistingBlobsIntoDatabase()
     {
         var settings = new Dictionary<string, string?>
+(StringComparer.Ordinal)
         {
             { "ContainerName", _containerName },
             { "SasTokenExpiryMinutes", "5" }
@@ -200,7 +212,7 @@ public class AzureBlobModuleServiceConstructorTests
         var blobs = AsyncPageable<BlobItem>.FromPages([page]);
 
         var mockBlobClient = new Mock<BlobClient>();
-        var properties = BlobsModelFactory.BlobProperties(lastModified: DateTimeOffset.UtcNow, metadata: new Dictionary<string, string>());
+        var properties = BlobsModelFactory.BlobProperties(lastModified: DateTimeOffset.UtcNow, metadata: new Dictionary<string, string>(StringComparer.Ordinal));
         mockBlobClient.Setup(b => b.GetPropertiesAsync(null, default))
             .ReturnsAsync(Response.FromValue(properties, Mock.Of<Response>()));
 

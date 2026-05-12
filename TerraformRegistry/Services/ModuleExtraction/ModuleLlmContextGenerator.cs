@@ -22,29 +22,29 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
         _baseUrl = NormalizeBaseUrl(baseUrl);
     }
 
-    public ModuleLlmContextDocument Generate(Module module, ModuleExtractionDocument extraction)
+    public ModuleLlmContextDocument Generate(TerraformModule terraformModule, ModuleExtractionDocument extraction)
     {
-        var modulePath = $"/modules/{module.Namespace}/{module.Name}/{module.Provider}";
-        var moduleVersionsPath = $"/v1/llm/modules/{module.Namespace}/{module.Name}/{module.Provider}";
-        var rawExtractionPath = $"/api/admin/module-docs/modules/{module.Namespace}/{module.Name}/{module.Provider}/{module.Version}";
+        var modulePath = $"/modules/{terraformModule.Namespace}/{terraformModule.Name}/{terraformModule.Provider}";
+        var moduleVersionsPath = $"/v1/llm/modules/{terraformModule.Namespace}/{terraformModule.Name}/{terraformModule.Provider}";
+        var rawExtractionPath = $"/api/admin/module-docs/modules/{terraformModule.Namespace}/{terraformModule.Name}/{terraformModule.Provider}/{terraformModule.Version}";
 
         return new ModuleLlmContextDocument
         {
             Module = new ModuleLlmModuleReference
             {
-                Namespace = module.Namespace,
-                Name = module.Name,
-                Provider = module.Provider,
-                Version = module.Version
+                Namespace = terraformModule.Namespace,
+                Name = terraformModule.Name,
+                Provider = terraformModule.Provider,
+                Version = terraformModule.Version
             },
             Source = new ModuleLlmSourceReference
             {
                 RegistryUrl = BuildAbsoluteUrl(modulePath),
-                PublishedAt = module.PublishedAt
+                PublishedAt = terraformModule.PublishedAt
             },
             Summary = new ModuleLlmContextSummary
             {
-                OneLine = BuildOneLineSummary(module, extraction),
+                OneLine = BuildOneLineSummary(terraformModule, extraction),
                 Capabilities = BuildCapabilities(extraction)
             },
             Inputs = extraction.Inputs,
@@ -84,10 +84,10 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
         return string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.TrimEnd('/');
     }
 
-    private static string? BuildOneLineSummary(Module module, ModuleExtractionDocument extraction)
+    private static string? BuildOneLineSummary(TerraformModule terraformModule, ModuleExtractionDocument extraction)
     {
-        if (!string.IsNullOrWhiteSpace(module.Description))
-            return module.Description.Trim();
+        if (!string.IsNullOrWhiteSpace(terraformModule.Description))
+            return terraformModule.Description.Trim();
 
         if (!string.IsNullOrWhiteSpace(extraction.Readme?.Title))
             return ExtractFirstParagraph(extraction.Readme.Markdown) ?? extraction.Readme.Title.Trim();
@@ -116,7 +116,7 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
         var lines = markdown
             .Split('\n')
             .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#", StringComparison.Ordinal))
+            .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith('#'))
             .ToList();
 
         if (lines.Count == 0)
@@ -128,6 +128,6 @@ public sealed partial class ModuleLlmContextGenerator : IModuleLlmContextGenerat
         return paragraph.Length == 0 ? null : paragraph;
     }
 
-    [GeneratedRegex(@"\s+")]
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex MarkdownWhitespaceRegex();
 }

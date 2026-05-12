@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 
 namespace TerraformRegistry.S3;
@@ -30,13 +31,13 @@ public class S3ModuleService : ModuleService
         var bucketName = configuration["S3:BucketName"];
         if (string.IsNullOrWhiteSpace(bucketName))
         {
-            throw new ArgumentNullException("S3:BucketName", "S3 bucket name is required.");
+            throw new ArgumentNullException(nameof(configuration), "S3:BucketName configuration value is required.");
         }
 
         var region = configuration["S3:Region"];
         if (string.IsNullOrWhiteSpace(region))
         {
-            throw new ArgumentNullException("S3:Region", "S3 region is required.");
+            throw new ArgumentNullException(nameof(configuration), "S3:Region configuration value is required.");
         }
 
         var presignedUrlExpiryMinutes = ParsePresignedUrlExpiry(configuration, logger);
@@ -58,68 +59,68 @@ public class S3ModuleService : ModuleService
         return _databaseService.ListModulesAsync(request);
     }
 
-    public override Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _databaseService.GetModuleAsync(@namespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
     {
-        return _databaseService.GetModuleVersionsAsync(@namespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
     }
 
-    public override async Task<string?> GetModuleDownloadPathAsync(string @namespace, string name, string provider,
+    public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
         {
-            _logger.LogWarning(
+            RegistryLog.Warning(_logger,
                 "Module {Namespace}/{Name}/{Provider}/{Version} not found in database.",
-                @namespace,
+                moduleNamespace,
                 name,
                 provider,
                 version);
             return null;
         }
 
-        return await _objectStore.GetModuleDownloadPathAsync(moduleStorage, @namespace, name, provider, version);
+        return await _objectStore.GetModuleDownloadPathAsync(moduleStorage, moduleNamespace, name, provider, version);
     }
 
-    public override async Task<Stream?> OpenModulePackageStreamAsync(string @namespace, string name, string provider,
+    public override async Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (moduleStorage == null)
         {
             return null;
         }
 
-        return await _objectStore.OpenModulePackageStreamAsync(moduleStorage, @namespace, name, provider, version);
+        return await _objectStore.OpenModulePackageStreamAsync(moduleStorage, moduleNamespace, name, provider, version);
     }
 
-    protected override Task<bool> UploadModuleAsyncImpl(string @namespace, string name, string provider,
+    protected override Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
-        return _uploadWorkflow.UploadModuleAsync(@namespace, name, provider, version, moduleContent, description,
+        return _uploadWorkflow.UploadModuleAsync(moduleNamespace, name, provider, version, moduleContent, description,
             replace, metadata);
     }
 
-    public override Task<bool> DeleteModuleVersionAsync(string @namespace, string name, string provider,
+    public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        return _databaseService.SoftDeleteModuleAsync(@namespace, name, provider, version);
+        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<bool> RestoreModuleVersionAsync(string @namespace, string name, string provider,
+    public override Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider,
         string version)
     {
-        return _databaseService.RestoreModuleAsync(@namespace, name, provider, version);
+        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version)
+    public override Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version)
     {
-        return _purgeWorkflow.PurgeModuleVersionAsync(@namespace, name, provider, version);
+        return _purgeWorkflow.PurgeModuleVersionAsync(moduleNamespace, name, provider, version);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
@@ -127,10 +128,10 @@ public class S3ModuleService : ModuleService
         return _databaseService.ListDeletedModulesAsync(request);
     }
 
-    public override Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+    public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
         string description)
     {
-        return _databaseService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
     }
 
     public override Task<(bool Healthy, string? Reason)> CheckStorageAsync()
@@ -149,7 +150,7 @@ public class S3ModuleService : ModuleService
             return presignedUrlExpiryMinutes;
         }
 
-        logger.LogWarning(
+        RegistryLog.Warning(logger,
             "S3:PresignedUrlExpiryMinutes must be a positive integer, but was configured as {ConfiguredValue}. Defaulting to 5 minutes.",
             configuredPresignedUrlExpiry);
         return 5;

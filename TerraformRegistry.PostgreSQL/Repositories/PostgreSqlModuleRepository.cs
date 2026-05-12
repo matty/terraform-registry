@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
 
@@ -71,7 +73,7 @@ public sealed class PostgreSqlModuleRepository(
                 Version = version,
                 Provider = provider,
                 Description = description,
-                PublishedAt = publishedAt.ToString("o")
+                PublishedAt = publishedAt.ToString("o", CultureInfo.InvariantCulture)
             });
         }
 
@@ -114,9 +116,10 @@ public sealed class PostgreSqlModuleRepository(
         {
             Modules = modules,
             Meta = new Dictionary<string, string>
+(StringComparer.Ordinal)
             {
-                { "limit", request.Limit.ToString() },
-                { "current_offset", request.Offset.ToString() }
+                { "limit", request.Limit.ToString(CultureInfo.InvariantCulture) },
+                { "current_offset", request.Offset.ToString(CultureInfo.InvariantCulture) }
             }
         };
     }
@@ -124,7 +127,7 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public async Task<Module?> GetModuleAsync(string @namespace, string name, string provider, string version)
+    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
         var sql = @"
             SELECT 
@@ -140,7 +143,7 @@ public sealed class PostgreSqlModuleRepository(
             FROM 
                 modules m
             WHERE 
-                namespace = @namespace AND
+                namespace = @moduleNamespace AND
                 name = @name AND
                 provider = @provider AND
                 version = @version AND
@@ -150,7 +153,7 @@ public sealed class PostgreSqlModuleRepository(
         await connection.OpenAsync();
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -164,24 +167,25 @@ public sealed class PostgreSqlModuleRepository(
         var publishedAt = reader.GetDateTime(6);
         await reader.DisposeAsync();
 
-        var versions = await GetVersionsInternalAsync(connection, @namespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
 
-        return new Module
+        return new TerraformModule
         {
-            Id = $"{@namespace}/{name}/{provider}/{version}",
-            Owner = @namespace,
-            Namespace = @namespace,
+            Id = $"{moduleNamespace}/{name}/{provider}/{version}",
+            Owner = moduleNamespace,
+            Namespace = moduleNamespace,
             Name = name,
             Version = version,
             Provider = provider,
             Description = description,
-            Source = $"{baseUrl}/{@namespace}/{name}",
-            PublishedAt = publishedAt.ToString("o"),
-            DownloadUrl = $"{baseUrl}/v1/modules/{@namespace}/{name}/{provider}/{version}/download",
+            Source = $"{baseUrl}/{moduleNamespace}/{name}",
+            PublishedAt = publishedAt.ToString("o", CultureInfo.InvariantCulture),
+            DownloadUrl = $"{baseUrl}/v1/modules/{moduleNamespace}/{name}/{provider}/{version}/download",
             Versions = versions,
             Root = "main",
             Submodules = new List<ModuleSubmodule>(),
             Providers = new Dictionary<string, string>
+(StringComparer.Ordinal)
             {
                 { provider, "*" }
             },
@@ -192,12 +196,12 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string @namespace, string name, string provider)
+    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
-        var versions = await GetVersionsInternalAsync(connection, @namespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
 
         return new ModuleVersions
         {
@@ -214,7 +218,7 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets the storage path information for a specific module version
     /// </summary>
-    public async Task<ModuleStorage?> GetModuleStorageAsync(string @namespace, string name, string provider,
+    public async Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider,
         string version)
     {
         var sql = @"
@@ -231,7 +235,7 @@ public sealed class PostgreSqlModuleRepository(
             FROM
                 modules
             WHERE
-                namespace = @namespace AND
+                namespace = @moduleNamespace AND
                 name = @name AND
                 provider = @provider AND
                 version = @version AND
@@ -241,7 +245,7 @@ public sealed class PostgreSqlModuleRepository(
         await connection.OpenAsync();
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -270,7 +274,7 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Adds a new module to the database
     /// </summary>
-    public async Task<bool> AddModuleAsync(ModuleStorage module)
+    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage)
     {
         var sql = @"
             INSERT INTO modules (
@@ -285,7 +289,7 @@ public sealed class PostgreSqlModuleRepository(
                 metadata
             )
             VALUES (
-                @namespace,
+                @moduleNamespace,
                 @name,
                 @provider,
                 @version,
@@ -302,17 +306,17 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
-            command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath);
-            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
+            command.Parameters.AddWithValue("@name", moduleStorage.Name);
+            command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
+            command.Parameters.AddWithValue("@version", moduleStorage.Version);
+            command.Parameters.AddWithValue("@description", moduleStorage.Description);
+            command.Parameters.AddWithValue("@storagePath", moduleStorage.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", moduleStorage.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
-                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                    moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
-            command.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(module.Metadata)).NpgsqlDbType =
+            command.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(moduleStorage.Metadata)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
             var rows = await command.ExecuteNonQueryAsync();
@@ -320,14 +324,14 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            logger.LogInformation("Module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
-                module.Namespace, module.Name, module.Provider, module.Version);
+            RegistryLog.Information(logger, "Module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database",
-                module.Namespace, module.Name, module.Provider, module.Version);
+            RegistryLog.Error(logger, ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database",
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
     }
@@ -335,11 +339,11 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Removes a module from the database
     /// </summary>
-    public async Task<bool> RemoveModuleAsync(ModuleStorage module)
+    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage)
     {
         var sql = @"
             DELETE FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version";
@@ -350,34 +354,34 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
+            command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
+            command.Parameters.AddWithValue("@name", moduleStorage.Name);
+            command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
+            command.Parameters.AddWithValue("@version", moduleStorage.Version);
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
             return rowsAffected > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == "23503") // FK violation
         {
-            logger.LogError(ex,
+            RegistryLog.Error(logger, ex,
                 "Cannot remove module {Namespace}/{Name}/{Provider}/{Version}: referenced by download records",
-                module.Namespace, module.Name, module.Provider, module.Version);
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database",
-                module.Namespace, module.Name, module.Provider, module.Version);
+            RegistryLog.Error(logger, ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from database",
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             throw;
         }
     }
 
-    public async Task<bool> RemoveModuleExactAsync(ModuleStorage module)
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage)
     {
         var sql = @"
             DELETE FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -393,15 +397,15 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
-            command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath);
-            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
+            command.Parameters.AddWithValue("@name", moduleStorage.Name);
+            command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
+            command.Parameters.AddWithValue("@version", moduleStorage.Version);
+            command.Parameters.AddWithValue("@description", moduleStorage.Description);
+            command.Parameters.AddWithValue("@storagePath", moduleStorage.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", moduleStorage.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
-                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                    moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
             var rowsAffected = await command.ExecuteNonQueryAsync();
@@ -409,17 +413,17 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from database",
-                module.Namespace, module.Name, module.Provider, module.Version);
+            RegistryLog.Error(logger, ex, "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from database",
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
     }
 
-    public async Task<bool> RemoveDeletedModuleAsync(string @namespace, string name, string provider, string version)
+    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
         var sql = @"
             DELETE FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -431,7 +435,7 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
@@ -441,14 +445,14 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex,
+            RegistryLog.Error(logger, ex,
                 "Error removing deleted module row {Namespace}/{Name}/{Provider}/{Version} from database",
-                @namespace, name, provider, version);
+                moduleNamespace, name, provider, version);
             return false;
         }
     }
 
-    public async Task<bool> AddDeletedModuleAsync(ModuleStorage module)
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage)
     {
         var sql = @"
             INSERT INTO modules (
@@ -463,7 +467,7 @@ public sealed class PostgreSqlModuleRepository(
                 deleted_at
             )
             VALUES (
-                @namespace,
+                @moduleNamespace,
                 @name,
                 @provider,
                 @version,
@@ -480,15 +484,15 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", module.Namespace);
-            command.Parameters.AddWithValue("@name", module.Name);
-            command.Parameters.AddWithValue("@provider", module.Provider);
-            command.Parameters.AddWithValue("@version", module.Version);
-            command.Parameters.AddWithValue("@description", module.Description);
-            command.Parameters.AddWithValue("@storagePath", module.FilePath);
-            command.Parameters.AddWithValue("@publishedAt", module.PublishedAt);
+            command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
+            command.Parameters.AddWithValue("@name", moduleStorage.Name);
+            command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
+            command.Parameters.AddWithValue("@version", moduleStorage.Version);
+            command.Parameters.AddWithValue("@description", moduleStorage.Description);
+            command.Parameters.AddWithValue("@storagePath", moduleStorage.FilePath);
+            command.Parameters.AddWithValue("@publishedAt", moduleStorage.PublishedAt);
             command.Parameters.AddWithValue("@dependencies",
-                    module.Dependencies == null ? "[]" : JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+                    moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
             command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
 
@@ -497,15 +501,15 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            logger.LogInformation("Deleted module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
-                module.Namespace, module.Name, module.Provider, module.Version);
+            RegistryLog.Information(logger, "Deleted module {Namespace}/{Name}/{Provider}/{Version} already exists in PostgreSQL",
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex,
+            RegistryLog.Error(logger, ex,
                 "Error adding deleted module row {Namespace}/{Name}/{Provider}/{Version} to database",
-                module.Namespace, module.Name, module.Provider, module.Version);
+                moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
     }
@@ -518,7 +522,7 @@ public sealed class PostgreSqlModuleRepository(
                 storage_path = @newStoragePath,
                 published_at = @newPublishedAt,
                 dependencies = @newDependencies
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND version = @version
@@ -534,7 +538,7 @@ public sealed class PostgreSqlModuleRepository(
             await connection.OpenAsync();
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", existingModule.Namespace);
+            command.Parameters.AddWithValue("moduleNamespace", existingModule.Namespace);
             command.Parameters.AddWithValue("@name", existingModule.Name);
             command.Parameters.AddWithValue("@provider", existingModule.Provider);
             command.Parameters.AddWithValue("@version", existingModule.Version);
@@ -556,22 +560,22 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error replacing exact module row {Namespace}/{Name}/{Provider}/{Version} in database",
+            RegistryLog.Error(logger, ex, "Error replacing exact module row {Namespace}/{Name}/{Provider}/{Version} in database",
                 existingModule.Namespace, existingModule.Name, existingModule.Provider, existingModule.Version);
             return false;
         }
     }
 
-    public async Task<bool> SoftDeleteModuleAsync(string @namespace, string name, string provider, string version)
+    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
         var sql = @"UPDATE modules SET deleted_at = @deletedAt 
-            WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NULL";
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
@@ -581,22 +585,22 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error soft deleting module {Namespace}/{Name}/{Provider}/{Version} from PostgreSQL",
-                @namespace, name, provider, version);
+            RegistryLog.Error(logger, ex, "Error soft deleting module {Namespace}/{Name}/{Provider}/{Version} from PostgreSQL",
+                moduleNamespace, name, provider, version);
             return false;
         }
     }
 
-    public async Task<bool> RestoreModuleAsync(string @namespace, string name, string provider, string version)
+    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version)
     {
         var sql = @"UPDATE modules SET deleted_at = NULL 
-            WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NOT NULL";
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NOT NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
@@ -605,8 +609,8 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error restoring module {Namespace}/{Name}/{Provider}/{Version} in PostgreSQL",
-                @namespace, name, provider, version);
+            RegistryLog.Error(logger, ex, "Error restoring module {Namespace}/{Name}/{Provider}/{Version} in PostgreSQL",
+                moduleNamespace, name, provider, version);
             return false;
         }
     }
@@ -669,7 +673,7 @@ public sealed class PostgreSqlModuleRepository(
                 Version = v,
                 Provider = p,
                 Description = reader.GetString(4),
-                PublishedAt = reader.GetDateTime(6).ToString("o"),
+                PublishedAt = reader.GetDateTime(6).ToString("o", CultureInfo.InvariantCulture),
                 Versions = new List<string> { v },
                 DownloadUrl = $"{baseUrl}/v1/modules/{ns}/{n}/{p}/{v}/download"
             });
@@ -679,24 +683,25 @@ public sealed class PostgreSqlModuleRepository(
         {
             Modules = modules,
             Meta = new Dictionary<string, string>
+(StringComparer.Ordinal)
             {
-                { "limit", request.Limit.ToString() },
-                { "current_offset", request.Offset.ToString() }
+                { "limit", request.Limit.ToString(CultureInfo.InvariantCulture) },
+                { "current_offset", request.Offset.ToString(CultureInfo.InvariantCulture) }
             }
         };
     }
 
-    public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string @namespace, string name,
+    public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string moduleNamespace, string name,
         string provider, string version)
     {
         var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies::text, metadata::text
-            FROM modules WHERE namespace = @namespace AND name = @name AND provider = @provider AND version = @version";
+            FROM modules WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
@@ -721,17 +726,17 @@ public sealed class PostgreSqlModuleRepository(
         };
     }
 
-    public async Task<bool> UpdateModuleDescriptionAsync(string @namespace, string name, string provider,
+    public async Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
         string description)
     {
         var sql = @"UPDATE modules SET description = @description
-            WHERE namespace = @namespace AND name = @name AND provider = @provider AND deleted_at IS NULL";
+            WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND deleted_at IS NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@namespace", @namespace);
+            command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@description", description);
@@ -740,24 +745,24 @@ public sealed class PostgreSqlModuleRepository(
         }
         catch (NpgsqlException ex)
         {
-            logger.LogError(ex, "Error updating description for module {Namespace}/{Name}/{Provider} in PostgreSQL",
-                @namespace, name, provider);
+            RegistryLog.Error(logger, ex, "Error updating description for module {Namespace}/{Name}/{Provider} in PostgreSQL",
+                moduleNamespace, name, provider);
             return false;
         }
     }
-    private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string @namespace,
+    private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string moduleNamespace,
         string name, string provider)
     {
         const string sql = @"
             SELECT version
             FROM modules
-            WHERE namespace = @namespace
+            WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
               AND deleted_at IS NULL";
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@namespace", @namespace);
+        command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
 

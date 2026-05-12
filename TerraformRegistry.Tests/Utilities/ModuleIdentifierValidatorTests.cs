@@ -9,7 +9,7 @@ public class ModuleIdentifierValidatorTests
     [InlineData("terraform-aws-vpc")]
     [InlineData("azure_rm")]
     [InlineData("a1-b2_c3")]
-    public void IsValidSegment_AcceptsSafeSegments(string value)
+    public void IsValidSegmentAcceptsSafeSegments(string value)
     {
         Assert.True(ModuleIdentifierValidator.IsValidSegment(value));
     }
@@ -25,13 +25,13 @@ public class ModuleIdentifierValidatorTests
     [InlineData("bad.name")]
     [InlineData("-starts-with-dash")]
     [InlineData("_starts_with_underscore")]
-    public void IsValidSegment_RejectsUnsafeSegments(string value)
+    public void IsValidSegmentRejectsUnsafeSegments(string value)
     {
         Assert.False(ModuleIdentifierValidator.IsValidSegment(value));
     }
 
     [Fact]
-    public void GetModuleCoordinateError_ReturnsNullForValidCoordinates()
+    public void GetModuleCoordinateErrorReturnsNullForValidCoordinates()
     {
         var error = ModuleIdentifierValidator.GetModuleCoordinateError("team", "terraform-aws-vpc", "aws");
 
@@ -39,7 +39,7 @@ public class ModuleIdentifierValidatorTests
     }
 
     [Fact]
-    public void GetModuleCoordinateError_IdentifiesInvalidNamespace()
+    public void GetModuleCoordinateErrorIdentifiesInvalidNamespace()
     {
         var error = ModuleIdentifierValidator.GetModuleCoordinateError("../team", "vpc", "aws");
 

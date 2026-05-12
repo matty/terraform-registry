@@ -9,9 +9,9 @@ public class ListModulesUnauthorizedTests(ITestOutputHelper output) : Integratio
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task ListModules_InvalidAuthorization_ReturnsUnauthorized()
+    public async Task ListModulesInvalidAuthorizationReturnsUnauthorized()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invalid-token");
 
         var response = await client.GetAsync("/v1/modules");

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using DbUp;
 using DbUp.Engine;
@@ -36,21 +37,22 @@ public class DbUpMigrator
 
         if (!result.Successful)
         {
-            _logger.LogError(result.Error, "Database migration failed at script: {Script}", result.ErrorScript?.Name);
+            MigrationLog.DatabaseMigrationFailed(_logger, result.Error, result.ErrorScript?.Name);
             throw new InvalidOperationException($"Database migration failed: {result.Error.Message}", result.Error);
         }
 
-        if (result.Scripts.Any())
+        var migratedScripts = result.Scripts.ToList();
+        if (migratedScripts.Count > 0)
         {
-            _logger.LogInformation("Database migration completed. Executed {Count} script(s)", result.Scripts.Count());
-            foreach (var script in result.Scripts)
+            MigrationLog.DatabaseMigrationCompleted(_logger, migratedScripts.Count);
+            foreach (var script in migratedScripts)
             {
-                _logger.LogInformation("  Executed: {Script}", script.Name);
+                MigrationLog.ExecutedScript(_logger, script.Name);
             }
         }
         else
         {
-            _logger.LogInformation("Database is already up to date");
+            MigrationLog.DatabaseAlreadyUpToDate(_logger);
         }
     }
 
@@ -96,7 +98,7 @@ public class DbUpMigrator
     ///     pre-populates the DbUp journal with only the scripts that correspond to
     ///     already-applied migrations. New scripts will then run normally.
     /// </summary>
-    private void BootstrapExistingDatabase(string provider, string connectionString, UpgradeEngine upgrader, IReadOnlyList<string> executedScripts)
+    private void BootstrapExistingDatabase(string provider, string connectionString, UpgradeEngine upgrader, List<string> executedScripts)
     {
         if (executedScripts.Count > 0)
             return;
@@ -111,14 +113,12 @@ public class DbUpMigrator
         if (legacyMigrationCount == 0)
             return;
 
-        _logger.LogInformation(
-            "Detected existing {Provider} database with {Count} legacy migration(s) — bootstrapping DbUp journal",
-            provider, legacyMigrationCount);
+        MigrationLog.ExistingDatabaseDetected(_logger, provider, legacyMigrationCount);
 
         // Get the pending scripts sorted by name, then mark only those that
         // correspond to already-applied legacy migrations.
         var scriptsToMark = upgrader.GetScriptsToExecute()
-            .OrderBy(s => s.Name)
+            .OrderBy(s => s.Name, StringComparer.Ordinal)
             .Take(legacyMigrationCount)
             .ToList();
 
@@ -145,10 +145,10 @@ public class DbUpMigrator
             _ => 0
         };
 
-        _logger.LogInformation("Bootstrapped {Count} script(s) in DbUp journal", scriptsToMark.Count);
+        MigrationLog.BootstrappedScripts(_logger, scriptsToMark.Count);
         foreach (var script in scriptsToMark)
         {
-            _logger.LogInformation("  Marked as executed: {Script}", script.Name);
+            MigrationLog.MarkedAsExecuted(_logger, script.Name);
         }
     }
 
@@ -158,7 +158,7 @@ public class DbUpMigrator
     ///     removes journal entries for scripts that weren't actually applied.
     ///     No-op once the database is healthy (short-circuits on roles table check).
     /// </summary>
-    private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader, IReadOnlyList<string> executedScripts)
+    private void RepairOverBootstrappedJournal(string provider, string connectionString, UpgradeEngine upgrader, List<string> executedScripts)
     {
         if (provider != "postgres")
             return;
@@ -179,7 +179,7 @@ public class DbUpMigrator
         if (rolesExist)
             return;
 
-        _logger.LogWarning("Detected over-bootstrapped DbUp journal — roles table missing despite journal entry. Repairing...");
+        MigrationLog.OverBootstrappedJournal(_logger);
 
         // Scripts that create new tables — check if the table actually exists.
         // Scripts 003 (ALTER ADD COLUMN) and 004 (ALTER FK) are idempotent and
@@ -221,10 +221,10 @@ public class DbUpMigrator
             deleteCmd.CommandText = "DELETE FROM schemaversions WHERE scriptname = @name";
             deleteCmd.Parameters.AddWithValue("name", scriptName);
             deleteCmd.ExecuteNonQuery();
-            _logger.LogInformation("  Removed bogus journal entry: {Script}", scriptName);
+            MigrationLog.RemovedBogusJournalEntry(_logger, scriptName);
         }
 
-        _logger.LogInformation("Repaired journal — removed {Count} over-bootstrapped entries. Scripts will now run.", scriptsToRemove.Count);
+        MigrationLog.RepairedJournal(_logger, scriptsToRemove.Count);
     }
 
     /// <summary>
@@ -244,14 +244,14 @@ public class DbUpMigrator
 
         using var countCmd = conn.CreateCommand();
         countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
-        var count = Convert.ToInt32(countCmd.ExecuteScalar());
+        var count = Convert.ToInt32(countCmd.ExecuteScalar(), CultureInfo.InvariantCulture);
 
         if (dropTable)
         {
             using var dropCmd = conn.CreateCommand();
             dropCmd.CommandText = "DROP TABLE IF EXISTS schema_version";
             dropCmd.ExecuteNonQuery();
-            _logger.LogInformation("Removed legacy schema_version table ({Count} entries)", count);
+            MigrationLog.RemovedLegacySchemaVersion(_logger, count);
         }
 
         return count;
@@ -273,7 +273,7 @@ public class DbUpMigrator
 
         using var countCmd = conn.CreateCommand();
         countCmd.CommandText = "SELECT COUNT(*) FROM schema_version";
-        var count = Convert.ToInt32(countCmd.ExecuteScalar());
+        var count = Convert.ToInt32(countCmd.ExecuteScalar(), CultureInfo.InvariantCulture);
 
         if (dropTable)
         {

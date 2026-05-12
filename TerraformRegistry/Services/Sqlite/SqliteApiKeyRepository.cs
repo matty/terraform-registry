@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -21,11 +22,11 @@ public sealed class SqliteApiKeyRepository(string connectionString) : IApiKeyRep
         cmd.Parameters.AddWithValue("$hash", apiKey.TokenHash);
         cmd.Parameters.AddWithValue("$prefix", apiKey.Prefix);
         cmd.Parameters.AddWithValue("$shared", apiKey.IsShared ? 1 : 0);
-        cmd.Parameters.AddWithValue("$created", apiKey.CreatedAt.ToString("o"));
+        cmd.Parameters.AddWithValue("$created", apiKey.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$expires",
-            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o") : DBNull.Value);
+            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o", CultureInfo.InvariantCulture) : DBNull.Value);
         cmd.Parameters.AddWithValue("$lastUsed",
-            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
+            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o", CultureInfo.InvariantCulture) : DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -114,9 +115,9 @@ public sealed class SqliteApiKeyRepository(string connectionString) : IApiKeyRep
         cmd.Parameters.AddWithValue("$desc", apiKey.Description);
         cmd.Parameters.AddWithValue("$shared", apiKey.IsShared ? 1 : 0);
         cmd.Parameters.AddWithValue("$expiresAt",
-            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o") : DBNull.Value);
+            apiKey.ExpiresAt.HasValue ? apiKey.ExpiresAt.Value.ToString("o", CultureInfo.InvariantCulture) : DBNull.Value);
         cmd.Parameters.AddWithValue("$lastUsed",
-            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o") : DBNull.Value);
+            apiKey.LastUsedAt.HasValue ? apiKey.LastUsedAt.Value.ToString("o", CultureInfo.InvariantCulture) : DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -141,9 +142,9 @@ public sealed class SqliteApiKeyRepository(string connectionString) : IApiKeyRep
             TokenHash = reader.GetString(3),
             Prefix = reader.GetString(4),
             IsShared = reader.GetInt32(5) == 1,
-            CreatedAt = DateTime.Parse(reader.GetString(6)),
-            ExpiresAt = reader.IsDBNull(7) ? null : DateTime.Parse(reader.GetString(7)),
-            LastUsedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8))
+            CreatedAt = DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture),
+            ExpiresAt = reader.IsDBNull(7) ? null : DateTime.Parse(reader.GetString(7), CultureInfo.InvariantCulture),
+            LastUsedAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8), CultureInfo.InvariantCulture)
         };
     }
 }

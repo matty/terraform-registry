@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using DbUp;
 using Microsoft.Data.Sqlite;
@@ -23,10 +24,11 @@ public class DbUpIncrementalMigrationTests : IDisposable
     public void Dispose()
     {
         _connection.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Fact]
-    public void Migration001_CreatesModulesTableWithIndexes()
+    public void Migration001CreatesModulesTableWithIndexes()
     {
         MigrateUpTo(1, _connectionString);
 
@@ -46,7 +48,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration002_CreatesUsersAndApiKeysTables()
+    public void Migration002CreatesUsersAndApiKeysTables()
     {
         MigrateUpTo(2, _connectionString);
 
@@ -72,7 +74,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration003_SoftDeleteNoOp_PreviousTablesIntact()
+    public void Migration003SoftDeleteNoOpPreviousTablesIntact()
     {
         MigrateUpTo(3, _connectionString);
 
@@ -87,7 +89,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration004_CreatesModuleDownloadsTable()
+    public void Migration004CreatesModuleDownloadsTable()
     {
         MigrateUpTo(4, _connectionString);
 
@@ -105,7 +107,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration005_CreatesWebhooksTable()
+    public void Migration005CreatesWebhooksTable()
     {
         MigrateUpTo(5, _connectionString);
 
@@ -120,7 +122,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration006_CreatesVcsConnectionsTable()
+    public void Migration006CreatesVcsConnectionsTable()
     {
         MigrateUpTo(6, _connectionString);
 
@@ -135,7 +137,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration007_CreatesVcsSourcesTable()
+    public void Migration007CreatesVcsSourcesTable()
     {
         MigrateUpTo(7, _connectionString);
 
@@ -154,7 +156,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration008_CreatesRbacTables()
+    public void Migration008CreatesRbacTables()
     {
         MigrateUpTo(8, _connectionString);
 
@@ -176,7 +178,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration009_CreatesAuditLogsTable()
+    public void Migration009CreatesAuditLogsTable()
     {
         MigrateUpTo(9, _connectionString);
 
@@ -196,7 +198,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration010_FixesConstraintsAndAddsIndexes()
+    public void Migration010FixesConstraintsAndAddsIndexes()
     {
         MigrateUpTo(10, _connectionString);
 
@@ -237,7 +239,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration012_AddsVcsSourceSyncStateColumnsToExistingSources()
+    public void Migration012AddsVcsSourceSyncStateColumnsToExistingSources()
     {
         MigrateUpTo(10, _connectionString);
 
@@ -276,7 +278,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration013_AddsModuleMetadataAndCreatesModuleExtractionsTable()
+    public void Migration013AddsModuleMetadataAndCreatesModuleExtractionsTable()
     {
         MigrateUpTo(13, _connectionString);
 
@@ -297,7 +299,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration014_CreatesRuntimeSettingsTable()
+    public void Migration014CreatesRuntimeSettingsTable()
     {
         MigrateUpTo(14, _connectionString);
 
@@ -312,7 +314,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Migration015_CreatesModuleLlmContextsTable()
+    public void Migration015CreatesModuleLlmContextsTable()
     {
         MigrateUpTo(15, _connectionString);
 
@@ -330,7 +332,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
-    public void FullMigration_DataOperationsSucceed()
+    public void FullMigrationDataOperationsSucceed()
     {
         MigrateUpTo(15, _connectionString);
 
@@ -397,7 +399,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
         cmd.ExecuteNonQuery();
 
         // Verify all inserts by counting rows in each table
-        var tableCounts = new Dictionary<string, long>();
+        var tableCounts = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var table in new[] { "modules", "users", "api_keys", "module_downloads", "webhooks", "vcs_connections", "vcs_sources", "roles", "user_roles", "audit_logs" })
         {
             cmd.CommandText = $"SELECT COUNT(*) FROM {table}";
@@ -422,7 +424,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
 
     private static void MigrateUpTo(int scriptNumber, string connectionString)
     {
-        var maxPrefix = scriptNumber.ToString("D3");
+        var maxPrefix = scriptNumber.ToString("D3", CultureInfo.InvariantCulture);
         var assembly = typeof(DbUpMigrator).Assembly;
 
         var upgrader = DeployChanges.To

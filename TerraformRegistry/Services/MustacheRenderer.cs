@@ -4,7 +4,7 @@ namespace TerraformRegistry.Services;
 
 public static partial class MustacheRenderer
 {
-    [GeneratedRegex(@"\{\{(\w+(?:\.\w+)*)\}\}")]
+    [GeneratedRegex(@"\{\{(\w+(?:\.\w+)*)\}\}", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex VariablePattern();
 
     public static string Render(string template, Dictionary<string, string> variables)
@@ -19,6 +19,7 @@ public static partial class MustacheRenderer
     public static Dictionary<string, string> Flatten(WebhookEventData data)
     {
         return new Dictionary<string, string>
+(StringComparer.Ordinal)
         {
             ["id"] = data.Id,
             ["event"] = data.Event,

@@ -14,12 +14,12 @@ public class ProviderReleaseFixtureTests(ITestOutputHelper output) : Integration
     private const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task SignedFixtureProviderRelease_CanBePublishedAndServedByProtocolEndpoints()
+    public async Task SignedFixtureProviderReleaseCanBePublishedAndServedByProtocolEndpoints()
     {
         var hasZipTool = await CommandExistsAsync("zip") || await CommandExistsAsync("python3");
         if (!await CommandExistsAsync("gpg") || !hasZipTool)
         {
-            _output.WriteLine("Skipping signed provider fixture test because gpg and a zip tool are unavailable.");
+            Output.WriteLine("Skipping signed provider fixture test because gpg and a zip tool are unavailable.");
             return;
         }
 

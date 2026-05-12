@@ -8,7 +8,7 @@ public class ProviderIdentifierValidatorTests
     [InlineData("acme")]
     [InlineData("acme-cloud")]
     [InlineData("a1")]
-    public void IsValidProviderSegment_AcceptsTerraformProviderSegments(string value)
+    public void IsValidProviderSegmentAcceptsTerraformProviderSegments(string value)
     {
         Assert.True(ProviderIdentifierValidator.IsValidProviderSegment(value));
     }
@@ -20,19 +20,19 @@ public class ProviderIdentifierValidatorTests
     [InlineData("Acme")]
     [InlineData("acme_cloud")]
     [InlineData("acme.cloud")]
-    public void IsValidProviderSegment_RejectsInvalidProviderSegments(string value)
+    public void IsValidProviderSegmentRejectsInvalidProviderSegments(string value)
     {
         Assert.False(ProviderIdentifierValidator.IsValidProviderSegment(value));
     }
 
     [Fact]
-    public void GetProviderCoordinateError_ReturnsNullForValidCoordinate()
+    public void GetProviderCoordinateErrorReturnsNullForValidCoordinate()
     {
         Assert.Null(ProviderIdentifierValidator.GetProviderCoordinateError("acme", "example"));
     }
 
     [Fact]
-    public void GetProviderCoordinateError_ReturnsMessageForInvalidType()
+    public void GetProviderCoordinateErrorReturnsMessageForInvalidType()
     {
         var error = ProviderIdentifierValidator.GetProviderCoordinateError("acme", "Example");
 

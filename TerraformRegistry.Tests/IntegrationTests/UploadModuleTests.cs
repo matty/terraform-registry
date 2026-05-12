@@ -12,9 +12,9 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     protected const string AuthToken = "default-auth-token";
 
     [Fact]
-    public async Task Invalid_Authorization_ReturnsUnauthorized()
+    public async Task InvalidAuthorizationReturnsUnauthorized()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invalid-token");
 
         var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.1.0", null);
@@ -23,9 +23,9 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task Upload_ValidModule_ReturnsOk()
+    public async Task UploadValidModuleReturnsOk()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         using var content = CreateModuleUploadContent();
@@ -33,15 +33,15 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         var response = await client.PostAsync("/v1/modules/test-ns/test-name/test-provider/0.1.0", content);
 
         var responseContent = await response.Content.ReadAsStringAsync();
-        _output.WriteLine($"Response content: {responseContent}");
+        Output.WriteLine($"Response content: {responseContent}");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]
-    public async Task Upload_DuplicateModuleWithoutReplace_ReturnsConflict()
+    public async Task UploadDuplicateModuleWithoutReplaceReturnsConflict()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         using var firstContent = CreateModuleUploadContent();
@@ -55,9 +55,9 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
-    public async Task Upload_InvalidModuleCoordinate_ReturnsBadRequest()
+    public async Task UploadInvalidModuleCoordinateReturnsBadRequest()
     {
-        var client = _factory.CreateClient();
+        var client = Factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         using var content = new MultipartFormDataContent();
@@ -71,12 +71,13 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     /// <summary>
     ///     Gets the test project directory path
     /// </summary>
-    private string GetProjectDirectory()
+    private static string GetProjectDirectory()
     {
         // Find the project directory by starting from the current assembly location and going up
         // until we find the directory containing the test project file
         var assembly = Assembly.GetExecutingAssembly();
-        var assemblyDirectory = Path.GetDirectoryName(assembly.Location);
+        var assemblyDirectory = Path.GetDirectoryName(assembly.Location)
+            ?? throw new DirectoryNotFoundException("Could not locate the test assembly directory.");
 
         // Navigate to the project directory (going up from bin/Debug/net9.0)
         var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName;
@@ -93,11 +94,11 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
         var moduleFilePath = Path.Combine(projectDir, TestDataDirectory, TestModuleName);
         var fileName = Path.GetFileName(moduleFilePath);
 
-        _output.WriteLine($"Looking for test module at: {moduleFilePath}");
+        Output.WriteLine($"Looking for test module at: {moduleFilePath}");
 
         if (!File.Exists(moduleFilePath))
         {
-            _output.WriteLine(
+            Output.WriteLine(
                 $"Test module file not found. Ensure '{TestModuleName}' exists in the '{TestDataDirectory}' folder at the root of the test project.");
             throw new FileNotFoundException("Test module file missing.", moduleFilePath);
         }

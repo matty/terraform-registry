@@ -6,7 +6,7 @@ namespace TerraformRegistry.Tests.UnitTests;
 public class ModuleLlmContextGeneratorTests
 {
     [Fact]
-    public void ModuleLlmContextGenerator_BuildsCompactContextFromExtractionDocument()
+    public void ModuleLlmContextGeneratorBuildsCompactContextFromExtractionDocument()
     {
         var extraction = new ModuleExtractionDocument
         {
@@ -20,7 +20,7 @@ public class ModuleLlmContextGeneratorTests
             ProviderRequirements = [new ModuleProviderRequirement { Name = "aws", Namespace = "hashicorp", VersionConstraint = "~> 5.0" }]
         };
 
-        var module = new Module
+        var module = new TerraformModule
         {
             Id = "hashicorp/vpc/aws/8.0.0",
             Owner = "hashicorp",
@@ -32,7 +32,7 @@ public class ModuleLlmContextGeneratorTests
             Versions = ["8.0.0"],
             Root = "/",
             Submodules = [],
-            Providers = new Dictionary<string, string>(),
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal),
             Description = "Creates AWS VPC networking primitives."
         };
 
@@ -48,10 +48,10 @@ public class ModuleLlmContextGeneratorTests
     }
 
     [Fact]
-    public void ModuleLlmContextGenerator_UsesConfiguredBaseUrlForGeneratedNavigationLinks()
+    public void ModuleLlmContextGeneratorUsesConfiguredBaseUrlForGeneratedNavigationLinks()
     {
         var extraction = new ModuleExtractionDocument();
-        var module = new Module
+        var module = new TerraformModule
         {
             Id = "acme/network/aws/1.0.0",
             Owner = "acme",
@@ -63,7 +63,7 @@ public class ModuleLlmContextGeneratorTests
             Versions = ["1.0.0"],
             Root = "/",
             Submodules = [],
-            Providers = new Dictionary<string, string>(),
+            Providers = new Dictionary<string, string>(StringComparer.Ordinal),
             Description = "Network module"
         };
 
