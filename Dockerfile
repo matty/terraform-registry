@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS terraform-config-inspect
+FROM golang:1.26-alpine AS terraform-config-inspect
 ARG TERRAFORM_CONFIG_INSPECT_VERSION=latest
 RUN GOBIN=/out go install github.com/hashicorp/terraform-config-inspect@${TERRAFORM_CONFIG_INSPECT_VERSION}
 
