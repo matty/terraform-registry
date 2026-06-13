@@ -15,6 +15,7 @@ const isLoadingMore = ref(false);
 const error = ref("");
 const searchQuery = ref("");
 const currentOffset = ref(0);
+const canLoadMoreModules = ref(true);
 const limit = 10;
 
 // Modal state
@@ -61,7 +62,8 @@ const fetchDeletedModules = async (offset = 0, append = false) => {
       modules.value = response.modules;
     }
 
-    currentOffset.value = offset + limit;
+    currentOffset.value = modules.value.length;
+    canLoadMoreModules.value = response.modules.length === limit;
   } catch (err: any) {
     error.value = err.message || "Failed to fetch deleted modules";
     console.error("Error fetching deleted modules:", err);
@@ -296,15 +298,19 @@ onMounted(() => {
             class="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-neutral-800"
           >
             <p class="text-sm text-neutral-500">
-              Showing {{ filteredModules.length }} of {{ modules.length }} deleted modules
+              Showing {{ filteredModules.length }} deleted
+              {{ filteredModules.length === 1 ? "module" : "modules" }} loaded
             </p>
             <UButton
+              v-if="canLoadMoreModules"
               @click="loadMoreModules"
               :loading="isLoadingMore"
+              icon="i-lucide-plus"
+              color="primary"
               variant="soft"
               size="sm"
             >
-              Load More
+              Load more deleted modules
             </UButton>
           </div>
         </div>

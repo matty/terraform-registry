@@ -24,6 +24,7 @@ const isLoadingMore = ref(false);
 const error = ref("");
 const searchQuery = ref("");
 const currentOffset = ref(0);
+const canLoadMoreModules = ref(true);
 const limit = 10;
 const publishModalOpen = ref(false);
 
@@ -80,7 +81,8 @@ const fetchModules = async (offset = 0, append = false) => {
       modules.value = response.modules;
     }
 
-    currentOffset.value = offset + limit;
+    currentOffset.value = modules.value.length;
+    canLoadMoreModules.value = response.modules.length === limit;
   } catch (err: any) {
     error.value = err.message || "Failed to fetch modules";
     console.error("Error fetching modules:", err);
@@ -275,15 +277,19 @@ onMounted(async () => {
             class="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-neutral-800"
           >
             <p class="text-sm text-neutral-500">
-              Showing {{ filteredModules.length }} of {{ modules.length }} modules
+              Showing {{ filteredModules.length }} loaded
+              {{ filteredModules.length === 1 ? "module" : "modules" }}
             </p>
             <UButton
+              v-if="canLoadMoreModules"
               @click="loadMoreModules"
               :loading="isLoadingMore"
+              icon="i-lucide-plus"
+              color="primary"
               variant="soft"
               size="sm"
             >
-              Load More
+              Load more modules
             </UButton>
           </div>
         </div>
