@@ -32,6 +32,7 @@ RUN dotnet publish TerraformRegistry.csproj -c Release -o /app/publish /p:UseApp
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 WORKDIR /app
 ENV TF_REG_Sqlite__ConnectionString="Data Source=/data/terraform.db"
+RUN apk upgrade --no-cache
 COPY --from=publish /app/publish .
 COPY --from=terraform-config-inspect /out/terraform-config-inspect /usr/local/bin/terraform-config-inspect
 RUN mkdir -p /app/modules /data && chown app:app /app/modules /data
