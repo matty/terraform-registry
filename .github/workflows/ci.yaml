@@ -7,8 +7,6 @@ on:
       - develop
       - "release/**"
       - "hotfix/**"
-    tags:
-      - "v*.*.*"
   pull_request:
     branches:
       - main
@@ -157,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       attestations: write
-      contents: read
+      contents: write
       id-token: write
       packages: write
       security-events: write
@@ -171,29 +169,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v4.5.0
-        with:
-          versionSpec: "6.x"
-
-      - name: Determine version
-        id: set-version
-        uses: gittools/actions/gitversion/execute@v4.5.0
-        with:
-          configFilePath: GitVersion.yml
-
       - name: Resolve version
         id: resolved-version
         run: |
-          VERSION="${{ inputs.version }}"
-          if [ -z "$VERSION" ]; then
-            VERSION="${{ steps.set-version.outputs.semVer }}"
-          fi
+          VERSION="$(.github/scripts/resolve-version.sh "${{ inputs.version }}")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -259,3 +238,9 @@ jobs:
           cache-to: type=gha,mode=max
           sbom: true
           provenance: mode=max
+
+      - name: Create CalVer tag for main release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git tag "v${{ steps.resolved-version.outputs.version }}"
+          git push origin "v${{ steps.resolved-version.outputs.version }}"

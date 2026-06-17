@@ -88,6 +88,18 @@ Visit `http://localhost:5131` to access the web interface!
 
 _Endpoints requiring authentication are marked accordingly._
 
+## Release Versioning
+
+Future releases use CalVer in `YYYY.M.PATCH` format, for example `2026.6.0`.
+
+Docker image publishing resolves versions in this order:
+
+- `workflow_dispatch` version override
+- `main` branch push, using the next monthly CalVer patch from existing tags, such as `2026.6.1`, `2026.6.2`, then `2026.6.3`
+- Other branch builds, using the UTC build date plus the GitHub run number, such as `2026.6.123`
+
+Successful `main` branch releases create and push the matching `vYYYY.M.PATCH` tag so the next `main` release increments from the latest tag for that year and month. Tag pushes do not trigger a separate CI release.
+
 ## Configuration
 
 ### Environment Variables
