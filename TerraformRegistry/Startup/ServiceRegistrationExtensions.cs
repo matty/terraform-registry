@@ -47,6 +47,15 @@ internal static class ServiceRegistrationExtensions
 
         services.AddHostedService<DatabaseInitializerHostedService>();
         services.AddHttpClient();
+        services.AddHttpClient("TerraformRegistryMirrorDiscovery", client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("terraform-registry-mirror");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false
+            });
         services.AddHttpClient("TerraformRegistryMirror", client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(120);
@@ -345,6 +354,7 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<IMirrorLeaseService, MirrorLeaseService>();
         services.AddSingleton<MirrorPackageUrlSigner>();
         services.AddSingleton<IProviderMirrorService, ProviderMirrorService>();
+        services.AddSingleton<IModuleMirrorService, ModuleMirrorService>();
         services.AddSingleton<IProviderMirrorRepository>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();

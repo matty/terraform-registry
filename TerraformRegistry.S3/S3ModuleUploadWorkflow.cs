@@ -64,7 +64,8 @@ internal sealed class S3ModuleUploadWorkflow(
             Description = description,
             FilePath = objectKey,
             PublishedAt = DateTime.UtcNow,
-            Dependencies = []
+            Dependencies = [],
+            Metadata = metadata ?? new ModuleArtifactMetadata()
         };
 
         var tempKey = S3ModuleObjectKeys.CreateTemporaryObjectKey(objectKey);

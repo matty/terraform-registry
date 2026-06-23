@@ -181,6 +181,47 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
+    public async Task UploadModuleAsyncPreservesModuleMetadataOnCreate()
+    {
+        ModuleStorage? addedModule = null;
+        var metadata = new ModuleArtifactMetadata
+        {
+            Source = new ModuleSourceInfo
+            {
+                Kind = "mirror",
+                Origin = "registry.example.com"
+            }
+        };
+
+        _mockS3Client
+            .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
+            .ReturnsAsync(new PutObjectResponse());
+
+        _mockS3Client
+            .Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default))
+            .ReturnsAsync(new CopyObjectResponse());
+
+        _mockDatabaseService
+            .Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()))
+            .Callback<ModuleStorage>(module => addedModule = module)
+            .ReturnsAsync(true);
+
+        _mockS3Client
+            .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
+            .ReturnsAsync(new DeleteObjectResponse());
+
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "aws", "1.0.0", stream, "desc", metadata: metadata);
+
+        Assert.True(result);
+        Assert.NotNull(addedModule);
+        Assert.Equal("mirror", addedModule!.Metadata.Source?.Kind);
+        Assert.Equal("registry.example.com", addedModule.Metadata.Source?.Origin);
+    }
+
+    [Fact]
     public async Task UploadModuleAsyncDeletesUniqueFinalObjectWhenCreateDbAddFails()
     {
         PutObjectRequest? putRequest = null;

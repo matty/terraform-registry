@@ -30,24 +30,25 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        HttpContext context) =>
-                    ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService, context))
+                        IModuleMirrorService moduleMirrorService, HttpContext context) =>
+                    ModuleHandlers.GetModule(@namespace, name, provider, version, moduleService, moduleMirrorService, context))
             .WithTags("Modules")
             .WithDescription("Gets a specific module")
             .Produces<TerraformModule>()
             .ProducesProblem(404);
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/versions",
-                (string @namespace, string name, string provider, IModuleService moduleService, HttpContext context) =>
-                    ModuleHandlers.GetModuleVersions(@namespace, name, provider, moduleService, context))
+                (string @namespace, string name, string provider, IModuleService moduleService,
+                        IModuleMirrorService moduleMirrorService, HttpContext context) =>
+                    ModuleHandlers.GetModuleVersions(@namespace, name, provider, moduleService, moduleMirrorService, context))
             .WithTags("Modules")
             .WithDescription("Gets all versions of a specific module")
             .Produces<ModuleVersions>();
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        IDatabaseService dbService, HttpContext context) =>
-                    ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, dbService,
+                        IModuleMirrorService moduleMirrorService, IDatabaseService dbService, HttpContext context) =>
+                    ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, moduleMirrorService, dbService,
                         context))
             .WithTags("Modules")
             .WithDescription("Downloads a specific module version")
@@ -56,8 +57,8 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
                 (string @namespace, string name, string provider, IModuleService moduleService,
-                        IDatabaseService dbService, HttpContext context) =>
-                    ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, dbService, context))
+                        IModuleMirrorService moduleMirrorService, IDatabaseService dbService, HttpContext context) =>
+                    ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, moduleMirrorService, dbService, context))
             .WithTags("Modules")
             .WithDescription("Downloads the latest version of a module for a provider")
             .Produces(302)

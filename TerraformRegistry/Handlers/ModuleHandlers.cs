@@ -85,6 +85,7 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
+        IModuleMirrorService moduleMirrorService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
@@ -95,7 +96,14 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Getting module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
-        var module = await moduleService.GetModuleAsync(@namespace, name, provider, version);
+        var localModule = await moduleService.GetModuleAsync(@namespace, name, provider, version);
+        var module = await moduleMirrorService.GetModuleAsync(
+            @namespace,
+            name,
+            provider,
+            version,
+            localModule,
+            context.RequestAborted);
         if (module == null) return ErrorResponseExtensions.NotFound("Module not found");
 
         return Ok(module);
@@ -109,6 +117,7 @@ public static class ModuleHandlers
         string name,
         string provider,
         IModuleService moduleService,
+        IModuleMirrorService moduleMirrorService,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
@@ -119,7 +128,13 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Getting versions for module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
-        var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var versions = await moduleMirrorService.GetModuleVersionsAsync(
+            @namespace,
+            name,
+            provider,
+            localVersions,
+            context.RequestAborted);
         if (versions == null || versions.Modules == null || versions.Modules.Count == 0 ||
             versions.Modules.FirstOrDefault()?.Versions == null || versions.Modules.FirstOrDefault()!.Versions.Count == 0)
         {
@@ -138,6 +153,7 @@ public static class ModuleHandlers
         string provider,
         string version,
         IModuleService moduleService,
+        IModuleMirrorService moduleMirrorService,
         IDatabaseService dbService,
         HttpContext context)
     {
@@ -149,7 +165,14 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
-        var downloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
+        var localDownloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
+        var downloadPath = await moduleMirrorService.GetModuleDownloadPathAsync(
+            @namespace,
+            name,
+            provider,
+            version,
+            localDownloadPath,
+            context.RequestAborted);
         if (downloadPath == null) return ErrorResponseExtensions.NotFound("Module not found");
 
         context.Response.Headers["X-Terraform-Get"] = downloadPath;
@@ -193,6 +216,7 @@ public static class ModuleHandlers
         string name,
         string provider,
         IModuleService moduleService,
+        IModuleMirrorService moduleMirrorService,
         IDatabaseService dbService,
         HttpContext context)
     {
@@ -205,13 +229,19 @@ public static class ModuleHandlers
             @namespace, name, provider);
 
         // Get all versions and pick the latest using SemVer sort
-        var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var versions = await moduleMirrorService.GetModuleVersionsAsync(
+            @namespace,
+            name,
+            provider,
+            localVersions,
+            context.RequestAborted);
         var latestVersions = versions?.Modules?.FirstOrDefault()?.Versions;
         var latest = latestVersions?.OrderByDescending(v => v.Version, Comparer<string>.Create((a, b) =>
             SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault()?.Version;
         if (string.IsNullOrEmpty(latest)) return ErrorResponseExtensions.NotFound("Module not found");
 
-        return await DownloadModule(@namespace, name, provider, latest, moduleService, dbService, context);
+        return await DownloadModule(@namespace, name, provider, latest, moduleService, moduleMirrorService, dbService, context);
     }
 
     /// <summary>
