@@ -20,12 +20,14 @@ public interface IMirrorLeaseRepository
         CancellationToken cancellationToken = default);
 
     Task<bool> HeartbeatAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         TimeSpan ttl,
         CancellationToken cancellationToken = default);
 
     Task<bool> ReleaseAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         CancellationToken cancellationToken = default);

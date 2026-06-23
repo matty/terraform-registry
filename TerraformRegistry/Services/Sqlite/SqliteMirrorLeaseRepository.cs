@@ -39,6 +39,7 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
             VALUES (
                 $id, $leaseKey, $operationType, $ownerInstanceId, $expiresAt, $heartbeatAt, $createdAt, $updatedAt)
             ON CONFLICT(lease_key) DO UPDATE SET
+                id = excluded.id,
                 operation_type = excluded.operation_type,
                 owner_instance_id = excluded.owner_instance_id,
                 expires_at = excluded.expires_at,
@@ -78,13 +79,13 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
             VALUES (
                 $id, $leaseKey, $operationType, $ownerInstanceId, $expiresAt, $heartbeatAt, $createdAt, $updatedAt)
             ON CONFLICT(lease_key) DO UPDATE SET
+                id = excluded.id,
                 operation_type = excluded.operation_type,
                 owner_instance_id = excluded.owner_instance_id,
                 expires_at = excluded.expires_at,
                 heartbeat_at = excluded.heartbeat_at,
                 updated_at = excluded.updated_at
-            WHERE mirror_cache_leases.expires_at <= $now
-               OR mirror_cache_leases.owner_instance_id = $ownerInstanceId
+            WHERE mirror_cache_leases.expires_at < $now
             RETURNING id, lease_key, operation_type, owner_instance_id, expires_at, heartbeat_at, created_at, updated_at";
         AddLeaseParameters(command, acquired);
         command.Parameters.AddWithValue("$now", ToSqliteTimestamp(now));
@@ -94,6 +95,7 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
     }
 
     public async Task<bool> HeartbeatAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         TimeSpan ttl,
@@ -111,8 +113,10 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
                 heartbeat_at = $heartbeatAt,
                 updated_at = $updatedAt
             WHERE lease_key = $leaseKey
+              AND id = $id
               AND owner_instance_id = $ownerInstanceId
               AND expires_at > $now";
+        command.Parameters.AddWithValue("$id", leaseId.ToString());
         command.Parameters.AddWithValue("$leaseKey", leaseKey);
         command.Parameters.AddWithValue("$ownerInstanceId", ownerInstanceId);
         command.Parameters.AddWithValue("$now", ToSqliteTimestamp(now));
@@ -124,6 +128,7 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
     }
 
     public async Task<bool> ReleaseAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         CancellationToken cancellationToken = default)
@@ -134,7 +139,8 @@ public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirr
         await using var command = connection.CreateCommand();
         command.CommandText = @"
             DELETE FROM mirror_cache_leases
-            WHERE lease_key = $leaseKey AND owner_instance_id = $ownerInstanceId";
+            WHERE id = $id AND lease_key = $leaseKey AND owner_instance_id = $ownerInstanceId";
+        command.Parameters.AddWithValue("$id", leaseId.ToString());
         command.Parameters.AddWithValue("$leaseKey", leaseKey);
         command.Parameters.AddWithValue("$ownerInstanceId", ownerInstanceId);
 

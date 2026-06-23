@@ -97,3 +97,14 @@ public sealed record MirrorLeaseHandle
     public required string OwnerInstanceId { get; init; }
     public required DateTime ExpiresAt { get; init; }
 }
+
+public sealed record MirrorFetchResult
+{
+    public required Stream Content { get; init; }
+    public required string? ContentType { get; init; }
+    public required long? ContentLength { get; init; }
+    public required System.Net.HttpStatusCode StatusCode { get; init; }
+    public required Uri FinalUri { get; init; }
+}
+
+public sealed record ValidatedMirrorEndpoint(Uri Uri, IReadOnlyList<System.Net.IPAddress> Addresses);

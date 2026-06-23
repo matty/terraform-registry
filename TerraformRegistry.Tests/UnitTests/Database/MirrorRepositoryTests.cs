@@ -321,7 +321,17 @@ internal static class MirrorLeaseRepositoryContract
 
         Assert.Null(blocked);
 
+        var sameOwnerBlocked = await repository.TryAcquireAsync(
+            acquired.LeaseKey,
+            acquired.OperationType,
+            "worker-a",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+
+        Assert.Null(sameOwnerBlocked);
+
         var heartbeatSucceeded = await repository.HeartbeatAsync(
+            acquired.Id,
             acquired.LeaseKey,
             "worker-a",
             TimeSpan.FromMinutes(10),
@@ -335,8 +345,8 @@ internal static class MirrorLeaseRepositoryContract
         Assert.NotNull(heartbeated.HeartbeatAt);
         Assert.True(heartbeated.ExpiresAt > acquired.ExpiresAt);
 
-        Assert.False(await repository.ReleaseAsync(acquired.LeaseKey, "worker-b", cancellationToken));
-        Assert.True(await repository.ReleaseAsync(acquired.LeaseKey, "worker-a", cancellationToken));
+        Assert.False(await repository.ReleaseAsync(acquired.Id, acquired.LeaseKey, "worker-b", cancellationToken));
+        Assert.True(await repository.ReleaseAsync(acquired.Id, acquired.LeaseKey, "worker-a", cancellationToken));
         Assert.Null(await repository.GetLeaseAsync(acquired.LeaseKey, cancellationToken));
 
         await repository.UpsertLeaseAsync(new MirrorCacheLease
@@ -359,7 +369,49 @@ internal static class MirrorLeaseRepositoryContract
 
         Assert.NotNull(takeover);
         Assert.Equal("worker-c", takeover!.OwnerInstanceId);
-        Assert.False(await repository.HeartbeatAsync(takeover.LeaseKey, "stale-worker", TimeSpan.FromMinutes(5), cancellationToken));
+        Assert.False(await repository.HeartbeatAsync(takeover.Id, takeover.LeaseKey, "stale-worker", TimeSpan.FromMinutes(5), cancellationToken));
+
+        var staleHandleKey = "provider:registry.terraform.io/hashicorp/stale-handle";
+        var staleHandle = await repository.TryAcquireAsync(
+            staleHandleKey,
+            "provider-package-sync",
+            "worker-d",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+        Assert.NotNull(staleHandle);
+
+        await repository.UpsertLeaseAsync(staleHandle! with
+        {
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-5),
+            HeartbeatAt = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-10)
+        }, cancellationToken);
+
+        var reacquired = await repository.TryAcquireAsync(
+            staleHandleKey,
+            "provider-package-sync",
+            "worker-d",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+        Assert.NotNull(reacquired);
+        Assert.NotEqual(staleHandle.Id, reacquired!.Id);
+        Assert.False(await repository.HeartbeatAsync(
+            staleHandle.Id,
+            staleHandle.LeaseKey,
+            staleHandle.OwnerInstanceId,
+            TimeSpan.FromMinutes(5),
+            cancellationToken));
+        Assert.False(await repository.ReleaseAsync(
+            staleHandle.Id,
+            staleHandle.LeaseKey,
+            staleHandle.OwnerInstanceId,
+            cancellationToken));
+        Assert.True(await repository.HeartbeatAsync(
+            reacquired.Id,
+            reacquired.LeaseKey,
+            reacquired.OwnerInstanceId,
+            TimeSpan.FromMinutes(5),
+            cancellationToken));
 
         var expiredHeartbeatKey = "provider:registry.terraform.io/hashicorp/expired-heartbeat";
         var originalExpiry = DateTime.UtcNow.AddMinutes(-1);
@@ -374,7 +426,11 @@ internal static class MirrorLeaseRepositoryContract
             UpdatedAt = DateTime.UtcNow.AddMinutes(-2)
         }, cancellationToken);
 
+        var expiredBeforeHeartbeat = await repository.GetLeaseAsync(expiredHeartbeatKey, cancellationToken);
+        Assert.NotNull(expiredBeforeHeartbeat);
+
         Assert.False(await repository.HeartbeatAsync(
+            expiredBeforeHeartbeat!.Id,
             expiredHeartbeatKey,
             "expired-worker",
             TimeSpan.FromMinutes(5),

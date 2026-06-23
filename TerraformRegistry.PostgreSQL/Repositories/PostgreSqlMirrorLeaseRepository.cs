@@ -34,6 +34,7 @@ public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : I
             VALUES (
                 @id, @leaseKey, @operationType, @ownerInstanceId, @expiresAt, @heartbeatAt, @createdAt, @updatedAt)
             ON CONFLICT(lease_key) DO UPDATE SET
+                id = EXCLUDED.id,
                 operation_type = EXCLUDED.operation_type,
                 owner_instance_id = EXCLUDED.owner_instance_id,
                 expires_at = EXCLUDED.expires_at,
@@ -76,13 +77,13 @@ public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : I
             VALUES (
                 @id, @leaseKey, @operationType, @ownerInstanceId, @expiresAt, @heartbeatAt, @createdAt, @updatedAt)
             ON CONFLICT(lease_key) DO UPDATE SET
+                id = EXCLUDED.id,
                 operation_type = EXCLUDED.operation_type,
                 owner_instance_id = EXCLUDED.owner_instance_id,
                 expires_at = EXCLUDED.expires_at,
                 heartbeat_at = EXCLUDED.heartbeat_at,
                 updated_at = EXCLUDED.updated_at
-            WHERE mirror_cache_leases.expires_at <= @now
-               OR mirror_cache_leases.owner_instance_id = @ownerInstanceId
+            WHERE mirror_cache_leases.expires_at < @now
             RETURNING id, lease_key, operation_type, owner_instance_id, expires_at, heartbeat_at, created_at, updated_at";
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -94,6 +95,7 @@ public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : I
     }
 
     public async Task<bool> HeartbeatAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         TimeSpan ttl,
@@ -106,12 +108,14 @@ public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : I
                 heartbeat_at = @heartbeatAt,
                 updated_at = @updatedAt
             WHERE lease_key = @leaseKey
+              AND id = @id
               AND owner_instance_id = @ownerInstanceId
               AND expires_at > @now";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", leaseId);
         command.Parameters.AddWithValue("@leaseKey", leaseKey);
         command.Parameters.AddWithValue("@ownerInstanceId", ownerInstanceId);
         command.Parameters.AddWithValue("@now", now);
@@ -123,17 +127,19 @@ public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : I
     }
 
     public async Task<bool> ReleaseAsync(
+        Guid leaseId,
         string leaseKey,
         string ownerInstanceId,
         CancellationToken cancellationToken = default)
     {
         const string sql = @"
             DELETE FROM mirror_cache_leases
-            WHERE lease_key = @leaseKey AND owner_instance_id = @ownerInstanceId";
+            WHERE id = @id AND lease_key = @leaseKey AND owner_instance_id = @ownerInstanceId";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", leaseId);
         command.Parameters.AddWithValue("@leaseKey", leaseKey);
         command.Parameters.AddWithValue("@ownerInstanceId", ownerInstanceId);
 

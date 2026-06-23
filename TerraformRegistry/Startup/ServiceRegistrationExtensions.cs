@@ -47,6 +47,17 @@ internal static class ServiceRegistrationExtensions
 
         services.AddHostedService<DatabaseInitializerHostedService>();
         services.AddHttpClient();
+        services.AddHttpClient("TerraformRegistryMirror", client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(120);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("terraform-registry-mirror");
+            })
+            .ConfigurePrimaryHttpMessageHandler(servicesProvider => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                MaxConnectionsPerServer = 8,
+                ConnectCallback = servicesProvider.GetRequiredService<MirrorPinnedConnectionHelper>().ConnectAsync
+            });
         services.AddHttpClient("WebhookDelivery", c => c.Timeout = TimeSpan.FromSeconds(5))
             .ConfigurePrimaryHttpMessageHandler(servicesProvider => new SocketsHttpHandler
             {
@@ -328,6 +339,10 @@ internal static class ServiceRegistrationExtensions
     private static IServiceCollection AddMirrorServices(this IServiceCollection services)
     {
         services.AddSingleton<IMirrorConfigService, MirrorConfigService>();
+        services.AddSingleton<IMirrorPolicyService, MirrorPolicyService>();
+        services.AddSingleton<MirrorPinnedConnectionHelper>();
+        services.AddSingleton<MirrorHttpClient>();
+        services.AddSingleton<IMirrorLeaseService, MirrorLeaseService>();
         services.AddSingleton<IProviderMirrorRepository>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();
