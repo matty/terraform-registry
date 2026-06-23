@@ -22,4 +22,8 @@ public interface IMirrorPolicyService
     Task<ValidatedMirrorEndpoint> ValidateModuleArchiveUrlAsync(
         string archiveUrl,
         CancellationToken cancellationToken = default);
+
+    Task<ValidatedMirrorEndpoint> ValidateProviderArtifactUrlAsync(
+        string artifactUrl,
+        CancellationToken cancellationToken = default);
 }

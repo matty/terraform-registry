@@ -343,6 +343,8 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<MirrorPinnedConnectionHelper>();
         services.AddSingleton<MirrorHttpClient>();
         services.AddSingleton<IMirrorLeaseService, MirrorLeaseService>();
+        services.AddSingleton<MirrorPackageUrlSigner>();
+        services.AddSingleton<IProviderMirrorService, ProviderMirrorService>();
         services.AddSingleton<IProviderMirrorRepository>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();

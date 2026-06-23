@@ -12,7 +12,8 @@ public class AuthenticationMiddleware(
     JwtService jwtService,
     ILogger<AuthenticationMiddleware> logger,
     IHostEnvironment environment,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    IMirrorConfigService mirrorConfigService)
 {
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
@@ -32,13 +33,18 @@ public class AuthenticationMiddleware(
         Permissions.ProvidersDelete,
         Permissions.ProvidersPurge,
         Permissions.ProvidersKeysManage,
-        Permissions.ProvidersDescription
+        Permissions.ProvidersDescription,
+        Permissions.MirrorRead
     ];
 
     public async Task InvokeAsync(HttpContext context)
     {
         var path = context.Request.Path.Value ?? string.Empty;
-        if (ProtectedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        var isMirrorProviderMetadataPath = IsMirrorProviderMetadataPath(path);
+        var requiresAuthentication =
+            ProtectedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) ||
+            await MirrorProviderMetadataRequiresAuthenticationAsync(isMirrorProviderMetadataPath, context.RequestAborted);
+        if (requiresAuthentication)
         {
             // Dev bypass - skip all auth checks in dev mode
             if (environment.IsDevelopment() && IsDevAuthBypassEnabled())
@@ -56,7 +62,8 @@ public class AuthenticationMiddleware(
             // Check 1: Static API token (Legacy/System)
             if (!string.IsNullOrEmpty(header) && header.Equals($"{BearerPrefix}{authToken}", StringComparison.Ordinal))
             {
-                if (!StaticTokenPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                if (!StaticTokenPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) &&
+                    !isMirrorProviderMetadataPath)
                 {
                     RegistryLog.Warning(logger, "Static token rejected for non-module path {Path} from {RemoteIp}", path,
                         context.Connection.RemoteIpAddress);
@@ -214,6 +221,41 @@ public class AuthenticationMiddleware(
         var devBypass = configuration["DevAuthBypass"];
         return !string.IsNullOrEmpty(devBypass) &&
                bool.TryParse(devBypass, out var enabled) && enabled;
+    }
+
+    private async Task<bool> MirrorProviderMetadataRequiresAuthenticationAsync(
+        bool isMirrorProviderMetadataPath,
+        CancellationToken cancellationToken)
+    {
+        if (!isMirrorProviderMetadataPath)
+        {
+            return false;
+        }
+
+        var mirror = await mirrorConfigService.GetConfigAsync(cancellationToken);
+        return mirror.Effective.Enabled &&
+               mirror.Effective.Providers.Enabled &&
+               mirror.Effective.Providers.RequireAuthentication;
+    }
+
+    private static bool IsMirrorProviderMetadataPath(string path)
+    {
+        if (!path.StartsWith("/mirror/providers/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length != 6 ||
+            !string.Equals(segments[0], "mirror", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(segments[1], "providers", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var filename = segments[5];
+        return string.Equals(filename, "index.json", StringComparison.OrdinalIgnoreCase) ||
+               filename.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

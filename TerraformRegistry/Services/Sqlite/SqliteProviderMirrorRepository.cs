@@ -196,22 +196,30 @@ public sealed class SqliteProviderMirrorRepository(string connectionString) : IP
 
         await using var command = connection.CreateCommand();
         command.CommandText = @"
-            UPDATE mirror_provider_packages
-            SET state = 'failed',
-                last_error = $error,
-                http_status_code = $httpStatusCode,
-                updated_at = $updatedAt
-            WHERE hostname = $hostname AND namespace = $namespace AND type = $type
-              AND version = $version AND os = $os AND arch = $arch";
+            INSERT INTO mirror_provider_packages (
+                id, hostname, namespace, type, version, os, arch, download_url, protocols_json, hashes_json,
+                state, last_error, http_status_code, created_at, updated_at)
+            VALUES (
+                $id, $hostname, $namespace, $type, $version, $os, $arch, $downloadUrl, '[]', '[]',
+                'failed', $error, $httpStatusCode, $createdAt, $updatedAt)
+            ON CONFLICT(hostname, namespace, type, version, os, arch) DO UPDATE SET
+                state = 'failed',
+                last_error = excluded.last_error,
+                http_status_code = excluded.http_status_code,
+                updated_at = excluded.updated_at";
+        var now = DateTime.UtcNow;
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
         command.Parameters.AddWithValue("$hostname", hostname);
         command.Parameters.AddWithValue("$namespace", providerNamespace);
         command.Parameters.AddWithValue("$type", type);
         command.Parameters.AddWithValue("$version", version);
         command.Parameters.AddWithValue("$os", os);
         command.Parameters.AddWithValue("$arch", arch);
+        command.Parameters.AddWithValue("$downloadUrl", DefaultProviderDownloadUrl(providerNamespace, type, version, os, arch));
         command.Parameters.AddWithValue("$error", errorMessage);
         command.Parameters.AddWithValue("$httpStatusCode", DbValue(httpStatusCode));
-        command.Parameters.AddWithValue("$updatedAt", ToSqliteTimestamp(DateTime.UtcNow));
+        command.Parameters.AddWithValue("$createdAt", ToSqliteTimestamp(now));
+        command.Parameters.AddWithValue("$updatedAt", ToSqliteTimestamp(now));
 
         await command.ExecuteNonQueryAsync();
     }
@@ -307,4 +315,12 @@ public sealed class SqliteProviderMirrorRepository(string connectionString) : IP
 
     private static string ToSqliteTimestamp(DateTime value) =>
         value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
+
+    private static string DefaultProviderDownloadUrl(
+        string providerNamespace,
+        string type,
+        string version,
+        string os,
+        string arch) =>
+        $"https://registry.terraform.io/v1/providers/{providerNamespace}/{type}/{version}/download/{os}/{arch}";
 }

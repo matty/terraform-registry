@@ -40,7 +40,9 @@ public sealed class MirrorPolicyService(
             return false;
         }
 
-        if (providerOptions.Platforms.Count > 0
+        if (!string.IsNullOrWhiteSpace(os)
+            && !string.IsNullOrWhiteSpace(arch)
+            && providerOptions.Platforms.Count > 0
             && !providerOptions.Platforms.Contains($"{os}_{arch}", StringComparer.OrdinalIgnoreCase))
         {
             return false;
@@ -116,6 +118,50 @@ public sealed class MirrorPolicyService(
             {
                 RegistryLog.Warning(logger, "Blocked mirror archive target {Url} because it resolved to {Address}", archiveUrl, address);
                 throw new InvalidOperationException("Mirror module archive URL resolves to a private or local address and is not allowed.");
+            }
+        }
+
+        return new ValidatedMirrorEndpoint(uri, addresses);
+    }
+
+    public async Task<ValidatedMirrorEndpoint> ValidateProviderArtifactUrlAsync(
+        string artifactUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var providerOptions = (await mirrorConfigService.GetConfigAsync(cancellationToken)).Effective.Providers;
+        if (!Uri.TryCreate(artifactUrl, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException("Mirror provider artifact URL must be an absolute URI.");
+        }
+
+        if (uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException("Mirror provider artifact URL must use HTTPS.");
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            throw new InvalidOperationException("Mirror provider artifact URL must not include userinfo credentials.");
+        }
+
+        if (providerOptions.AllowedArtifactHosts.Count > 0
+            && !providerOptions.AllowedArtifactHosts.Any(host => HostComparer.Equals(host, uri.DnsSafeHost)))
+        {
+            throw new InvalidOperationException("Mirror provider artifact URL host is not allowed.");
+        }
+
+        var addresses = await ResolveAddressesAsync(uri, cancellationToken);
+        if (addresses.Length == 0)
+        {
+            throw new InvalidOperationException("Mirror provider artifact URL host could not be resolved.");
+        }
+
+        foreach (var address in addresses)
+        {
+            if (IsPrivateOrLocal(address))
+            {
+                RegistryLog.Warning(logger, "Blocked provider mirror artifact target {Url} because it resolved to {Address}", artifactUrl, address);
+                throw new InvalidOperationException("Mirror provider artifact URL resolves to a private or local address and is not allowed.");
             }
         }
 

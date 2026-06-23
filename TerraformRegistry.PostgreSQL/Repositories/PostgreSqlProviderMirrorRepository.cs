@@ -182,26 +182,34 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
         int? httpStatusCode = null)
     {
         const string sql = @"
-            UPDATE mirror_provider_packages
-            SET state = 'failed',
-                last_error = @error,
-                http_status_code = @httpStatusCode,
-                updated_at = @updatedAt
-            WHERE hostname = @hostname AND namespace = @namespace AND type = @type
-              AND version = @version AND os = @os AND arch = @arch";
+            INSERT INTO mirror_provider_packages (
+                id, hostname, namespace, type, version, os, arch, download_url, protocols_json, hashes_json,
+                state, last_error, http_status_code, created_at, updated_at)
+            VALUES (
+                @id, @hostname, @namespace, @type, @version, @os, @arch, @downloadUrl, '[]'::jsonb, '[]'::jsonb,
+                'failed', @error, @httpStatusCode, @createdAt, @updatedAt)
+            ON CONFLICT(hostname, namespace, type, version, os, arch) DO UPDATE SET
+                state = 'failed',
+                last_error = EXCLUDED.last_error,
+                http_status_code = EXCLUDED.http_status_code,
+                updated_at = EXCLUDED.updated_at";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
+        var now = DateTime.UtcNow;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid());
         command.Parameters.AddWithValue("@hostname", hostname);
         command.Parameters.AddWithValue("@namespace", providerNamespace);
         command.Parameters.AddWithValue("@type", type);
         command.Parameters.AddWithValue("@version", version);
         command.Parameters.AddWithValue("@os", os);
         command.Parameters.AddWithValue("@arch", arch);
+        command.Parameters.AddWithValue("@downloadUrl", DefaultProviderDownloadUrl(providerNamespace, type, version, os, arch));
         command.Parameters.AddWithValue("@error", errorMessage);
         command.Parameters.AddWithValue("@httpStatusCode", DbValue(httpStatusCode));
-        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+        command.Parameters.AddWithValue("@createdAt", now);
+        command.Parameters.AddWithValue("@updatedAt", now);
 
         await command.ExecuteNonQueryAsync();
     }
@@ -298,4 +306,12 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
 
     private static DateTime? ReadDateTime(NpgsqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal);
+
+    private static string DefaultProviderDownloadUrl(
+        string providerNamespace,
+        string type,
+        string version,
+        string os,
+        string arch) =>
+        $"https://registry.terraform.io/v1/providers/{providerNamespace}/{type}/{version}/download/{os}/{arch}";
 }

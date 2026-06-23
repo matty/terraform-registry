@@ -195,6 +195,30 @@ internal static class ProviderRepositoryContract
         Assert.Equal("failed", failed!.State);
         Assert.Equal("checksum mismatch", failed.LastError);
         Assert.Equal(502, failed.HttpStatusCode);
+
+        await repository.MarkProviderPackageFailedAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "random",
+            "1.2.3",
+            "darwin",
+            "arm64",
+            "first fetch failed",
+            400);
+
+        var coldFailed = await repository.GetProviderPackageAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "random",
+            "1.2.3",
+            "darwin",
+            "arm64");
+
+        Assert.NotNull(coldFailed);
+        Assert.Equal("failed", coldFailed!.State);
+        Assert.Equal("first fetch failed", coldFailed.LastError);
+        Assert.Equal(400, coldFailed.HttpStatusCode);
+        Assert.Equal("https://registry.terraform.io/v1/providers/hashicorp/random/1.2.3/download/darwin/arm64", coldFailed.DownloadUrl);
     }
 }
 

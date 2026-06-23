@@ -122,13 +122,16 @@ app.MapProviderEndpoints();
 app.MapAdminEndpoints();
 app.MapVcsEndpoints();
 app.MapModuleEndpoints();
+app.MapMirrorEndpoints();
 
 app.MapControllers();
 
 app.MapFallback(async context =>
 {
-    // If path starts with /v1/ or /api/, return problem JSON (API routes)
-    if (context.Request.Path.StartsWithSegments("/v1") || context.Request.Path.StartsWithSegments("/api"))
+    // If path starts with /v1/, /api/, or /mirror/, return problem JSON (API routes)
+    if (context.Request.Path.StartsWithSegments("/v1") ||
+        context.Request.Path.StartsWithSegments("/api") ||
+        context.Request.Path.StartsWithSegments("/mirror"))
     {
         context.Response.StatusCode = 404;
         context.Response.ContentType = "application/problem+json";
@@ -139,7 +142,7 @@ app.MapFallback(async context =>
             Status = 404,
             Detail = "The requested resource was not found."
         };
-        await context.Response.WriteAsJsonAsync(problem);
+        await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
         return;
     }
 
