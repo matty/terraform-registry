@@ -28,6 +28,9 @@ public static class Permissions
     public const string ModuleDocsRead = "module_docs.read";
     public const string ModuleDocsManage = "module_docs.manage";
     public const string ModuleDocsConfigure = "module_docs.configure";
+    public const string MirrorRead = "mirror.read";
+    public const string MirrorManage = "mirror.manage";
+    public const string MirrorConfigure = "mirror.configure";
     public const string AdminRoles = "admin.roles";
     public const string AdminUsers = "admin.users";
     public const string AdminAudit = "admin.audit";
@@ -41,6 +44,7 @@ public static class Permissions
         WebhooksManage, VcsManage,
         ApiKeysManage, ApiKeysShared, AnalyticsView,
         ModuleDocsRead, ModuleDocsManage, ModuleDocsConfigure,
+        MirrorRead, MirrorManage, MirrorConfigure,
         AdminRoles, AdminUsers, AdminAudit
     ];
 

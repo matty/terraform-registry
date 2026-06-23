@@ -10,6 +10,7 @@ using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
 using TerraformRegistry.S3;
 using TerraformRegistry.Services;
+using TerraformRegistry.Services.Mirror;
 using TerraformRegistry.Services.ModuleExtraction;
 using TerraformRegistry.Services.Publishing;
 
@@ -24,6 +25,7 @@ internal static class ServiceRegistrationExtensions
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
         services.Configure<ModuleExtractionOptions>(configuration.GetSection("ModuleExtraction"));
+        services.Configure<MirrorOptions>(configuration.GetSection("Mirror"));
         services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
         services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
         services.AddSingleton<WebhookPinnedConnectionHelper>();
@@ -70,6 +72,7 @@ internal static class ServiceRegistrationExtensions
         services.AddAnalyticsService();
         services.AddWebhookServices();
         services.AddVcsServices();
+        services.AddMirrorServices();
         services.AddModuleExtractionServices();
         services.AddAuthorizationServices();
 
@@ -316,6 +319,13 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
         services.AddHostedService<ModuleExtractionHostedService>();
         services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddMirrorServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IMirrorConfigService, MirrorConfigService>();
 
         return services;
     }
