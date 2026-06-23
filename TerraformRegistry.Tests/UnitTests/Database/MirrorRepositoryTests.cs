@@ -1,0 +1,406 @@
+using DotNet.Testcontainers.Builders;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using System.Text.Json.Nodes;
+using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.Migrations;
+using TerraformRegistry.Models;
+using TerraformRegistry.PostgreSQL.Repositories;
+using TerraformRegistry.Services.Sqlite;
+using Testcontainers.PostgreSql;
+
+namespace TerraformRegistry.Tests.UnitTests.Database;
+
+public sealed class SqliteMirrorRepositoryTests : IDisposable
+{
+    private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
+
+    public SqliteMirrorRepositoryTests()
+    {
+        var dbName = $"MirrorRepoTest_{Guid.NewGuid():N}";
+        _connectionString = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+        _connection = new SqliteConnection(_connectionString);
+        _connection.Open();
+
+        new DbUpMigrator(NullLogger<DbUpMigrator>.Instance).Migrate("sqlite", _connectionString);
+    }
+
+    [Fact]
+    public async Task ProviderRepositoryRoundTripsIndexesPackagesAndFailures()
+    {
+        var repository = new SqliteProviderMirrorRepository(_connectionString);
+
+        await ProviderRepositoryContract.RoundTripsIndexesPackagesAndFailures(repository);
+    }
+
+    [Fact]
+    public async Task ModuleRepositoryRoundTripsVersionsPackagesAndFailures()
+    {
+        var repository = new SqliteModuleMirrorRepository(_connectionString);
+
+        await ModuleRepositoryContract.RoundTripsVersionsPackagesAndFailures(repository);
+    }
+
+    [Fact]
+    public async Task LeaseRepositoryManagesAcquireHeartbeatReleaseAndExpiredTakeover()
+    {
+        var repository = new SqliteMirrorLeaseRepository(_connectionString);
+
+        await MirrorLeaseRepositoryContract.ManagesAcquireHeartbeatReleaseAndExpiredTakeover(repository);
+    }
+
+    public void Dispose()
+    {
+        _connection.Dispose();
+    }
+}
+
+[Trait("Category", "Integration")]
+public sealed class PostgreSqlMirrorRepositoryTests : IAsyncLifetime
+{
+    private PostgreSqlContainer _postgresContainer = null!;
+    private string _connectionString = null!;
+
+    public async Task InitializeAsync()
+    {
+        _postgresContainer = new PostgreSqlBuilder()
+            .WithDatabase("mirror_repository_test")
+            .WithUsername("postgres")
+            .WithPassword("postgres")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .Build();
+
+        await _postgresContainer.StartAsync();
+        _connectionString = _postgresContainer.GetConnectionString();
+        new DbUpMigrator(NullLogger<DbUpMigrator>.Instance).Migrate("postgres", _connectionString);
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_postgresContainer is not null)
+        {
+            await _postgresContainer.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ProviderRepositoryRoundTripsIndexesPackagesAndFailures()
+    {
+        var repository = new PostgreSqlProviderMirrorRepository(_connectionString);
+
+        await ProviderRepositoryContract.RoundTripsIndexesPackagesAndFailures(repository);
+    }
+
+    [Fact]
+    public async Task ModuleRepositoryRoundTripsVersionsPackagesAndFailures()
+    {
+        var repository = new PostgreSqlModuleMirrorRepository(_connectionString);
+
+        await ModuleRepositoryContract.RoundTripsVersionsPackagesAndFailures(repository);
+    }
+
+    [Fact]
+    public async Task LeaseRepositoryManagesAcquireHeartbeatReleaseAndExpiredTakeover()
+    {
+        var repository = new PostgreSqlMirrorLeaseRepository(_connectionString);
+
+        await MirrorLeaseRepositoryContract.ManagesAcquireHeartbeatReleaseAndExpiredTakeover(repository);
+    }
+}
+
+internal static class ProviderRepositoryContract
+{
+    public static async Task RoundTripsIndexesPackagesAndFailures(IProviderMirrorRepository repository)
+    {
+        var providerIndex = new MirrorProviderIndex
+        {
+            Hostname = "registry.terraform.io",
+            Namespace = "hashicorp",
+            Type = "aws",
+            VersionsJson = """{"versions":["5.0.0"]}""",
+            ETag = "\"provider-index\"",
+            State = "ready",
+            LastSyncAt = DateTime.UtcNow
+        };
+
+        await repository.UpsertProviderIndexAsync(providerIndex);
+
+        var loadedIndex = await repository.GetProviderIndexAsync("registry.terraform.io", "hashicorp", "aws");
+        Assert.NotNull(loadedIndex);
+        MirrorJsonAssert.Equal(providerIndex.VersionsJson, loadedIndex!.VersionsJson);
+        Assert.Equal(providerIndex.ETag, loadedIndex.ETag);
+        Assert.Equal("ready", loadedIndex.State);
+
+        var package = new MirrorProviderPackage
+        {
+            Hostname = "registry.terraform.io",
+            Namespace = "hashicorp",
+            Type = "aws",
+            Version = "5.0.0",
+            Os = "linux",
+            Arch = "amd64",
+            DownloadUrl = "https://releases.hashicorp.com/terraform-provider-aws.zip",
+            Filename = "terraform-provider-aws_5.0.0_linux_amd64.zip",
+            PackageStoragePath = "mirror/providers/hashicorp/aws/5.0.0/linux_amd64.zip",
+            SizeBytes = 123456789,
+            ProtocolsJson = """["5.0"]""",
+            HashesJson = """["h1:test","zh:test"]""",
+            Shasum = new string('a', 64),
+            SigningKeysJson = """{"gpg_public_keys":[]}""",
+            State = "ready",
+            LastSyncAt = DateTime.UtcNow
+        };
+
+        await repository.UpsertProviderPackageAsync(package);
+
+        var loadedPackage = await repository.GetProviderPackageAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            "5.0.0",
+            "linux",
+            "amd64");
+
+        Assert.NotNull(loadedPackage);
+        MirrorJsonAssert.Equal(package.HashesJson, loadedPackage!.HashesJson);
+        MirrorJsonAssert.Equal(package.ProtocolsJson, loadedPackage.ProtocolsJson);
+        Assert.Equal(package.SizeBytes, loadedPackage.SizeBytes);
+        Assert.Equal(package.PackageStoragePath, loadedPackage.PackageStoragePath);
+
+        var listed = await repository.ListProviderPackagesAsync("aws", "ready", 10, 0);
+        var item = Assert.Single(listed);
+        Assert.Equal(package.DownloadUrl, item.DownloadUrl);
+
+        await repository.MarkProviderPackageFailedAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            "5.0.0",
+            "linux",
+            "amd64",
+            "checksum mismatch",
+            502);
+
+        var failed = await repository.GetProviderPackageAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            "5.0.0",
+            "linux",
+            "amd64");
+
+        Assert.NotNull(failed);
+        Assert.Equal("failed", failed!.State);
+        Assert.Equal("checksum mismatch", failed.LastError);
+        Assert.Equal(502, failed.HttpStatusCode);
+    }
+}
+
+internal static class ModuleRepositoryContract
+{
+    public static async Task RoundTripsVersionsPackagesAndFailures(IModuleMirrorRepository repository)
+    {
+        var moduleVersions = new MirrorModuleVersions
+        {
+            Hostname = "registry.terraform.io",
+            Namespace = "terraform-aws-modules",
+            Name = "vpc",
+            Provider = "aws",
+            VersionsJson = """{"modules":[{"versions":[{"version":"1.0.0"}]}]}""",
+            ETag = "\"module-versions\"",
+            State = "ready",
+            LastSyncAt = DateTime.UtcNow
+        };
+
+        await repository.UpsertModuleVersionsAsync(moduleVersions);
+
+        var loadedVersions = await repository.GetModuleVersionsAsync(
+            "registry.terraform.io",
+            "terraform-aws-modules",
+            "vpc",
+            "aws");
+
+        Assert.NotNull(loadedVersions);
+        MirrorJsonAssert.Equal(moduleVersions.VersionsJson, loadedVersions!.VersionsJson);
+        Assert.Equal(moduleVersions.ETag, loadedVersions.ETag);
+
+        var package = new MirrorModulePackage
+        {
+            Hostname = "registry.terraform.io",
+            Namespace = "terraform-aws-modules",
+            Name = "vpc",
+            Provider = "aws",
+            Version = "1.0.0",
+            DownloadUrl = "https://api.github.com/repos/terraform-aws-modules/terraform-aws-vpc/tarball/v1.0.0",
+            Source = "github.com/terraform-aws-modules/terraform-aws-vpc",
+            PackageStoragePath = "mirror/modules/terraform-aws-modules/vpc/aws/1.0.0.tgz",
+            SizeBytes = 4567,
+            MetadataJson = """{"root":{"readme":"README.md"}}""",
+            State = "ready",
+            LastSyncAt = DateTime.UtcNow
+        };
+
+        await repository.UpsertModulePackageAsync(package);
+
+        var loadedPackage = await repository.GetModulePackageAsync(
+            "registry.terraform.io",
+            "terraform-aws-modules",
+            "vpc",
+            "aws",
+            "1.0.0");
+
+        Assert.NotNull(loadedPackage);
+        MirrorJsonAssert.Equal(package.MetadataJson, loadedPackage!.MetadataJson);
+        Assert.Equal(package.SizeBytes, loadedPackage.SizeBytes);
+        Assert.Equal(package.PackageStoragePath, loadedPackage.PackageStoragePath);
+
+        var listed = await repository.ListModulePackagesAsync("vpc", "ready", 10, 0);
+        var item = Assert.Single(listed);
+        Assert.Equal(package.DownloadUrl, item.DownloadUrl);
+
+        await repository.MarkModulePackageFailedAsync(
+            "registry.terraform.io",
+            "terraform-aws-modules",
+            "vpc",
+            "aws",
+            "1.0.0",
+            "download timed out",
+            504);
+
+        var failed = await repository.GetModulePackageAsync(
+            "registry.terraform.io",
+            "terraform-aws-modules",
+            "vpc",
+            "aws",
+            "1.0.0");
+
+        Assert.NotNull(failed);
+        Assert.Equal("failed", failed!.State);
+        Assert.Equal("download timed out", failed.LastError);
+        Assert.Equal(504, failed.HttpStatusCode);
+    }
+
+}
+
+internal static class MirrorJsonAssert
+{
+    public static void Equal(string? expected, string? actual)
+    {
+        Assert.True(
+            JsonNode.DeepEquals(JsonNode.Parse(expected!), JsonNode.Parse(actual!)),
+            $"Expected JSON {expected}, got {actual}");
+    }
+}
+
+internal static class MirrorLeaseRepositoryContract
+{
+    public static async Task ManagesAcquireHeartbeatReleaseAndExpiredTakeover(IMirrorLeaseRepository repository)
+    {
+        var cancellationToken = CancellationToken.None;
+
+        var acquired = await repository.TryAcquireAsync(
+            "provider:registry.terraform.io/hashicorp/aws",
+            "provider-package-sync",
+            "worker-a",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+
+        Assert.NotNull(acquired);
+        Assert.Equal("provider:registry.terraform.io/hashicorp/aws", acquired!.LeaseKey);
+        Assert.Equal("provider-package-sync", acquired.OperationType);
+        Assert.Equal("worker-a", acquired.OwnerInstanceId);
+
+        var blocked = await repository.TryAcquireAsync(
+            acquired.LeaseKey,
+            acquired.OperationType,
+            "worker-b",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+
+        Assert.Null(blocked);
+
+        var heartbeatSucceeded = await repository.HeartbeatAsync(
+            acquired.LeaseKey,
+            "worker-a",
+            TimeSpan.FromMinutes(10),
+            cancellationToken);
+
+        Assert.True(heartbeatSucceeded);
+
+        var heartbeated = await repository.GetLeaseAsync(acquired.LeaseKey, cancellationToken);
+        Assert.NotNull(heartbeated);
+        Assert.Equal("worker-a", heartbeated!.OwnerInstanceId);
+        Assert.NotNull(heartbeated.HeartbeatAt);
+        Assert.True(heartbeated.ExpiresAt > acquired.ExpiresAt);
+
+        Assert.False(await repository.ReleaseAsync(acquired.LeaseKey, "worker-b", cancellationToken));
+        Assert.True(await repository.ReleaseAsync(acquired.LeaseKey, "worker-a", cancellationToken));
+        Assert.Null(await repository.GetLeaseAsync(acquired.LeaseKey, cancellationToken));
+
+        await repository.UpsertLeaseAsync(new MirrorCacheLease
+        {
+            LeaseKey = "module:registry.terraform.io/terraform-aws-modules/vpc/aws",
+            OperationType = "module-package-sync",
+            OwnerInstanceId = "stale-worker",
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-5),
+            HeartbeatAt = DateTime.UtcNow.AddMinutes(-10),
+            CreatedAt = DateTime.UtcNow.AddMinutes(-20),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-10)
+        }, cancellationToken);
+
+        var takeover = await repository.TryAcquireAsync(
+            "module:registry.terraform.io/terraform-aws-modules/vpc/aws",
+            "module-package-sync",
+            "worker-c",
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
+
+        Assert.NotNull(takeover);
+        Assert.Equal("worker-c", takeover!.OwnerInstanceId);
+        Assert.False(await repository.HeartbeatAsync(takeover.LeaseKey, "stale-worker", TimeSpan.FromMinutes(5), cancellationToken));
+
+        var expiredHeartbeatKey = "provider:registry.terraform.io/hashicorp/expired-heartbeat";
+        var originalExpiry = DateTime.UtcNow.AddMinutes(-1);
+        await repository.UpsertLeaseAsync(new MirrorCacheLease
+        {
+            LeaseKey = expiredHeartbeatKey,
+            OperationType = "provider-package-sync",
+            OwnerInstanceId = "expired-worker",
+            ExpiresAt = originalExpiry,
+            HeartbeatAt = DateTime.UtcNow.AddMinutes(-2),
+            CreatedAt = DateTime.UtcNow.AddMinutes(-3),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-2)
+        }, cancellationToken);
+
+        Assert.False(await repository.HeartbeatAsync(
+            expiredHeartbeatKey,
+            "expired-worker",
+            TimeSpan.FromMinutes(5),
+            cancellationToken));
+
+        var expiredAfterHeartbeat = await repository.GetLeaseAsync(expiredHeartbeatKey, cancellationToken);
+        Assert.NotNull(expiredAfterHeartbeat);
+        Assert.Equal("expired-worker", expiredAfterHeartbeat!.OwnerInstanceId);
+        Assert.True(expiredAfterHeartbeat.ExpiresAt <= DateTime.UtcNow);
+
+        var racedKey = $"module:registry.terraform.io/raced/{Guid.NewGuid():N}";
+        var contenders = Enumerable.Range(0, 8)
+            .Select(i => repository.TryAcquireAsync(
+                racedKey,
+                "module-package-sync",
+                $"racing-worker-{i}",
+                TimeSpan.FromMinutes(5),
+                cancellationToken))
+            .ToArray();
+
+        var raceResults = await Task.WhenAll(contenders);
+        var winners = raceResults.Where(result => result is not null).ToArray();
+
+        var persistedWinner = await repository.GetLeaseAsync(racedKey, cancellationToken);
+        Assert.Single(winners);
+        Assert.NotNull(persistedWinner);
+        Assert.Equal(winners[0]!.OwnerInstanceId, persistedWinner!.OwnerInstanceId);
+    }
+}

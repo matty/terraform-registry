@@ -437,6 +437,74 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration017CreatesMirrorCacheTablesAndIndexes()
+    {
+        var connectionString = CreateFreshDatabase();
+
+        MigrateUpTo(17, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+
+        var tables = GetTables(conn);
+        foreach (var table in new[]
+        {
+            "mirror_provider_indexes",
+            "mirror_provider_packages",
+            "mirror_module_versions",
+            "mirror_module_packages",
+            "mirror_cache_leases"
+        })
+        {
+            Assert.Contains(table, tables);
+        }
+
+        AssertColumnTypes(
+            conn,
+            "mirror_provider_packages",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = "uuid",
+                ["hostname"] = "text",
+                ["protocols_json"] = "jsonb",
+                ["hashes_json"] = "jsonb",
+                ["size_bytes"] = "bigint",
+                ["created_at"] = "timestamp with time zone",
+                ["updated_at"] = "timestamp with time zone"
+            });
+
+        AssertColumnTypes(
+            conn,
+            "mirror_cache_leases",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = "uuid",
+                ["lease_key"] = "text",
+                ["operation_type"] = "text",
+                ["owner_instance_id"] = "text",
+                ["expires_at"] = "timestamp with time zone",
+                ["heartbeat_at"] = "timestamp with time zone",
+                ["created_at"] = "timestamp with time zone",
+                ["updated_at"] = "timestamp with time zone"
+            });
+
+        var indexes = GetIndexes(conn);
+        foreach (var index in new[]
+        {
+            "idx_mirror_provider_indexes_coordinate",
+            "idx_mirror_provider_packages_coordinate",
+            "idx_mirror_provider_packages_state",
+            "idx_mirror_module_versions_coordinate",
+            "idx_mirror_module_packages_coordinate",
+            "idx_mirror_module_packages_state",
+            "idx_mirror_cache_leases_key"
+        })
+        {
+            Assert.Contains(index, indexes);
+        }
+    }
+
+    [Fact]
     public async Task MigrateFreshPostgresDatabaseAppliesEveryEmbeddedScriptAndSupportsCurrentVcsSyncSchema()
     {
         var connectionString = CreateFreshDatabase();
@@ -644,7 +712,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
             INSERT INTO schema_version VALUES ('1.0.1', 'Users and API keys', NOW())";
         await createSv.ExecuteNonQueryAsync();
 
-        // Now run the full DbUp migrator — should bootstrap 2, execute remaining 11
+        // Now run the full DbUp migrator — should bootstrap legacy entries and execute all remaining scripts.
         var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
         var migrator = new DbUpMigrator(logger);
         migrator.Migrate("postgres", connectionString);
@@ -664,6 +732,11 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         Assert.Contains("audit_logs", tables);          // 009
         Assert.Contains("vcs_connections", tables);     // 010
         Assert.Contains("providers", tables);           // 014
+        Assert.Contains("mirror_provider_indexes", tables);
+        Assert.Contains("mirror_provider_packages", tables);
+        Assert.Contains("mirror_module_versions", tables);
+        Assert.Contains("mirror_module_packages", tables);
+        Assert.Contains("mirror_cache_leases", tables);
 
         // Verify legacy schema_version was dropped
         await using var svCheck = verifyConn.CreateCommand();
@@ -674,7 +747,7 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(16, journalCount);
+        Assert.Equal(GetEmbeddedScriptNames(".Scripts.PostgreSQL.").Count, journalCount);
     }
 
     [Fact]
@@ -714,11 +787,16 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
         Assert.Contains("roles", tables);           // 008
         Assert.Contains("user_roles", tables);      // 008
         Assert.Contains("providers", tables);       // 014
+        Assert.Contains("mirror_provider_indexes", tables);
+        Assert.Contains("mirror_provider_packages", tables);
+        Assert.Contains("mirror_module_versions", tables);
+        Assert.Contains("mirror_module_packages", tables);
+        Assert.Contains("mirror_cache_leases", tables);
 
         await using var journalCmd = verifyConn.CreateCommand();
         journalCmd.CommandText = "SELECT COUNT(*) FROM schemaversions";
         var journalCount = (long)(await journalCmd.ExecuteScalarAsync())!;
-        Assert.Equal(16, journalCount);
+        Assert.Equal(GetEmbeddedScriptNames(".Scripts.PostgreSQL.").Count, journalCount);
     }
 
     private string CreateFreshDatabase()
@@ -802,6 +880,32 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
             indexes.Add(reader.GetString(0));
         }
         return indexes;
+    }
+
+    private static void AssertColumnTypes(
+        NpgsqlConnection connection,
+        string tableName,
+        IReadOnlyDictionary<string, string> expected)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = @table";
+        cmd.Parameters.AddWithValue("table", tableName);
+        using var reader = cmd.ExecuteReader();
+
+        var actual = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            actual[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        foreach (var (column, type) in expected)
+        {
+            Assert.True(actual.TryGetValue(column, out var actualType), $"Missing column {column}");
+            Assert.Equal(type, actualType);
+        }
     }
 
     private static List<string> GetEmbeddedScriptNames(string providerFolder)

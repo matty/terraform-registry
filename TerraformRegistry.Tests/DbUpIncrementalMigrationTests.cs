@@ -332,6 +332,67 @@ public class DbUpIncrementalMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migration016CreatesMirrorCacheTablesAndIndexes()
+    {
+        MigrateUpTo(16, _connectionString);
+
+        var tables = GetTables(_connection);
+        foreach (var table in new[]
+        {
+            "mirror_provider_indexes",
+            "mirror_provider_packages",
+            "mirror_module_versions",
+            "mirror_module_packages",
+            "mirror_cache_leases"
+        })
+        {
+            Assert.Contains(table, tables);
+        }
+
+        AssertColumnTypes(
+            "mirror_provider_packages",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = "TEXT",
+                ["hostname"] = "TEXT",
+                ["protocols_json"] = "TEXT",
+                ["hashes_json"] = "TEXT",
+                ["size_bytes"] = "INTEGER",
+                ["created_at"] = "TEXT",
+                ["updated_at"] = "TEXT"
+            });
+
+        AssertColumnTypes(
+            "mirror_cache_leases",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["id"] = "TEXT",
+                ["lease_key"] = "TEXT",
+                ["operation_type"] = "TEXT",
+                ["owner_instance_id"] = "TEXT",
+                ["expires_at"] = "TEXT",
+                ["heartbeat_at"] = "TEXT",
+                ["created_at"] = "TEXT",
+                ["updated_at"] = "TEXT"
+            });
+
+        var indexes = GetIndexes(_connection);
+        foreach (var index in new[]
+        {
+            "idx_mirror_provider_indexes_coordinate",
+            "idx_mirror_provider_packages_coordinate",
+            "idx_mirror_provider_packages_state",
+            "idx_mirror_module_versions_coordinate",
+            "idx_mirror_module_packages_coordinate",
+            "idx_mirror_module_packages_state",
+            "idx_mirror_cache_leases_key"
+        })
+        {
+            Assert.Contains(index, indexes);
+        }
+    }
+
+    [Fact]
     public void FullMigrationDataOperationsSucceed()
     {
         MigrateUpTo(15, _connectionString);
@@ -488,5 +549,24 @@ public class DbUpIncrementalMigrationTests : IDisposable
             indexes.Add(reader.GetString(0));
         }
         return indexes;
+    }
+
+    private void AssertColumnTypes(string tableName, IReadOnlyDictionary<string, string> expected)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({tableName})";
+        using var reader = cmd.ExecuteReader();
+
+        var actual = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            actual[reader.GetString(1)] = reader.GetString(2);
+        }
+
+        foreach (var (column, type) in expected)
+        {
+            Assert.True(actual.TryGetValue(column, out var actualType), $"Missing column {column}");
+            Assert.Equal(type, actualType);
+        }
     }
 }

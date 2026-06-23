@@ -8,11 +8,13 @@ using TerraformRegistry.Middleware;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL;
+using TerraformRegistry.PostgreSQL.Repositories;
 using TerraformRegistry.S3;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Mirror;
 using TerraformRegistry.Services.ModuleExtraction;
 using TerraformRegistry.Services.Publishing;
+using TerraformRegistry.Services.Sqlite;
 
 namespace TerraformRegistry.Startup;
 
@@ -326,6 +328,48 @@ internal static class ServiceRegistrationExtensions
     private static IServiceCollection AddMirrorServices(this IServiceCollection services)
     {
         services.AddSingleton<IMirrorConfigService, MirrorConfigService>();
+        services.AddSingleton<IProviderMirrorRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlProviderMirrorRepository(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for provider mirror repository.")),
+                "sqlite" => new SqliteProviderMirrorRepository(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<IModuleMirrorRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlModuleMirrorRepository(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for module mirror repository.")),
+                "sqlite" => new SqliteModuleMirrorRepository(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<IMirrorLeaseRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlMirrorLeaseRepository(
+                    config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for mirror lease repository.")),
+                "sqlite" => new SqliteMirrorLeaseRepository(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
 
         return services;
     }

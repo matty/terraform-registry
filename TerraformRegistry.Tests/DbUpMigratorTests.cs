@@ -57,6 +57,11 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("provider_platforms", tables);
         Assert.Contains("provider_gpg_keys", tables);
         Assert.Contains("provider_downloads", tables);
+        Assert.Contains("mirror_provider_indexes", tables);
+        Assert.Contains("mirror_provider_packages", tables);
+        Assert.Contains("mirror_module_versions", tables);
+        Assert.Contains("mirror_module_packages", tables);
+        Assert.Contains("mirror_cache_leases", tables);
         Assert.Contains("SchemaVersions", tables);
     }
 
@@ -123,8 +128,7 @@ public class DbUpMigratorTests : IDisposable
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var count = (long)cmd.ExecuteScalar()!;
 
-        // Should have exactly 15 SQLite scripts, not double
-        Assert.Equal(15L, count);
+        Assert.Equal(GetEmbeddedScriptNames(".Scripts.SQLite.").Count, count);
     }
 
     [Fact]
@@ -180,11 +184,11 @@ public class DbUpMigratorTests : IDisposable
         var migrator = new DbUpMigrator(_logger);
         migrator.Migrate("sqlite", _connectionString);
 
-        // Journal should have exactly 15 entries (2 bootstrapped + 13 executed)
+        // Journal should contain every embedded SQLite script after bootstrapping legacy entries.
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
         var journalCount = (long)cmd.ExecuteScalar()!;
-        Assert.Equal(15L, journalCount);
+        Assert.Equal(GetEmbeddedScriptNames(".Scripts.SQLite.").Count, journalCount);
 
         // Legacy schema_version table should be dropped
         using var svCmd = _connection.CreateCommand();
@@ -209,6 +213,11 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("provider_platforms", tables);
         Assert.Contains("provider_gpg_keys", tables);
         Assert.Contains("provider_downloads", tables);
+        Assert.Contains("mirror_provider_indexes", tables);
+        Assert.Contains("mirror_provider_packages", tables);
+        Assert.Contains("mirror_module_versions", tables);
+        Assert.Contains("mirror_module_packages", tables);
+        Assert.Contains("mirror_cache_leases", tables);
     }
 
     [Fact]
