@@ -20,6 +20,7 @@ export interface ModulesResponse {
   meta?: {
     limit: string;
     current_offset: string;
+    total?: string;
   };
 }
 

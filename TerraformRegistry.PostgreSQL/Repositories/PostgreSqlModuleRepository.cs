@@ -77,7 +77,7 @@ public sealed class PostgreSqlModuleRepository(
             });
         }
 
-        var modules = rows
+        var listedRows = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
             {
@@ -95,6 +95,11 @@ public sealed class PostgreSqlModuleRepository(
             .OrderBy(row => row.Namespace, StringComparer.Ordinal)
             .ThenBy(row => row.Name, StringComparer.Ordinal)
             .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .ToList();
+
+        var total = listedRows.Count;
+
+        var modules = listedRows
             .Skip(request.Offset)
             .Take(request.Limit)
             .Select(row => new ModuleListItem
@@ -119,7 +124,8 @@ public sealed class PostgreSqlModuleRepository(
 (StringComparer.Ordinal)
             {
                 { "limit", request.Limit.ToString(CultureInfo.InvariantCulture) },
-                { "current_offset", request.Offset.ToString(CultureInfo.InvariantCulture) }
+                { "current_offset", request.Offset.ToString(CultureInfo.InvariantCulture) },
+                { "total", total.ToString(CultureInfo.InvariantCulture) }
             }
         };
     }

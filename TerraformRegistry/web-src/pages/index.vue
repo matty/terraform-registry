@@ -25,7 +25,13 @@ const error = ref("");
 const searchQuery = ref("");
 const currentOffset = ref(0);
 const canLoadMoreModules = ref(true);
-const limit = 10;
+const pageSizeOptions = [
+  { label: "10", value: 10 },
+  { label: "25", value: 25 },
+  { label: "50", value: 50 },
+];
+const pageSize = ref(10);
+const totalModules = ref(0);
 const publishModalOpen = ref(false);
 
 const openPublishModal = () => {
@@ -51,6 +57,11 @@ const filteredModules = computed(() => {
   );
 });
 
+const moduleCountLabel = computed(() => {
+  if (totalModules.value <= 0) return `${modules.value.length} / 0`;
+  return `${Math.min(modules.value.length, totalModules.value)} / ${totalModules.value}`;
+});
+
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString("en-US", {
     year: "numeric",
@@ -69,7 +80,7 @@ const fetchModules = async (offset = 0, append = false) => {
     error.value = "";
 
     const response = await $fetch<ModulesResponse>(
-      `/v1/modules?offset=${offset}&limit=${limit}`,
+      `/v1/modules?offset=${offset}&limit=${pageSize.value}`,
       {
         headers: getAuthHeaders(),
       }
@@ -82,7 +93,9 @@ const fetchModules = async (offset = 0, append = false) => {
     }
 
     currentOffset.value = modules.value.length;
-    canLoadMoreModules.value = response.modules.length === limit;
+    const parsedTotal = Number.parseInt(response.meta?.total ?? "", 10);
+    totalModules.value = Number.isNaN(parsedTotal) ? modules.value.length : parsedTotal;
+    canLoadMoreModules.value = modules.value.length < totalModules.value;
   } catch (err: any) {
     error.value = err.message || "Failed to fetch modules";
     console.error("Error fetching modules:", err);
@@ -99,6 +112,11 @@ const refreshModules = () => {
 
 const loadMoreModules = () => {
   fetchModules(currentOffset.value, true);
+};
+
+const handlePageSizeChanged = () => {
+  currentOffset.value = 0;
+  fetchModules(0, false);
 };
 
 // Load modules on component mount
@@ -143,6 +161,16 @@ onMounted(async () => {
           icon="i-lucide-search"
           class="w-64"
           size="sm"
+        />
+        <USelect
+          v-model="pageSize"
+          :items="pageSizeOptions"
+          value-key="value"
+          label-key="label"
+          size="sm"
+          class="w-24"
+          :disabled="isLoading || isLoadingMore"
+          @update:model-value="handlePageSizeChanged"
         />
         <UButton
           @click="refreshModules"
@@ -277,8 +305,7 @@ onMounted(async () => {
             class="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-neutral-800"
           >
             <p class="text-sm text-neutral-500">
-              Showing {{ filteredModules.length }} loaded
-              {{ filteredModules.length === 1 ? "module" : "modules" }}
+              {{ moduleCountLabel }} modules
             </p>
             <UButton
               v-if="canLoadMoreModules"

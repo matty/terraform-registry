@@ -18,9 +18,13 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
 
         var listResponse = await client.GetAsync("/v1/modules?offset=0&limit=10");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         Output.WriteLine($"List modules status: {listResponse.StatusCode}");
         var listContent = await listResponse.Content.ReadAsStringAsync();
         Output.WriteLine($"List modules response: {listContent}");
+
+        using var json = JsonDocument.Parse(listContent);
+        Assert.Equal("1", json.RootElement.GetProperty("meta").GetProperty("total").GetString());
     }
 
     [Fact]
@@ -33,7 +37,7 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
 
         var listContent = await listResponse.Content.ReadAsStringAsync();
-        Assert.Equal("{\"modules\":[],\"meta\":{\"limit\":\"10\",\"current_offset\":\"0\"}}", listContent);
+        Assert.Equal("{\"modules\":[],\"meta\":{\"limit\":\"10\",\"current_offset\":\"0\",\"total\":\"0\"}}", listContent);
     }
 
     [Fact]

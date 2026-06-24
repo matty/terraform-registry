@@ -1,0 +1,1 @@
+import{aG as a,aH as r,s as u}from"./BVFysuK2.js";function i(){const s=a("impersonated-user",()=>null),e=u(()=>s.value!==null),n=t=>{s.value=t},o=()=>{s.value=null};return{impersonatedUser:r(s),isImpersonating:e,startImpersonation:n,stopImpersonation:o}}export{i as u};
