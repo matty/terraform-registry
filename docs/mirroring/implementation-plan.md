@@ -41,12 +41,12 @@
 - [x] Task 2: mirror cache schema, repositories, and leases
 - [x] Task 3: mirror policy, hardened HTTP fetches, DNS pinning, and lease service
 - [x] Task 4: provider network mirror endpoint
-- [ ] Task 5: module read-through mirror cache
-- [ ] Task 6: admin mirror API
-- [ ] Task 7: admin web UI
-- [ ] Task 8: documentation, Terraform CLI smoke tests, and final verification
+- [x] Task 5: module read-through mirror cache
+- [x] Task 6: admin mirror API
+- [x] Task 7: admin web UI
+- [x] Task 8: documentation, Terraform CLI smoke tests, and final verification
 
-Task 5 is implemented in commit `d5446209cd0acc9c2d9b1f5d3caa42509c64e15f` and passed spec review, but code-quality review found two remaining issues that must be fixed before Task 5 is closed.
+Task 5 follow-up fixes, admin APIs, admin UI, documentation, smoke scripts, and final verification are implemented in the current working tree.
 
 ---
 
@@ -61,7 +61,7 @@ Task 5 is implemented in commit `d5446209cd0acc9c2d9b1f5d3caa42509c64e15f` and p
 - Test: `TerraformRegistry.Tests/UnitTests/S3/S3ModuleServiceUploadTests.cs`
 - Test: database repository tests covering exact replacement metadata, if present
 
-- [ ] **Step 1: Add a race regression test for mirror replacement**
+- [x] **Step 1: Add a race regression test for mirror replacement**
 
 Add a test to `ModuleMirrorServiceTests` for this sequence:
 
@@ -79,13 +79,13 @@ publish.Verify(x => x.PublishAsync(It.IsAny<ModulePublishRequest>(), It.IsAny<Ca
 Assert.Equal("/module/download?token=local", result);
 ```
 
-- [ ] **Step 2: Add compare-and-replace protection before mirror publish**
+- [x] **Step 2: Add compare-and-replace protection before mirror publish**
 
 Update `ModuleMirrorService` so mirror refresh replacement is not decided only before archive fetch. Immediately before `PublishAsync`, re-read current local module metadata. If the current module is missing, publish with `Replace = false`. If it is mirror-owned by the same origin, publish with `Replace = true`. If it is any other source, abort publish and return its local download path unchanged.
 
 The replacement decision must happen as close to `PublishAsync` as possible. If storage/repository support cannot make this fully atomic yet, leave a code comment and test that documents the remaining compare-and-swap gap, then plan a repository-level CAS follow-up before Task 5 approval.
 
-- [ ] **Step 3: Preserve metadata in exact module replacement**
+- [x] **Step 3: Preserve metadata in exact module replacement**
 
 Update both repository implementations so exact replacement writes the new module metadata:
 
@@ -94,7 +94,7 @@ Update both repository implementations so exact replacement writes the new modul
 
 The SQL update must include the serialized `newModule.Metadata`. Prefer including existing module identity and prior metadata in the `WHERE` clause when the repository method already has enough data to enforce exact replacement.
 
-- [ ] **Step 4: Add S3 replacement metadata coverage**
+- [x] **Step 4: Add S3 replacement metadata coverage**
 
 Add or update `S3ModuleServiceUploadTests` so replacing a module with mirror metadata verifies that the database replacement receives a `ModuleStorage` whose `Metadata.Source` contains:
 
@@ -106,7 +106,7 @@ ResolvedPackageUrl = "https://registry.example.com/archives/vpc-1.2.3.zip"
 ArchiveFormat = "zip"
 ```
 
-- [ ] **Step 5: Run focused verification**
+- [x] **Step 5: Run focused verification**
 
 Run:
 

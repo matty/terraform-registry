@@ -15,6 +15,7 @@ A lightweight, feature-rich private Terraform module registry implementation.
 - Manual portal upload for users with `modules.upload`
 - GitHub-linked module publishing, tag backfill, and webhook sync for users with `vcs.manage`
 - Async module documentation extraction from uploaded packages
+- Provider and module read-through mirroring with cache policy controls
 - Local filesystem, Azure Blob Storage, and S3-compatible storage for modules and provider artifacts
 - PostgreSQL database
 - Docker-ready deployment
@@ -31,6 +32,8 @@ Module publishing is supported through:
 - GitHub webhook auto-publish for linked repositories
 
 Provider publishing is supported through authenticated management endpoints for provider metadata, GPG keys, checksums, signatures, and platform packages. Terraform CLI provider installs use the standard `providers.v1` protocol.
+
+Registry mirroring is optional and additive. Local modules and providers always win; upstream content is fetched only when mirroring is enabled and policy allows the requested coordinate.
 
 ## Quick Start
 
@@ -82,6 +85,19 @@ Visit `http://localhost:5131` to access the web interface!
 - `GET /api/providers` - Manage provider records (auth required)
 - `POST /api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}/package` - Upload provider platform packages (auth required)
 
+### Mirror Operations
+
+- `GET /mirror/providers/{hostname}/{namespace}/{type}/index.json` - Terraform provider network mirror index
+- `GET /mirror/providers/{hostname}/{namespace}/{type}/{version}.json` - Terraform provider network mirror version metadata
+- `GET /mirror/providers/{hostname}/{namespace}/{type}/{filename}` - Signed provider package download
+- `GET /api/admin/mirror/summary` - Mirror cache summary for users with `mirror.read`
+- `GET /api/admin/mirror/entries` - Mirror cache entries for users with `mirror.read`
+- `GET /api/admin/mirror/config` - Runtime mirror config for users with `mirror.configure`
+- `PUT /api/admin/mirror/config` - Runtime mirror config update for users with `mirror.configure`
+- `POST /api/admin/mirror/retry` - Clear failed mirror cache state for users with `mirror.manage`
+- `DELETE /api/admin/mirror/providers/{hostname}/{namespace}/{type}/{version}` - Delete provider mirror cache rows for users with `mirror.manage`
+- `DELETE /api/admin/mirror/modules/{hostname}/{namespace}/{name}/{provider}/{version}` - Delete module mirror cache rows for users with `mirror.manage`
+
 ### Documentation
 
 - `GET /swagger` - Interactive API documentation (when enabled)
@@ -130,6 +146,31 @@ Configure the application using environment variables (prefix with `TF_REG_`):
 | `TF_REG_MODULEEXTRACTION__TIMEOUTSECONDS`                | Per-module extraction timeout                       | `15`                                                             | No                  | `30`                                                                  |
 | `TF_REG_MODULEEXTRACTION__TEMPROOT`                      | Temporary archive extraction directory              | OS temp directory                                                | No                  | `/tmp/terraform-registry-extraction`                                  |
 | `TF_REG_MODULEEXTRACTION__STARTUPBACKFILLBATCHSIZE`      | Existing modules queued for extraction at startup   | `25`                                                             | No                  | `0`                                                                   |
+| **Mirror Settings**                                      |                                                     |                                                                  |                     |                                                                       |
+| `TF_REG_MIRROR__ENABLED`                                 | Enable provider and module mirroring                | `false`                                                          | No                  | `true`                                                                |
+| `TF_REG_MIRROR__UPSTREAMREGISTRYBASEURL`                 | Upstream module registry base URL                   | `https://registry.terraform.io`                                  | No                  | `https://registry.terraform.io`                                       |
+| `TF_REG_MIRROR__PACKAGEURLSIGNINGKEY`                    | Signing key for provider mirror package URLs        | -                                                                | Recommended         | `<unique-generated-secret>`                                           |
+| `TF_REG_MIRROR__PROVIDERS__ENABLED`                      | Enable provider network mirroring                   | `true`                                                           | No                  | `true`                                                                |
+| `TF_REG_MIRROR__PROVIDERS__REQUIREAUTHENTICATION`        | Require credentials for provider mirror metadata    | `true`                                                           | No                  | `true`                                                                |
+| `TF_REG_MIRROR__PROVIDERS__ALLOWEDHOSTNAMES__0`          | Allowed provider source hostname                    | `registry.terraform.io`                                          | No                  | `registry.terraform.io`                                               |
+| `TF_REG_MIRROR__PROVIDERS__ALLOWEDARTIFACTHOSTS__0`      | Allowed provider artifact host                      | -                                                                | No                  | `releases.hashicorp.com`                                              |
+| `TF_REG_MIRROR__PROVIDERS__ALLOWLIST__0`                 | Provider allow pattern                              | -                                                                | No                  | `registry.terraform.io/hashicorp/*`                                   |
+| `TF_REG_MIRROR__PROVIDERS__DENYLIST__0`                  | Provider deny pattern                               | -                                                                | No                  | `registry.terraform.io/hashicorp/bad`                                 |
+| `TF_REG_MIRROR__PROVIDERS__PLATFORMS__0`                 | Allowed provider platform                           | -                                                                | No                  | `linux_amd64`                                                         |
+| `TF_REG_MIRROR__PROVIDERS__MAXPACKAGEBYTES`              | Provider package size limit                         | `524288000`                                                      | No                  | `104857600`                                                           |
+| `TF_REG_MIRROR__PROVIDERS__MAXREDIRECTS`                 | Provider artifact redirect limit                    | `3`                                                              | No                  | `2`                                                                   |
+| `TF_REG_MIRROR__PROVIDERS__METADATATTLMINUTES`           | Provider metadata cache TTL                         | `60`                                                             | No                  | `30`                                                                  |
+| `TF_REG_MIRROR__MODULES__ENABLED`                        | Enable module read-through mirroring                | `true`                                                           | No                  | `true`                                                                |
+| `TF_REG_MIRROR__MODULES__REQUIREAUTHENTICATION`          | Require credentials for module registry endpoints   | `true`                                                           | No                  | `true`                                                                |
+| `TF_REG_MIRROR__MODULES__ALLOWEDNAMESPACES__0`           | Allowed module namespace                            | -                                                                | No                  | `terraform-aws-modules`                                               |
+| `TF_REG_MIRROR__MODULES__ALLOWEDARCHIVEHOSTS__0`         | Allowed module archive host                         | `github.com`                                                     | No                  | `codeload.github.com`                                                 |
+| `TF_REG_MIRROR__MODULES__ALLOWLIST__0`                   | Module allow pattern                                | -                                                                | No                  | `registry.terraform.io/terraform-aws-modules/*/aws`                  |
+| `TF_REG_MIRROR__MODULES__DENYLIST__0`                    | Module deny pattern                                 | -                                                                | No                  | `registry.terraform.io/acme/private/aws`                              |
+| `TF_REG_MIRROR__MODULES__MAXPACKAGEBYTES`                | Module archive size limit                           | `104857600`                                                      | No                  | `52428800`                                                            |
+| `TF_REG_MIRROR__MODULES__MAXREDIRECTS`                   | Module archive redirect limit                       | `3`                                                              | No                  | `2`                                                                   |
+| `TF_REG_MIRROR__MODULES__METADATATTLMINUTES`             | Module metadata cache TTL                           | `60`                                                             | No                  | `30`                                                                  |
+| `TF_REG_MIRROR__LIMITS__MAXCONCURRENTDOWNLOADS`          | Global mirror download concurrency                  | `4`                                                              | No                  | `2`                                                                   |
+| `TF_REG_MIRROR__LIMITS__MAXTOTALCACHEDBYTES`             | Cache budget hint in bytes                          | `107374182400`                                                   | No                  | `10737418240`                                                         |
 | **Azure Storage Settings**                               |                                                     |                                                                  |                     |
 | `TF_REG_AZURESTORAGE__CONNECTIONSTRING`                  | Azure connection string                             | -                                                                | If using Azure      | `DefaultEndpointsProtocol=https;...`                                  |
 | `TF_REG_AZURESTORAGE__ACCOUNTNAME`                       | Storage account name                                | -                                                                | If using Azure      | `mystorageaccount`                                                    |
@@ -176,6 +217,80 @@ For Azure Blob Storage and S3-compatible storage, one configured container or bu
 - `Oidc:JwtSecretKey` / `TF_REG_OIDC__JWTSECRETKEY` must be set to a secret that is at least 32 characters long. Outside `Development`, the placeholder value is rejected.
 - OIDC login requires a non-empty provider email and rejects same-email logins when they resolve to a different provider or provider ID.
 - Outbound admin webhooks only support `http` and `https` targets. Private and local network destinations are blocked unless `WebhookSecurity:AllowPrivateNetworks` / `TF_REG_WEBHOOKSECURITY__ALLOWPRIVATENETWORKS` is explicitly enabled.
+- Mirror fetches validate DNS before network access and block private, loopback, link-local, multicast, documentation, and other reserved address ranges. Redirect targets are revalidated before following.
+- Module `/download` discovery does not auto-follow redirects. The returned `X-Terraform-Get` archive URL is validated separately, and recursive registry addresses such as `registry.terraform.io/ns/name/provider` are rejected.
+- Provider mirror metadata endpoints may require Terraform credentials. Provider archive URLs are signed because Terraform does not forward credentials to provider package URLs.
+
+## Registry Mirroring
+
+### Provider Network Mirror
+
+Provider mirroring uses Terraform's network mirror protocol under `/mirror/providers/...`. These endpoints are plain HTTPS paths and do not use Terraform service discovery. Configure Terraform with a `provider_installation` network mirror block and a trailing slash:
+
+```hcl
+credentials "registry.company.com" {
+  token = "your-auth-token"
+}
+
+provider_installation {
+  network_mirror {
+    url     = "https://registry.company.com/mirror/providers/"
+    include = ["registry.company.com/hashicorp/aws"]
+  }
+
+  direct {
+    exclude = ["registry.company.com/hashicorp/aws"]
+  }
+}
+```
+
+When using a non-443 HTTPS port, include the port in both the provider source and the Terraform credentials host, for example `registry.company.com:8443`.
+
+Provider mirror hashes are emitted in Terraform format (`zh:` and/or `h1:`). Cached provider packages are stored through the configured provider artifact storage backend. The admin mirror UI can inspect, retry, and remove mirror cache rows; delete operations remove mirror metadata rows and avoid deleting user-owned provider records.
+
+### Module Read-Through Mirror
+
+Module mirroring keeps the standard module registry routes under `/v1/modules`. Local module details, versions, and downloads take precedence. If a requested module version is missing locally and policy allows it, the registry fetches upstream module metadata and package discovery, validates the package URL, caches the archive locally, and serves the local download path on subsequent requests.
+
+The mirror preserves Terraform module download behavior:
+
+- relative `X-Terraform-Get` values are resolved against the upstream response URL
+- go-getter subdirectory suffixes such as `//*?archive=tar.gz` are preserved
+- archive hints such as `?archive=tar.gz` are preserved after caching
+- mirror refreshes do not replace user-owned local/API uploads
+
+Module archive storage works with local filesystem, Azure Blob, S3-compatible storage, SQLite, and PostgreSQL metadata paths while preserving `ModuleArtifactMetadata.Source`.
+
+### Mirror Permissions
+
+- `mirror.read` permits viewing mirror summary and cache entries.
+- `mirror.configure` permits reading and updating runtime mirror configuration.
+- `mirror.manage` permits retrying failed cache entries and deleting mirror cache rows.
+
+### Operational Notes
+
+SQLite and PostgreSQL migrations create mirror cache and lease tables. Existing databases are upgraded by the normal DbUp migration path at startup. For production use, set `Mirror:PackageUrlSigningKey` to a unique secret and restrict allow/deny patterns, artifact hosts, archive hosts, package sizes, redirect limits, and TTLs to the smallest useful scope.
+
+### Smoke Tests
+
+The `devutils` directory includes Terraform CLI smoke scripts for a running registry:
+
+```bash
+# Provider network mirror; mirror URL must be HTTPS and end with a slash.
+devutils/provider-network-mirror-smoke-test.sh \
+  https://registry.company.com/mirror/providers/ \
+  registry.company.com \
+  your-auth-token \
+  hashicorp aws 5.0.0
+
+# Module read-through mirror; runs terraform init twice in fresh directories.
+devutils/module-readthrough-mirror-smoke-test.sh \
+  https://registry.company.com \
+  your-auth-token \
+  terraform-aws-modules vpc aws 5.21.0
+```
+
+To verify recursive module source rejection, configure a smoke fixture whose upstream `/download` response returns a recursive registry `X-Terraform-Get` value, then run the module smoke with `TF_REG_SMOKE_RECURSIVE_MODULE_SOURCE` set to that fixture's registry source. The script expects `terraform init` for that fixture to fail.
 
 ### Architecture Options
 

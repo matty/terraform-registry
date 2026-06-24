@@ -302,21 +302,18 @@ public sealed class ModuleMirrorService(
                 $"/v1/modules/{moduleNamespace}/{name}/{provider}/{version}/download");
             source = await GetUpstreamArchiveSourceAsync(upstreamDownloadUri, cancellationToken);
 
-            var replaceExistingMirror = false;
             var currentModule = await moduleService.GetModuleAsync(moduleNamespace, name, provider, version);
             if (currentModule is not null)
             {
-                var currentLocalPath = await moduleService.GetModuleDownloadPathAsync(
-                    moduleNamespace,
-                    name,
-                    provider,
-                    version);
                 if (!IsMirrorArtifactFromOrigin(currentModule, hostname))
                 {
+                    var currentLocalPath = await moduleService.GetModuleDownloadPathAsync(
+                        moduleNamespace,
+                        name,
+                        provider,
+                        version);
                     return currentLocalPath;
                 }
-
-                replaceExistingMirror = true;
             }
 
             await repository.UpsertModulePackageAsync(new MirrorModulePackage
@@ -338,6 +335,17 @@ public sealed class ModuleMirrorService(
                 config.Modules.MaxRedirects,
                 cancellationToken)).Content;
 
+            var publishDecision = await DetermineMirrorPublishReplacementAsync(
+                hostname,
+                moduleNamespace,
+                name,
+                provider,
+                version);
+            if (publishDecision.AbortLocalPath is not null)
+            {
+                return publishDecision.AbortLocalPath;
+            }
+
             var sizeBytes = archive.CanSeek ? archive.Length : (long?)null;
             var metadata = CreateMetadata(hostname, source);
             var published = await publishCoordinator.PublishAsync(new ModulePublishRequest
@@ -348,7 +356,7 @@ public sealed class ModuleMirrorService(
                 Version = version,
                 Description = $"Mirrored from {hostname}",
                 ModuleContent = archive,
-                Replace = replaceExistingMirror,
+                Replace = publishDecision.Replace,
                 AuditAction = "module.mirror_cached",
                 Metadata = metadata
             }, cancellationToken);
@@ -520,6 +528,32 @@ public sealed class ModuleMirrorService(
             version,
             ex.Message,
             ex is HttpRequestException httpEx ? (int?)httpEx.StatusCode : null);
+    }
+
+    private async Task<MirrorPublishDecision> DetermineMirrorPublishReplacementAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version)
+    {
+        var currentModule = await moduleService.GetModuleAsync(moduleNamespace, name, provider, version);
+        if (currentModule is null)
+        {
+            return new MirrorPublishDecision(Replace: false, AbortLocalPath: null);
+        }
+
+        if (IsMirrorArtifactFromOrigin(currentModule, hostname))
+        {
+            return new MirrorPublishDecision(Replace: true, AbortLocalPath: null);
+        }
+
+        var currentLocalPath = await moduleService.GetModuleDownloadPathAsync(
+            moduleNamespace,
+            name,
+            provider,
+            version);
+        return new MirrorPublishDecision(Replace: false, AbortLocalPath: currentLocalPath);
     }
 
     private async Task ReleaseLeaseAsync(MirrorLeaseHandle lease)
@@ -758,6 +792,8 @@ public sealed class ModuleMirrorService(
         Uri ArchiveUrl,
         string? PreservedSuffix,
         string? ArchiveFormat);
+
+    private sealed record MirrorPublishDecision(bool Replace, string? AbortLocalPath);
 
     private sealed class ModuleMirrorPackageMetadata
     {

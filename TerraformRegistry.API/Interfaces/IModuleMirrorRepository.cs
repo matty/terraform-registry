@@ -35,4 +35,18 @@ public interface IModuleMirrorRepository
         string version,
         string errorMessage,
         int? httpStatusCode = null);
+
+    Task<bool> RetryModulePackageAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version);
+
+    Task<bool> DeleteModulePackageAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version);
 }

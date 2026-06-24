@@ -1219,6 +1219,44 @@ public sealed class ProviderMirrorServiceTests
             return Task.CompletedTask;
         }
 
+        public Task<bool> RetryProviderPackageAsync(string hostname, string providerNamespace, string type, string version)
+        {
+            var matching = _packages
+                .Where(pair => pair.Value.Hostname == hostname &&
+                               pair.Value.Namespace == providerNamespace &&
+                               pair.Value.Type == type &&
+                               pair.Value.Version == version)
+                .ToArray();
+            foreach (var (key, package) in matching)
+            {
+                _packages[key] = package with
+                {
+                    State = "pending",
+                    LastError = null,
+                    HttpStatusCode = null
+                };
+            }
+
+            return Task.FromResult(matching.Length > 0);
+        }
+
+        public Task<bool> DeleteProviderPackageAsync(string hostname, string providerNamespace, string type, string version)
+        {
+            var keys = _packages
+                .Where(pair => pair.Value.Hostname == hostname &&
+                               pair.Value.Namespace == providerNamespace &&
+                               pair.Value.Type == type &&
+                               pair.Value.Version == version)
+                .Select(pair => pair.Key)
+                .ToArray();
+            foreach (var key in keys)
+            {
+                _packages.Remove(key);
+            }
+
+            return Task.FromResult(keys.Length > 0);
+        }
+
         private static string Key(string hostname, string providerNamespace, string type, string version, string os, string arch) =>
             $"{hostname}/{providerNamespace}/{type}/{version}/{os}/{arch}";
     }

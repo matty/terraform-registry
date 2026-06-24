@@ -14,6 +14,7 @@ internal static class AdminEndpointMappingExtensions
         app.MapAuditEndpoints();
         app.MapUserEndpoints();
         app.MapModuleDocsEndpoints();
+        app.MapMirrorAdminEndpoints();
 
         return app;
     }
@@ -171,6 +172,54 @@ internal static class AdminEndpointMappingExtensions
                         HttpRequest request) =>
                     ModuleDocsHandlers.UpdateConfig(configService, auditService, context, request))
             .WithTags("Module Docs");
+
+        return app;
+    }
+
+    private static WebApplication MapMirrorAdminEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/admin/mirror/summary",
+                (IProviderMirrorRepository providerRepository, IModuleMirrorRepository moduleRepository,
+                        HttpContext context) =>
+                    MirrorAdminHandlers.GetSummary(providerRepository, moduleRepository, context))
+            .WithTags("Mirror Admin");
+
+        app.MapGet("/api/admin/mirror/config",
+                (IMirrorConfigService configService, HttpContext context) =>
+                    MirrorAdminHandlers.GetConfig(configService, context))
+            .WithTags("Mirror Admin");
+
+        app.MapPut("/api/admin/mirror/config",
+                (IMirrorConfigService configService, IAuditService auditService, HttpContext context,
+                        HttpRequest request) =>
+                    MirrorAdminHandlers.UpdateConfig(configService, auditService, context, request))
+            .WithTags("Mirror Admin");
+
+        app.MapGet("/api/admin/mirror/entries",
+                (IProviderMirrorRepository providerRepository, IModuleMirrorRepository moduleRepository,
+                        HttpContext context, string? kind, string? q, string? state, int limit = 50, int offset = 0) =>
+                    MirrorAdminHandlers.ListEntries(providerRepository, moduleRepository, context, kind, q, state, limit, offset))
+            .WithTags("Mirror Admin");
+
+        app.MapPost("/api/admin/mirror/retry",
+                (IProviderMirrorRepository providerRepository, IModuleMirrorRepository moduleRepository,
+                        IAuditService auditService, HttpContext context, HttpRequest request) =>
+                    MirrorAdminHandlers.Retry(providerRepository, moduleRepository, auditService, context, request))
+            .WithTags("Mirror Admin");
+
+        app.MapDelete("/api/admin/mirror/providers/{hostname}/{namespace}/{type}/{version}",
+                (string hostname, string @namespace, string type, string version,
+                        IProviderMirrorRepository providerRepository, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.DeleteProvider(hostname, @namespace, type, version, providerRepository,
+                        auditService, context))
+            .WithTags("Mirror Admin");
+
+        app.MapDelete("/api/admin/mirror/modules/{hostname}/{namespace}/{name}/{provider}/{version}",
+                (string hostname, string @namespace, string name, string provider, string version,
+                        IModuleMirrorRepository moduleRepository, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.DeleteModule(hostname, @namespace, name, provider, version, moduleRepository,
+                        auditService, context))
+            .WithTags("Mirror Admin");
 
         return app;
     }

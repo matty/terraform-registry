@@ -63,6 +63,7 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         string? desc = "VPC module",
         string? filePath = "/modules/vpc/1.0.0.zip",
         DateTime? publishedAt = null,
+        ModuleArtifactMetadata? metadata = null,
         params string[] deps)
     {
         return new ModuleStorage
@@ -74,7 +75,8 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
             Description = desc ?? string.Empty,
             FilePath = filePath ?? string.Empty,
             PublishedAt = publishedAt ?? DateTime.UtcNow,
-            Dependencies = deps.ToList()
+            Dependencies = deps.ToList(),
+            Metadata = metadata ?? new ModuleArtifactMetadata()
         };
     }
 
@@ -369,6 +371,54 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         Assert.Equal("/modules/vpc/3.3.0-new.zip", updated.FilePath);
         Assert.Equal(new DateTime(2024, 4, 1, 12, 35, 56, DateTimeKind.Utc), updated.PublishedAt);
         Assert.Equal(["a", "b"], updated.Dependencies);
+    }
+
+    [Fact]
+    public async Task ReplaceModuleExactUpdatesMetadata()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var mod = MakeModule(
+            version: "3.3.1",
+            desc: "old-desc",
+            filePath: "/modules/vpc/3.3.1-old.zip",
+            publishedAt: new DateTime(2024, 4, 1, 12, 34, 56, DateTimeKind.Utc),
+            metadata: new ModuleArtifactMetadata
+            {
+                Source = new ModuleSourceInfo { Kind = "api-upload" }
+            });
+        await svc.AddModuleAsync(mod);
+
+        var fetched = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(fetched);
+
+        var replacement = MakeModule(
+            version: "3.3.1",
+            desc: "new-desc",
+            filePath: "/modules/vpc/3.3.1-new.zip",
+            publishedAt: new DateTime(2024, 4, 1, 12, 35, 56, DateTimeKind.Utc),
+            metadata: new ModuleArtifactMetadata
+            {
+                Source = new ModuleSourceInfo
+                {
+                    Kind = "mirror",
+                    Origin = "registry.example.com",
+                    SourceUrl = "/archives/vpc-3.3.1.zip",
+                    ResolvedPackageUrl = "https://registry.example.com/archives/vpc-3.3.1.zip",
+                    ArchiveFormat = "zip"
+                }
+            });
+
+        Assert.True(await svc.ReplaceModuleExactAsync(fetched!, replacement));
+
+        var updated = await svc.GetModuleStorageAsync(mod.Namespace, mod.Name, mod.Provider, mod.Version);
+        Assert.NotNull(updated);
+        Assert.Equal("mirror", updated!.Metadata.Source?.Kind);
+        Assert.Equal("registry.example.com", updated.Metadata.Source?.Origin);
+        Assert.Equal("/archives/vpc-3.3.1.zip", updated.Metadata.Source?.SourceUrl);
+        Assert.Equal("https://registry.example.com/archives/vpc-3.3.1.zip", updated.Metadata.Source?.ResolvedPackageUrl);
+        Assert.Equal("zip", updated.Metadata.Source?.ArchiveFormat);
     }
 
     [Fact]

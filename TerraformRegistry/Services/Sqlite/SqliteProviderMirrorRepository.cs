@@ -224,6 +224,53 @@ public sealed class SqliteProviderMirrorRepository(string connectionString) : IP
         await command.ExecuteNonQueryAsync();
     }
 
+    public async Task<bool> RetryProviderPackageAsync(
+        string hostname,
+        string providerNamespace,
+        string type,
+        string version)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            UPDATE mirror_provider_packages
+            SET state = 'pending',
+                last_error = NULL,
+                http_status_code = NULL,
+                updated_at = $updatedAt
+            WHERE hostname = $hostname AND namespace = $namespace AND type = $type AND version = $version";
+        command.Parameters.AddWithValue("$hostname", hostname);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$version", version);
+        command.Parameters.AddWithValue("$updatedAt", ToSqliteTimestamp(DateTime.UtcNow));
+
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<bool> DeleteProviderPackageAsync(
+        string hostname,
+        string providerNamespace,
+        string type,
+        string version)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            DELETE FROM mirror_provider_packages
+            WHERE hostname = $hostname AND namespace = $namespace AND type = $type AND version = $version";
+        command.Parameters.AddWithValue("$hostname", hostname);
+        command.Parameters.AddWithValue("$namespace", providerNamespace);
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$version", version);
+
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
     private static void AddPackageParameters(SqliteCommand command, MirrorProviderPackage package, DateTime updatedAt)
     {
         command.Parameters.AddWithValue("$id", package.Id.ToString());

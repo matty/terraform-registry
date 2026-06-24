@@ -412,7 +412,8 @@ public sealed class SqliteModuleRepository(
             SET description = $newDesc,
                 storage_path = $newPath,
                 published_at = $newPublished,
-                dependencies = $newDeps
+                dependencies = $newDeps,
+                metadata = $newMetadata
             WHERE namespace = $ns
               AND name = $name
               AND provider = $prov
@@ -421,6 +422,7 @@ public sealed class SqliteModuleRepository(
               AND storage_path = $path
               AND published_at = $published
               AND dependencies = $deps
+              AND metadata = $metadata
               AND deleted_at IS NULL";
 
         try
@@ -438,11 +440,13 @@ public sealed class SqliteModuleRepository(
             cmd.Parameters.AddWithValue("$published", existingModule.PublishedAt.ToString("o", CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$deps",
                 existingModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(existingModule.Dependencies));
+            cmd.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(existingModule.Metadata ?? new ModuleArtifactMetadata()));
             cmd.Parameters.AddWithValue("$newDesc", newModule.Description);
             cmd.Parameters.AddWithValue("$newPath", newModule.FilePath);
             cmd.Parameters.AddWithValue("$newPublished", newModule.PublishedAt.ToString("o", CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$newDeps",
                 newModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(newModule.Dependencies));
+            cmd.Parameters.AddWithValue("$newMetadata", JsonSerializer.Serialize(newModule.Metadata ?? new ModuleArtifactMetadata()));
 
             var rows = await cmd.ExecuteNonQueryAsync();
             return rows > 0;

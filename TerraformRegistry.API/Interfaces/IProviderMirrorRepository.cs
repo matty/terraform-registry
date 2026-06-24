@@ -36,4 +36,16 @@ public interface IProviderMirrorRepository
         string arch,
         string errorMessage,
         int? httpStatusCode = null);
+
+    Task<bool> RetryProviderPackageAsync(
+        string hostname,
+        string providerNamespace,
+        string type,
+        string version);
+
+    Task<bool> DeleteProviderPackageAsync(
+        string hostname,
+        string providerNamespace,
+        string type,
+        string version);
 }

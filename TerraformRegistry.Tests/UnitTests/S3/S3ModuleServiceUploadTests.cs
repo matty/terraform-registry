@@ -484,6 +484,58 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
+    public async Task UploadModuleAsyncPreservesModuleMetadataOnReplace()
+    {
+        var existingModule = CreateExistingModuleStorage();
+        ModuleStorage? replacementModule = null;
+        var metadata = new ModuleArtifactMetadata
+        {
+            Source = new ModuleSourceInfo
+            {
+                Kind = "mirror",
+                Origin = "registry.example.com",
+                SourceUrl = "/archives/vpc-1.2.3.zip",
+                ResolvedPackageUrl = "https://registry.example.com/archives/vpc-1.2.3.zip",
+                ArchiveFormat = "zip"
+            }
+        };
+
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
+            .ReturnsAsync(existingModule);
+
+        _mockS3Client
+            .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
+            .ReturnsAsync(new PutObjectResponse());
+
+        _mockS3Client
+            .Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), default))
+            .ReturnsAsync(new CopyObjectResponse());
+
+        _mockDatabaseService
+            .Setup(x => x.ReplaceModuleExactAsync(existingModule, It.IsAny<ModuleStorage>()))
+            .Callback<ModuleStorage, ModuleStorage>((_, module) => replacementModule = module)
+            .ReturnsAsync(true);
+
+        _mockS3Client
+            .Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
+            .ReturnsAsync(new DeleteObjectResponse());
+
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "aws", "1.0.0", stream, "desc", replace: true, metadata: metadata);
+
+        Assert.True(result);
+        Assert.NotNull(replacementModule);
+        Assert.Equal("mirror", replacementModule!.Metadata.Source?.Kind);
+        Assert.Equal("registry.example.com", replacementModule.Metadata.Source?.Origin);
+        Assert.Equal("/archives/vpc-1.2.3.zip", replacementModule.Metadata.Source?.SourceUrl);
+        Assert.Equal("https://registry.example.com/archives/vpc-1.2.3.zip", replacementModule.Metadata.Source?.ResolvedPackageUrl);
+        Assert.Equal("zip", replacementModule.Metadata.Source?.ArchiveFormat);
+    }
+
+    [Fact]
     public async Task UploadModuleAsyncReturnsFalseAndCleansUpWhenReplaceUpdateReturnsFalse()
     {
         var existingModule = CreateExistingModuleStorage();

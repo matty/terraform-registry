@@ -381,6 +381,40 @@ public sealed class ModuleMirrorServiceTests
     }
 
     [Fact]
+    public async Task ExactDownloadDoesNotReplaceMirrorWhenLocalApiUploadAppearsAfterArchiveFetch()
+    {
+        var http = new RecordingHttpMessageHandler();
+        http.RespondDownloadHeader(
+            "https://registry.example.com/v1/modules/hashicorp/vpc/aws/1.2.3/download",
+            "https://github.com/hashicorp/vpc/archive/v1.2.3.tar.gz");
+        http.RespondBytes("https://github.com/hashicorp/vpc/archive/v1.2.3.tar.gz", [1, 2, 3], "application/gzip");
+        var moduleService = new Mock<IModuleService>();
+        moduleService.SetupSequence(x => x.GetModuleDownloadPathAsync("hashicorp", "vpc", "aws", "1.2.3"))
+            .ReturnsAsync((string?)null)
+            .ReturnsAsync("/module/download?token=local");
+        moduleService.SetupSequence(x => x.GetModuleAsync("hashicorp", "vpc", "aws", "1.2.3"))
+            .ReturnsAsync(CreateMirrorModule())
+            .ReturnsAsync(CreateModule("Concurrent API upload", "api-upload"));
+        var repository = new Mock<IModuleMirrorRepository>();
+        repository.Setup(x => x.UpsertModulePackageAsync(It.IsAny<MirrorModulePackage>()))
+            .Returns(Task.CompletedTask);
+        var publish = new Mock<IModulePublishCoordinator>();
+        var service = CreateService(http, repository: repository, moduleService: moduleService, publish: publish);
+
+        var result = await service.GetModuleDownloadPathAsync(
+            "hashicorp",
+            "vpc",
+            "aws",
+            "1.2.3",
+            null,
+            CancellationToken.None);
+
+        Assert.Equal("/module/download?token=local", result);
+        Assert.Contains(http.Requests, uri => uri.ToString() == "https://github.com/hashicorp/vpc/archive/v1.2.3.tar.gz");
+        publish.Verify(x => x.PublishAsync(It.IsAny<ModulePublishRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task LocalNonMirroredDownloadWinsUnchanged()
     {
         var repository = new Mock<IModuleMirrorRepository>();

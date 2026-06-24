@@ -521,7 +521,8 @@ public sealed class PostgreSqlModuleRepository(
             SET description = @newDescription,
                 storage_path = @newStoragePath,
                 published_at = @newPublishedAt,
-                dependencies = @newDependencies
+                dependencies = @newDependencies,
+                metadata = @newMetadata
             WHERE namespace = @moduleNamespace
               AND name = @name
               AND provider = @provider
@@ -530,6 +531,7 @@ public sealed class PostgreSqlModuleRepository(
               AND storage_path = @storagePath
               AND published_at = @publishedAt
               AND dependencies = @dependencies
+              AND metadata = @metadata
               AND deleted_at IS NULL";
 
         try
@@ -548,11 +550,17 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@dependencies",
                     existingModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(existingModule.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@metadata",
+                    JsonSerializer.Serialize(existingModule.Metadata ?? new ModuleArtifactMetadata())).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
             command.Parameters.AddWithValue("@newDescription", newModule.Description);
             command.Parameters.AddWithValue("@newStoragePath", newModule.FilePath);
             command.Parameters.AddWithValue("@newPublishedAt", newModule.PublishedAt);
             command.Parameters.AddWithValue("@newDependencies",
                     newModule.Dependencies == null ? "[]" : JsonSerializer.Serialize(newModule.Dependencies)).NpgsqlDbType =
+                NpgsqlDbType.Jsonb;
+            command.Parameters.AddWithValue("@newMetadata",
+                    JsonSerializer.Serialize(newModule.Metadata ?? new ModuleArtifactMetadata())).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
             var rowsAffected = await command.ExecuteNonQueryAsync();

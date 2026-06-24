@@ -198,6 +198,59 @@ public sealed class PostgreSqlModuleMirrorRepository(string connectionString) : 
         await command.ExecuteNonQueryAsync();
     }
 
+    public async Task<bool> RetryModulePackageAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version)
+    {
+        const string sql = @"
+            UPDATE mirror_module_packages
+            SET state = 'pending',
+                last_error = NULL,
+                http_status_code = NULL,
+                updated_at = @updatedAt
+            WHERE hostname = @hostname AND namespace = @namespace AND name = @name
+              AND provider = @provider AND version = @version";
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@hostname", hostname);
+        command.Parameters.AddWithValue("@namespace", moduleNamespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
+    public async Task<bool> DeleteModulePackageAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version)
+    {
+        const string sql = @"
+            DELETE FROM mirror_module_packages
+            WHERE hostname = @hostname AND namespace = @namespace AND name = @name
+              AND provider = @provider AND version = @version";
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@hostname", hostname);
+        command.Parameters.AddWithValue("@namespace", moduleNamespace);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@version", version);
+
+        return await command.ExecuteNonQueryAsync() > 0;
+    }
+
     private static void AddPackageParameters(NpgsqlCommand command, MirrorModulePackage package, DateTime updatedAt)
     {
         command.Parameters.AddWithValue("@id", package.Id);
