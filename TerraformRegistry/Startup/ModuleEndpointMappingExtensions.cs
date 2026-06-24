@@ -3,6 +3,7 @@ using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Publishing;
+using Microsoft.Extensions.Options;
 
 namespace TerraformRegistry.Startup;
 
@@ -106,9 +107,11 @@ internal static class ModuleEndpointMappingExtensions
     {
         app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}",
                 async (string @namespace, string name, string provider, string version, HttpRequest request,
-                        IModulePublishCoordinator publishCoordinator, HttpContext context) =>
+                        IModulePublishCoordinator publishCoordinator,
+                        IOptions<ModuleExtractionOptions> extractionOptions,
+                        HttpContext context) =>
                     await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, publishCoordinator,
-                        context))
+                        extractionOptions, context))
             .WithTags("Modules")
             .WithDescription("Uploads a new module version")
             .Accepts<IFormFile>("multipart/form-data")

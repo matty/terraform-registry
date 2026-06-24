@@ -214,6 +214,84 @@ public class GitHubVcsServiceSyncTests
         Assert.Contains("?per_page=100&page=2", requestedPages);
     }
 
+    [Fact]
+    public async Task SyncSourceAsyncDisposesTarballHttpResponseAfterPublishing()
+    {
+        var source = new VcsSource
+        {
+            Id = Guid.NewGuid(),
+            UserId = "creator-1",
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            RepoOwner = "acme",
+            RepoName = "terraform-network",
+            ConnectionId = Guid.NewGuid(),
+            IsActive = true,
+            TagPattern = "v*"
+        };
+
+        var sourceService = new Mock<IVcsSourceService>();
+        sourceService.Setup(x => x.GetAsync(source.Id)).ReturnsAsync(source);
+        sourceService.Setup(x => x.UpdateSyncStateAsync(source.Id, "succeeded", "1.1.0", null))
+            .ReturnsAsync(source);
+
+        var connectionService = new Mock<IVcsConnectionService>();
+        connectionService.Setup(x => x.GetConnectionAsync(source.ConnectionId)).ReturnsAsync(new VcsConnection
+        {
+            Id = source.ConnectionId,
+            Provider = "github",
+            Label = "GitHub",
+            IsActive = true,
+            WebhookSecret = "secret",
+            PatEncrypted = null
+        });
+
+        var moduleService = new Mock<IModuleService>();
+        moduleService.Setup(x => x.GetModuleVersionsAsync("acme", "network", "aws")).ReturnsAsync(new ModuleVersions { Modules = [] });
+
+        var publishCoordinator = new Mock<IModulePublishCoordinator>();
+        publishCoordinator.Setup(x => x.PublishAsync(
+                It.IsAny<ModulePublishRequest>(),
+                CancellationToken.None))
+            .Returns<ModulePublishRequest, CancellationToken>(async (request, _) =>
+            {
+                using var memory = new MemoryStream();
+                await request.ModuleContent.CopyToAsync(memory, CancellationToken.None);
+                return memory.Length == 4;
+            });
+
+        var tarballContent = new TrackingByteArrayContent([1, 2, 3, 4]);
+        var httpFactory = new TestHttpClientFactory(new HttpClient(new RecordingHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/tags", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("[{\"name\":\"v1.1.0\"}]", Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = tarballContent
+            };
+        })));
+
+        var service = new GitHubVcsService(
+            sourceService.Object,
+            connectionService.Object,
+            moduleService.Object,
+            publishCoordinator.Object,
+            httpFactory,
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)).Build(),
+            NullLogger<GitHubVcsService>.Instance);
+
+        await service.SyncSourceAsync(source.Id, null, false, "user-123", CancellationToken.None);
+
+        Assert.True(tarballContent.IsDisposed);
+    }
+
     private sealed class TestHttpClientFactory(HttpClient client) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => client;
@@ -223,5 +301,16 @@ public class GitHubVcsServiceSyncTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(responseFactory(request));
+    }
+
+    private sealed class TrackingByteArrayContent(byte[] content) : ByteArrayContent(content)
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
     }
 }

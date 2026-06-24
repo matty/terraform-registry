@@ -28,4 +28,23 @@ public class ArchiveWorkspaceFactoryTests
         Assert.True(File.Exists(Path.Combine(workspace.RootPath, "README.md")));
         Assert.True(File.Exists(Path.Combine(workspace.RootPath, "variables.tf")));
     }
+
+    [Fact]
+    public async Task ArchiveWorkspaceFactoryRejectsArchivesOverConfiguredLimit()
+    {
+        var tempDir = Directory.CreateTempSubdirectory();
+        await using var stream = new MemoryStream([1, 2, 3, 4, 5]);
+        var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
+        {
+            TempRoot = Path.Combine(tempDir.FullName, "workspaces"),
+            MaxArchiveBytes = 4
+        });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.CreateAsync(stream, CancellationToken.None));
+
+        Assert.Contains("exceeds", ex.Message, StringComparison.OrdinalIgnoreCase);
+        var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
+        Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
+    }
 }

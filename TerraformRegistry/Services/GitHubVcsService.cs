@@ -18,6 +18,7 @@ public class GitHubVcsService : IGitHubVcsService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
     private readonly ILogger<GitHubVcsService> _logger;
+    private readonly long _maxArchiveBytes;
 
     public GitHubVcsService(
         IVcsSourceService vcsSourceService,
@@ -53,6 +54,9 @@ public class GitHubVcsService : IGitHubVcsService
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _logger = logger;
+        _maxArchiveBytes = configuration.GetValue(
+            "ModuleExtraction:MaxArchiveBytes",
+            ModuleExtractionOptions.DefaultMaxArchiveBytes);
     }
 
     public async Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(
@@ -398,9 +402,55 @@ public class GitHubVcsService : IGitHubVcsService
             $"https://api.github.com/repos/{repoOwner}/{repoName}/tarball/{tag}",
             connection);
 
-        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+
+        var memory = new MemoryStream();
+        try
+        {
+            await CopyToOwnedStreamAsync(responseStream, memory, _maxArchiveBytes, cancellationToken);
+            memory.Position = 0;
+            return memory;
+        }
+        catch
+        {
+            await memory.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task CopyToOwnedStreamAsync(
+        Stream source,
+        Stream destination,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        if (maxBytes <= 0)
+        {
+            throw new InvalidOperationException("Module archive size limit must be greater than zero bytes.");
+        }
+
+        var buffer = new byte[81920];
+        long total = 0;
+
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                return;
+            }
+
+            total += read;
+            if (total > maxBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Module archive exceeds the configured limit of {maxBytes} bytes.");
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
     }
 
     private HttpRequestMessage CreateGitHubRequest(HttpMethod method, string url, VcsConnection connection)

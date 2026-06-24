@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Options;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
@@ -68,8 +69,8 @@ public static class ModuleHandlers
             Q = q,
             Namespace = @namespace,
             Provider = provider,
-            Offset = offset,
-            Limit = limit
+            Offset = Math.Max(0, offset),
+            Limit = Math.Clamp(limit, 1, 100)
         };
 
         var result = await moduleService.ListModulesAsync(request);
@@ -254,6 +255,7 @@ public static class ModuleHandlers
         string version,
         HttpRequest request,
         IModulePublishCoordinator publishCoordinator,
+        IOptions<ModuleExtractionOptions> extractionOptions,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesUpload);
@@ -277,6 +279,11 @@ public static class ModuleHandlers
         var description = form["description"].ToString() ?? string.Empty;
 
         if (moduleFile == null || moduleFile.Length == 0) return ErrorResponseExtensions.BadRequest("No file uploaded");
+        if (moduleFile.Length > extractionOptions.Value.MaxArchiveBytes)
+        {
+            return ErrorResponseExtensions.BadRequest(
+                $"Module archive exceeds the configured limit of {extractionOptions.Value.MaxArchiveBytes} bytes.");
+        }
 
         try
         {
@@ -473,8 +480,8 @@ public static class ModuleHandlers
             Q = q,
             Namespace = @namespace,
             Provider = provider,
-            Offset = offset,
-            Limit = limit
+            Offset = Math.Max(0, offset),
+            Limit = Math.Clamp(limit, 1, 100)
         };
 
         var result = await moduleService.ListDeletedModulesAsync(request);

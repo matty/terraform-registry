@@ -19,7 +19,7 @@ public static class AnalyticsHandlers
         if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.AnalyticsView))
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
-        var result = await analyticsService.GetTopModulesAsync(limit, period);
+        var result = await analyticsService.GetTopModulesAsync(Math.Clamp(limit, 1, 100), period);
         return Results.Ok(result);
     }
 

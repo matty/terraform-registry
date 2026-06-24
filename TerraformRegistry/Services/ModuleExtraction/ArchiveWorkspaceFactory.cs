@@ -24,7 +24,7 @@ public sealed class ArchiveWorkspaceFactory : IArchiveWorkspaceFactory
 
         try
         {
-            var archiveBytes = await ReadAllBytesAsync(archiveStream, cancellationToken);
+            var archiveBytes = await ReadAllBytesAsync(archiveStream, _options.MaxArchiveBytes, cancellationToken);
             if (LooksLikeZip(archiveBytes))
             {
                 using var zip = new ZipArchive(new MemoryStream(archiveBytes), ZipArchiveMode.Read);
@@ -47,10 +47,36 @@ public sealed class ArchiveWorkspaceFactory : IArchiveWorkspaceFactory
         }
     }
 
-    private static async Task<byte[]> ReadAllBytesAsync(Stream archiveStream, CancellationToken cancellationToken)
+    private static async Task<byte[]> ReadAllBytesAsync(
+        Stream archiveStream,
+        long maxArchiveBytes,
+        CancellationToken cancellationToken)
     {
+        if (maxArchiveBytes <= 0)
+        {
+            throw new InvalidOperationException("Module archive size limit must be greater than zero bytes.");
+        }
+
         using var memory = new MemoryStream();
-        await archiveStream.CopyToAsync(memory, cancellationToken);
+        var buffer = new byte[81920];
+
+        while (true)
+        {
+            var read = await archiveStream.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (memory.Length + read > maxArchiveBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Module archive exceeds the configured limit of {maxArchiveBytes} bytes.");
+            }
+
+            await memory.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
+
         return memory.ToArray();
     }
 
