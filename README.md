@@ -96,7 +96,8 @@ Docker image publishing resolves versions in this order:
 
 - `workflow_dispatch` version override
 - `main` branch push, using the next monthly CalVer patch from existing tags, such as `2026.6.1`, `2026.6.2`, then `2026.6.3`
-- Other branch builds, using the UTC build date plus the GitHub run number, such as `2026.6.123`
+- `develop` branch push, using a prerelease of the next monthly CalVer patch plus the GitHub run number, such as `2026.6.3-develop.124`
+- Other branch builds, using a sanitized branch prerelease of the next monthly CalVer patch plus the GitHub run number, such as `2026.6.3-release-candidate.125`
 
 Successful `main` branch releases create and push the matching `vYYYY.M.PATCH` tag so the next `main` release increments from the latest tag for that year and month. Tag pushes do not trigger a separate CI release.
 

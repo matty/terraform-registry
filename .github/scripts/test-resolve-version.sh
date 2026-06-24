@@ -30,10 +30,10 @@ assert_equals "2026.6.0" "$(
   GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v2026.6.0 "$resolver"
 )" "release tag"
 
-assert_equals "2026.6.123" "$(
+assert_equals "2026.6.1-develop.123" "$(
   cd "$work_dir"
   CALVER_DATE=2026-06-16 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop GITHUB_RUN_NUMBER=123 "$resolver"
-)" "develop branch"
+)" "develop branch uses prerelease for next monthly CalVer"
 
 git -C "$work_dir" tag v2026.6.1
 git -C "$work_dir" tag v2026.6.2
@@ -44,6 +44,21 @@ assert_equals "2026.6.3" "$(
   cd "$work_dir"
   CALVER_DATE=2026-06-16 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=main GITHUB_RUN_NUMBER=999 "$resolver"
 )" "main branch increments from current month tags"
+
+assert_equals "2026.6.3-develop.124" "$(
+  cd "$work_dir"
+  CALVER_DATE=2026-06-16 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop GITHUB_RUN_NUMBER=124 "$resolver"
+)" "develop branch prerelease increments from current month tags"
+
+assert_equals "2026.6.3-release-candidate.125" "$(
+  cd "$work_dir"
+  CALVER_DATE=2026-06-16 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=release/candidate GITHUB_RUN_NUMBER=125 "$resolver"
+)" "release branch uses sanitized prerelease for next monthly CalVer"
+
+assert_equals "2026.6.3-feature-fix-01.126" "$(
+  cd "$work_dir"
+  CALVER_DATE=2026-06-16 GITHUB_REF_TYPE=branch GITHUB_REF_NAME="feature/Fix 01" GITHUB_RUN_NUMBER=126 "$resolver"
+)" "feature branch uses sanitized prerelease for next monthly CalVer"
 
 git -C "$work_dir" tag v2026.7.7
 

@@ -169,6 +169,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Test version resolver
+        run: bash .github/scripts/test-resolve-version.sh
+
       - name: Resolve version
         id: resolved-version
         run: |

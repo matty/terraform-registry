@@ -31,7 +31,7 @@ fi
 year="${BASH_REMATCH[1]}"
 month="$((10#${BASH_REMATCH[2]}))"
 
-if [[ "$ref_type" == "branch" && "$ref_name" == "main" ]]; then
+next_monthly_patch() {
   max_patch=0
 
   while IFS= read -r tag; do
@@ -43,7 +43,25 @@ if [[ "$ref_type" == "branch" && "$ref_name" == "main" ]]; then
     fi
   done < <(git tag --list)
 
-  printf '%s.%s.%s\n' "$year" "$month" "$((max_patch + 1))"
+  printf '%s' "$((max_patch + 1))"
+}
+
+branch_prerelease_label() {
+  local label
+
+  label="$(printf '%s' "$ref_name" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^0-9a-z]+/-/g; s/^-+//; s/-+$//')"
+
+  if [[ -z "$label" ]]; then
+    label="branch"
+  fi
+
+  printf '%s' "$label"
+}
+
+if [[ "$ref_type" == "branch" && "$ref_name" == "main" ]]; then
+  printf '%s.%s.%s\n' "$year" "$month" "$(next_monthly_patch)"
   exit 0
 fi
 
@@ -54,4 +72,14 @@ if [[ ! "$build_number" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-printf '%s.%s.%s\n' "$year" "$month" "$build_number"
+if [[ "$ref_type" == "branch" && "$ref_name" == "develop" ]]; then
+  printf '%s.%s.%s-develop.%s\n' "$year" "$month" "$(next_monthly_patch)" "$build_number"
+  exit 0
+fi
+
+if [[ "$ref_type" == "branch" ]]; then
+  printf '%s.%s.%s-%s.%s\n' "$year" "$month" "$(next_monthly_patch)" "$(branch_prerelease_label)" "$build_number"
+  exit 0
+fi
+
+printf '%s.%s.%s-unknown.%s\n' "$year" "$month" "$(next_monthly_patch)" "$build_number"
