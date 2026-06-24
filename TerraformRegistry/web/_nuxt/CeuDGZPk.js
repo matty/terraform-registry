@@ -1,0 +1,1 @@
+import{b2 as r,h as t,H as l,v as a}from"./Ck8bTr88.js";const u=()=>{const e=t(),s=a(!1),o=a(!1);return l(()=>e.fullPath,()=>{s.value=!1}),{isSidebarOpen:s,isSidebarCollapsed:o}},n=r(u);export{n as u};

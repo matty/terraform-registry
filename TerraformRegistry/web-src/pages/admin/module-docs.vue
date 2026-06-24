@@ -152,6 +152,23 @@ function formatLlmJson(document: ModuleLlmContextDocument): string {
   return JSON.stringify(document, null, 2)
 }
 
+function splitLlmSummary(value: string | null): string[] {
+  if (!value) return []
+
+  return value
+    .split(/\s+-\s+(?=[A-Za-z0-9_"'([])/)
+    .map(part => part.trim())
+    .filter(Boolean)
+}
+
+function llmSummaryLead(value: string | null): string {
+  return splitLlmSummary(value)[0] || 'No curated summary'
+}
+
+function llmSummaryBullets(value: string | null): string[] {
+  return splitLlmSummary(value).slice(1)
+}
+
 const fetchSummary = async () => {
   const result = await getSummary()
   summary.value = result.summary
@@ -396,7 +413,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-else class="max-w-6xl space-y-6">
+      <div v-else class="max-w-7xl space-y-6">
         <!-- Error Message -->
         <div
           v-if="errorMessage"
@@ -563,23 +580,25 @@ onMounted(() => {
         </div>
 
         <!-- Modules list + detail panel -->
-        <div class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+        <div class="grid gap-6 xl:grid-cols-[minmax(400px,0.86fr)_minmax(0,1.14fr)]">
           <!-- Modules list card -->
           <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden">
-            <div class="border-b border-neutral-800/60 p-5">
-              <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div class="border-b border-neutral-800/60 px-4 py-3">
+              <div class="flex flex-col gap-3">
                 <div>
-                  <h2 class="text-sm font-semibold text-neutral-100">
-                    Modules
-                  </h2>
-                  <p class="mt-1 text-xs text-neutral-500">
-                    {{ total.toLocaleString() }} matching versions
-                  </p>
+                  <div class="flex items-baseline justify-between gap-3">
+                    <h2 class="text-sm font-semibold text-neutral-100">
+                      Modules
+                    </h2>
+                    <p class="shrink-0 text-xs text-neutral-500">
+                      {{ total.toLocaleString() }} versions
+                    </p>
+                  </div>
                 </div>
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <label class="flex flex-col gap-1.5">
+                <div class="grid gap-2 sm:grid-cols-[minmax(9rem,0.9fr)_minmax(12rem,1.4fr)_auto] sm:items-end">
+                  <label class="flex flex-col gap-1">
                     <span class="text-xs font-medium uppercase tracking-wider text-neutral-400">Status</span>
-                    <select v-model="statusFilter" class="docs-select min-w-44">
+                    <select v-model="statusFilter" class="docs-select w-full">
                       <option
                         v-for="option in statusOptions"
                         :key="option.value"
@@ -589,7 +608,7 @@ onMounted(() => {
                       </option>
                     </select>
                   </label>
-                  <label class="flex flex-col gap-1.5">
+                  <label class="flex flex-col gap-1">
                     <span class="text-xs font-medium uppercase tracking-wider text-neutral-400">Search</span>
                     <div class="relative">
                       <UIcon
@@ -598,18 +617,18 @@ onMounted(() => {
                       />
                       <input
                         v-model="searchText"
-                        class="docs-input min-w-56 w-full pl-8"
+                        class="docs-input w-full pl-8"
                         placeholder="namespace, name, provider"
                         @keyup.enter="applyFilters"
                       >
                     </div>
                   </label>
-                  <div class="flex gap-2">
+                  <div class="flex gap-2 sm:pb-px">
                     <UButton
                       icon="i-lucide-search"
-                      label="Apply"
                       color="primary"
                       size="sm"
+                      title="Apply filters"
                       @click="applyFilters"
                     />
                     <UButton
@@ -663,35 +682,34 @@ onMounted(() => {
               <div
                 v-for="module in modules"
                 :key="moduleKey(module)"
-                class="px-5 py-4 cursor-pointer transition-colors hover:bg-neutral-800/30"
-                :class="selectedKey === moduleKey(module) ? 'bg-neutral-800/45' : ''"
+                class="group cursor-pointer px-4 py-3 transition-colors hover:bg-neutral-800/30"
+                :class="selectedKey === moduleKey(module) ? 'bg-neutral-800/50 ring-1 ring-inset ring-primary-500/20' : ''"
                 @click="selectModule(module)"
               >
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="font-mono text-sm font-medium text-neutral-100">
+                    <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span class="truncate font-mono text-sm font-semibold text-neutral-100">
                         {{ module.namespace }}/{{ module.name }}/{{ module.provider }}
                       </span>
-                      <span class="rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-xs text-neutral-400">
+                      <span class="shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 font-mono text-[11px] text-neutral-400">
                         {{ module.version }}
                       </span>
                     </div>
-                    <p class="mt-1 line-clamp-2 text-sm text-neutral-500">
+                    <p class="mt-1 line-clamp-1 text-sm text-neutral-500">
                       {{ module.description || 'No description' }}
                     </p>
-                    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-neutral-500">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-500">
                       <span>Attempt: {{ formatShortDate(module.lastAttemptedAt) }}</span>
                       <span>Success: {{ formatShortDate(module.lastSucceededAt) }}</span>
-                      <span>LLM: {{ statusLabel(module.llmStatus) }}</span>
                       <span v-if="module.documentation">
                         {{ module.documentation.inputCount }} inputs / {{ module.documentation.outputCount }} outputs / {{ module.documentation.exampleCount }} examples
                       </span>
                     </div>
                   </div>
-                  <div class="flex shrink-0 items-center gap-2">
+                  <div class="flex shrink-0 items-center gap-1.5">
                     <span
-                      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
+                      class="hidden items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 sm:inline-flex"
                       :class="statusClass(module.status)"
                     >
                       {{ statusLabel(module.status) }}
@@ -700,7 +718,7 @@ onMounted(() => {
                       class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
                       :class="statusClass(module.llmStatus)"
                     >
-                      LLM {{ statusLabel(module.llmStatus) }}
+                      LLM<span class="hidden md:inline">&nbsp;{{ statusLabel(module.llmStatus) }}</span>
                     </span>
                     <UButton
                       v-if="canManage"
@@ -725,7 +743,7 @@ onMounted(() => {
             </div>
 
             <!-- Pagination -->
-            <div class="flex items-center justify-between border-t border-neutral-800/60 px-5 py-4">
+            <div class="flex items-center justify-between border-t border-neutral-800/60 px-4 py-3">
               <p class="text-xs text-neutral-500">
                 Page {{ currentPage }} of {{ totalPages }}
               </p>
@@ -753,8 +771,8 @@ onMounted(() => {
           </div>
 
           <!-- Detail panel -->
-          <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden xl:sticky xl:top-6">
-            <div class="border-b border-neutral-800/60 p-5">
+          <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)]">
+            <div class="border-b border-neutral-800/60 px-5 py-4">
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <h2 class="text-sm font-semibold text-neutral-100">
@@ -780,7 +798,7 @@ onMounted(() => {
               </div>
               <div
                 v-if="selectedDetail && canManage"
-                class="mt-3"
+                class="mt-3 flex flex-wrap gap-2"
               >
                 <UButton
                   icon="i-lucide-bot"
@@ -817,26 +835,27 @@ onMounted(() => {
               </p>
             </div>
 
-            <div v-else class="max-h-[calc(100vh-18rem)] overflow-y-auto p-5">
-              <div class="mb-5 flex flex-wrap items-center gap-2">
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
-                  :class="statusClass(selectedDetail.status)"
-                >
-                  {{ statusLabel(selectedDetail.status) }}
-                </span>
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
-                  :class="statusClass(selectedDetail.llmStatus)"
-                >
-                  LLM {{ statusLabel(selectedDetail.llmStatus) }}
-                </span>
-                <span class="text-xs text-neutral-500">
-                  Generated: {{ formatDate(selectedDetail.document?.generatedAt ?? null) }}
-                </span>
-                <span class="text-xs text-neutral-500">
-                  LLM: {{ formatDate(selectedDetail.llmContext?.generatedAt ?? null) }}
-                </span>
+            <div v-else class="overflow-y-auto p-5 xl:max-h-[calc(100vh-9.5rem)]">
+              <div class="mb-5 grid gap-3 rounded-lg border border-neutral-800/70 bg-neutral-950/35 p-3 sm:grid-cols-[auto_auto_1fr] sm:items-center">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
+                    :class="statusClass(selectedDetail.status)"
+                  >
+                    {{ statusLabel(selectedDetail.status) }}
+                  </span>
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1"
+                    :class="statusClass(selectedDetail.llmStatus)"
+                  >
+                    LLM {{ statusLabel(selectedDetail.llmStatus) }}
+                  </span>
+                </div>
+                <div class="hidden h-4 w-px bg-neutral-800 sm:block" />
+                <div class="grid gap-1 text-xs text-neutral-500 sm:grid-cols-2">
+                  <span>Generated: {{ formatDate(selectedDetail.document?.generatedAt ?? null) }}</span>
+                  <span>LLM: {{ formatDate(selectedDetail.llmContext?.generatedAt ?? null) }}</span>
+                </div>
               </div>
 
               <div v-if="selectedDetail.llmError" class="mb-5 rounded-lg border border-cyan-900/50 bg-cyan-950/20 p-3 text-sm text-cyan-200">
@@ -862,10 +881,26 @@ onMounted(() => {
                   </div>
                   <div v-else class="space-y-3">
                     <div class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-4">
-                      <p class="text-sm text-neutral-100">
-                        {{ selectedDetail.llmContext.summary.oneLine || 'No curated summary' }}
+                      <p class="max-w-3xl text-base leading-7 text-neutral-100">
+                        {{ llmSummaryLead(selectedDetail.llmContext.summary.oneLine) }}
                       </p>
-                      <div class="mt-3 flex flex-wrap gap-2">
+                      <ul
+                        v-if="llmSummaryBullets(selectedDetail.llmContext.summary.oneLine).length"
+                        class="mt-4 grid gap-2 text-sm leading-6 text-neutral-300 md:grid-cols-2"
+                      >
+                        <li
+                          v-for="item in llmSummaryBullets(selectedDetail.llmContext.summary.oneLine)"
+                          :key="item"
+                          class="flex gap-2"
+                        >
+                          <UIcon name="i-lucide-minus" class="mt-1.5 shrink-0 text-xs text-cyan-400" />
+                          <span>{{ item }}</span>
+                        </li>
+                      </ul>
+                      <div
+                        v-if="selectedDetail.llmContext.summary.capabilities.length"
+                        class="mt-4 flex flex-wrap gap-2"
+                      >
                         <span
                           v-for="capability in selectedDetail.llmContext.summary.capabilities"
                           :key="capability"
@@ -874,6 +909,24 @@ onMounted(() => {
                           {{ capability }}
                         </span>
                       </div>
+                    </div>
+                    <div
+                      v-if="selectedDetail.llmContext.summary.usageNotes.length"
+                      class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-4"
+                    >
+                      <h4 class="text-sm font-semibold text-neutral-100">
+                        Usage Notes
+                      </h4>
+                      <ul class="mt-3 space-y-2 text-sm leading-6 text-neutral-300">
+                        <li
+                          v-for="note in selectedDetail.llmContext.summary.usageNotes"
+                          :key="note"
+                          class="flex gap-2"
+                        >
+                          <UIcon name="i-lucide-check" class="mt-1.5 shrink-0 text-xs text-cyan-400" />
+                          <span>{{ note }}</span>
+                        </li>
+                      </ul>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2">
                       <div class="rounded-lg border border-neutral-800 bg-neutral-950/35 p-3">
