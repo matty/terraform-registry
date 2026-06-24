@@ -23,11 +23,13 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
             SELECT id, namespace, type, display_name, description, source_repository_url, created_by, created_at, updated_at, deleted_at
             FROM providers
             WHERE deleted_at IS NULL
-              AND (@q IS NULL OR namespace ILIKE @like OR type ILIKE @like OR display_name ILIKE @like OR description ILIKE @like)
+              AND (CAST(@like AS text) IS NULL OR namespace ILIKE @like OR type ILIKE @like OR display_name ILIKE @like OR description ILIKE @like)
             ORDER BY namespace, type
             LIMIT @limit OFFSET @offset", connection);
-        command.Parameters.AddWithValue("@q", string.IsNullOrWhiteSpace(q) ? DBNull.Value : q);
-        command.Parameters.AddWithValue("@like", string.IsNullOrWhiteSpace(q) ? DBNull.Value : $"%{q}%");
+        command.Parameters.Add(new NpgsqlParameter("@like", NpgsqlDbType.Text)
+        {
+            Value = string.IsNullOrWhiteSpace(q) ? DBNull.Value : $"%{q}%"
+        });
         command.Parameters.AddWithValue("@limit", limit);
         command.Parameters.AddWithValue("@offset", offset);
 

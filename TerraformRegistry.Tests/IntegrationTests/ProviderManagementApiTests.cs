@@ -24,6 +24,25 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
+    public async Task ListProvidersWithoutSearchQueryReturnsProviders()
+    {
+        var client = await CreateClientWithPermissionsAsync(
+            "provider-list@example.com",
+            "provider-list",
+            [Permissions.ProvidersPublish, Permissions.ProvidersRead]);
+        var ns = NewNamespace();
+        await CreateProviderAsync(client, ns);
+
+        var response = await client.GetAsync("/api/providers");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var provider = Assert.Single(json.GetProperty("providers").EnumerateArray());
+        Assert.Equal(ns, provider.GetProperty("namespace").GetString());
+        Assert.Equal("example", provider.GetProperty("type").GetString());
+    }
+
+    [Fact]
     public async Task CreateProviderWithPublishPermissionReturnsCreatedAndCanBeRead()
     {
         var client = await CreateClientWithPermissionsAsync(
