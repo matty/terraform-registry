@@ -8,28 +8,31 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="AWSSDK.S3" Version="4.0.22.1"/>
-        <PackageReference Include="coverlet.collector" Version="6.0.2"/>
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0"/>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0"/>
-        <PackageReference Include="Testcontainers.PostgreSql" Version="4.4.0"/>
-        <PackageReference Include="xunit" Version="2.9.2"/>
-        <PackageReference Include="Xunit.Extensions.Logging" Version="1.1.0"/>
-        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"/>
-        <PackageReference Include="Moq" Version="4.20.70"/>
+        <PackageReference Include="AWSSDK.S3" Version="4.0.22.1" />
+        <PackageReference Include="coverlet.collector" Version="6.0.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+        <PackageReference Include="SourceGear.sqlite3" Version="3.50.4.5" />
+        <PackageReference Include="SQLitePCLRaw.config.e_sqlite3" Version="3.0.3" />
+        <PackageReference Include="Testcontainers.PostgreSql" Version="4.4.0" />
+        <PackageReference Include="xunit" Version="2.9.2" />
+        <PackageReference Include="Xunit.Extensions.Logging" Version="1.1.0" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+        <PackageReference Include="Moq" Version="4.20.70" />
     </ItemGroup>
 
     <ItemGroup>
-        <Using Include="Xunit"/>
+        <Using Include="Xunit" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TerraformRegistry\TerraformRegistry.csproj"/>
-        <ProjectReference Include="..\TerraformRegistry.API\TerraformRegistry.API.csproj"/>
-        <ProjectReference Include="..\TerraformRegistry.PostgreSQL\TerraformRegistry.PostgreSQL.csproj"/>
-        <ProjectReference Include="..\TerraformRegistry.AzureBlob\TerraformRegistry.AzureBlob.csproj"/>
-        <ProjectReference Include="..\TerraformRegistry.S3\TerraformRegistry.S3.csproj"/>
-        <ProjectReference Include="..\TerraformRegistry.Migrations\TerraformRegistry.Migrations.csproj"/>
+        <ProjectReference Include="..\TerraformRegistry\TerraformRegistry.csproj" />
+        <ProjectReference Include="..\TerraformRegistry.API\TerraformRegistry.API.csproj" />
+        <ProjectReference Include="..\TerraformRegistry.PostgreSQL\TerraformRegistry.PostgreSQL.csproj" />
+        <ProjectReference Include="..\TerraformRegistry.AzureBlob\TerraformRegistry.AzureBlob.csproj" />
+        <ProjectReference Include="..\TerraformRegistry.S3\TerraformRegistry.S3.csproj" />
+        <ProjectReference Include="..\TerraformRegistry.Migrations\TerraformRegistry.Migrations.csproj" />
     </ItemGroup>
 
     <ItemGroup>
