@@ -580,7 +580,7 @@ onMounted(() => {
         </div>
 
         <!-- Modules list + detail panel -->
-        <div class="grid gap-6 xl:grid-cols-[minmax(400px,0.86fr)_minmax(0,1.14fr)]">
+        <div class="grid gap-6 xl:grid-cols-[minmax(320px,0.65fr)_minmax(0,1.35fr)]">
           <!-- Modules list card -->
           <div class="docs-card rounded-xl border border-neutral-800/60 overflow-hidden">
             <div class="border-b border-neutral-800/60 px-4 py-3">
