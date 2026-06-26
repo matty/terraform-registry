@@ -56,6 +56,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
             return false;
         }
 
+        await MarkPendingAsync(request);
         return true;
     }
 
@@ -255,6 +256,9 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 metadata.Extraction ??= new ModuleExtractionState();
                 metadata.Extraction.Status = "pending";
                 metadata.Extraction.LastUpdatedAt = now;
+                metadata.LlmContext ??= new ModuleLlmContextState();
+                metadata.LlmContext.Status = "pending";
+                metadata.LlmContext.LastUpdatedAt = now;
             });
     }
 

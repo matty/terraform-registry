@@ -24,6 +24,65 @@ public class ModuleExtractionQueueRuntimeTests
     }
 
     [Fact]
+    public async Task QueueAsyncMarksModulePendingWhenExtractionEnabled()
+    {
+        var config = new Mock<IModuleExtractionConfigService>();
+        config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var metadata = new ModuleArtifactMetadata();
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.UpdateModuleMetadataAsync(
+                "acme",
+                "network",
+                "aws",
+                "1.0.0",
+                It.IsAny<Action<ModuleArtifactMetadata>>()))
+            .Callback<string, string, string, string, Action<ModuleArtifactMetadata>>((_, _, _, _, mutate) => mutate(metadata))
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(config.Object, database.Object);
+
+        var queued = await service.QueueAsync(new ModuleExtractionRequest("acme", "network", "aws", "1.0.0"),
+            CancellationToken.None);
+
+        Assert.True(queued);
+        Assert.NotNull(metadata.Extraction);
+        Assert.Equal("pending", metadata.Extraction.Status);
+        Assert.NotNull(metadata.Extraction.LastUpdatedAt);
+        Assert.NotNull(metadata.LlmContext);
+        Assert.Equal("pending", metadata.LlmContext.Status);
+        Assert.NotNull(metadata.LlmContext.LastUpdatedAt);
+    }
+
+    [Fact]
+    public async Task QueueAsyncRestoresMissingLlmContextStateWhenExtractionEnabled()
+    {
+        var config = new Mock<IModuleExtractionConfigService>();
+        config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var metadata = new ModuleArtifactMetadata { LlmContext = null! };
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.UpdateModuleMetadataAsync(
+                "acme",
+                "network",
+                "aws",
+                "1.0.0",
+                It.IsAny<Action<ModuleArtifactMetadata>>()))
+            .Callback<string, string, string, string, Action<ModuleArtifactMetadata>>((_, _, _, _, mutate) => mutate(metadata))
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(config.Object, database.Object);
+
+        var queued = await service.QueueAsync(new ModuleExtractionRequest("acme", "network", "aws", "1.0.0"),
+            CancellationToken.None);
+
+        Assert.True(queued);
+        Assert.NotNull(metadata.LlmContext);
+        Assert.Equal("pending", metadata.LlmContext.Status);
+        Assert.NotNull(metadata.LlmContext.LastUpdatedAt);
+    }
+
+    [Fact]
     public async Task QueueBackfillAsyncQueuesBoundedModulesWhenEnabled()
     {
         var config = new Mock<IModuleExtractionConfigService>();
