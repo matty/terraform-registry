@@ -12,6 +12,7 @@ public interface IProviderRegistryService
 
     Task<TerraformProvider> CreateProviderAsync(CreateProviderRequest request, string? actorUserId);
     Task<IReadOnlyList<TerraformProvider>> ListProvidersAsync(string? q, int offset, int limit);
+    Task<int> CountProvidersAsync(string? q);
     Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type);
     Task<bool> UpdateProviderAsync(string providerNamespace, string type, UpdateProviderRequest request);
     Task<bool> DeleteProviderAsync(string providerNamespace, string type);

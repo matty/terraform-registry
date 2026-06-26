@@ -21,7 +21,13 @@ const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref("");
 const currentOffset = ref(0);
-const limit = 20;
+const pageSizeOptions = [
+  { label: "10", value: 10 },
+  { label: "25", value: 25 },
+  { label: "50", value: 50 },
+];
+const pageSize = ref(10);
+const totalProviders = ref(0);
 const publishModalOpen = ref(false);
 
 const canPublish = computed(() => hasPermission("providers.publish"));
@@ -50,6 +56,10 @@ const providerSource = (provider: TerraformProvider) => {
   return `${host}/${provider.namespace}/${provider.type}`;
 };
 
+const providerCountLabel = computed(() =>
+  `${Math.min(providers.value.length, totalProviders.value)} out of ${totalProviders.value}`
+);
+
 const fetchProviders = async (offset = 0, append = false) => {
   try {
     if (append) {
@@ -59,7 +69,7 @@ const fetchProviders = async (offset = 0, append = false) => {
     }
     error.value = "";
 
-    const response = await listProviders(serverQuery.value, offset, limit);
+    const response = await listProviders(serverQuery.value, offset, pageSize.value);
 
     if (append) {
       providers.value.push(...response.providers);
@@ -67,7 +77,8 @@ const fetchProviders = async (offset = 0, append = false) => {
       providers.value = response.providers;
     }
 
-    currentOffset.value = offset + limit;
+    currentOffset.value = providers.value.length;
+    totalProviders.value = response.total;
   } catch (err) {
     error.value = extractErrorMessage(err, "Failed to fetch providers");
     console.error("Error fetching providers:", err);
@@ -85,6 +96,11 @@ const refreshProviders = async () => {
 
 const loadMoreProviders = async () => {
   await fetchProviders(currentOffset.value, true);
+};
+
+const handlePageSizeChanged = async () => {
+  currentOffset.value = 0;
+  await fetchProviders(0, false);
 };
 
 const handlePublished = async ({
@@ -144,6 +160,16 @@ onMounted(async () => {
           class="w-64"
           size="sm"
           @keyup.enter="refreshProviders"
+        />
+        <USelect
+          v-model="pageSize"
+          :items="pageSizeOptions"
+          value-key="value"
+          label-key="label"
+          size="sm"
+          class="w-24"
+          :disabled="isLoading || isLoadingMore"
+          @update:model-value="handlePageSizeChanged"
         />
         <UButton
           :loading="isLoading"
@@ -290,16 +316,18 @@ onMounted(async () => {
             class="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-neutral-800"
           >
             <p class="text-sm text-neutral-500">
-              Showing {{ filteredProviders.length }} of
-              {{ providers.length }} providers
+              {{ providerCountLabel }} providers
             </p>
             <UButton
+              v-if="providers.length < totalProviders"
               :loading="isLoadingMore"
+              icon="i-lucide-plus"
+              color="primary"
               variant="soft"
               size="sm"
               @click="loadMoreProviders"
             >
-              Load More
+              Load more providers
             </UButton>
           </div>
         </div>

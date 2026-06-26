@@ -58,8 +58,8 @@ const filteredModules = computed(() => {
 });
 
 const moduleCountLabel = computed(() => {
-  if (totalModules.value <= 0) return `${modules.value.length} / 0`;
-  return `${Math.min(modules.value.length, totalModules.value)} / ${totalModules.value}`;
+  if (totalModules.value <= 0) return `${modules.value.length} out of 0`;
+  return `${Math.min(modules.value.length, totalModules.value)} out of ${totalModules.value}`;
 });
 
 const formatDate = (dateString: string) => {

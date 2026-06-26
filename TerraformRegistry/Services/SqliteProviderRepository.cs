@@ -42,6 +42,21 @@ public sealed class SqliteProviderRepository : IProviderRepository
         return providers;
     }
 
+    public async Task<int> CountProvidersAsync(string? q)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT COUNT(*)
+            FROM providers
+            WHERE deleted_at IS NULL
+              AND ($q IS NULL OR namespace LIKE $like OR type LIKE $like OR display_name LIKE $like OR description LIKE $like)";
+        command.Parameters.AddWithValue("$q", string.IsNullOrWhiteSpace(q) ? DBNull.Value : q);
+        command.Parameters.AddWithValue("$like", string.IsNullOrWhiteSpace(q) ? DBNull.Value : $"%{q}%");
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
     public async Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type)
     {
         await using var connection = await OpenConnectionAsync();

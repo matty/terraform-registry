@@ -145,6 +145,11 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         return _repository.ListProvidersAsync(q, Math.Max(0, offset), Math.Clamp(limit, 1, 100));
     }
 
+    public Task<int> CountProvidersAsync(string? q)
+    {
+        return _repository.CountProvidersAsync(q);
+    }
+
     public Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type)
     {
         ValidateCoordinate(providerNamespace, type);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
@@ -41,6 +42,22 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         }
 
         return providers;
+    }
+
+    public async Task<int> CountProvidersAsync(string? q)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(@"
+            SELECT COUNT(*)
+            FROM providers
+            WHERE deleted_at IS NULL
+              AND (CAST(@like AS text) IS NULL OR namespace ILIKE @like OR type ILIKE @like OR display_name ILIKE @like OR description ILIKE @like)", connection);
+        command.Parameters.Add(new NpgsqlParameter("@like", NpgsqlDbType.Text)
+        {
+            Value = string.IsNullOrWhiteSpace(q) ? DBNull.Value : $"%{q}%"
+        });
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     public async Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type)

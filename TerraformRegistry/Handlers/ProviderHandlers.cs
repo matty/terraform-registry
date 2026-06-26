@@ -148,7 +148,8 @@ public static class ProviderHandlers
         if (denied != null) return denied;
 
         var providers = await providerService.ListProvidersAsync(q, offset, limit);
-        return Results.Ok(new { providers, offset = Math.Max(0, offset), limit = Math.Clamp(limit, 1, 100) });
+        var total = await providerService.CountProvidersAsync(q);
+        return Results.Ok(new { providers, offset = Math.Max(0, offset), limit = Math.Clamp(limit, 1, 100), total });
     }
 
     public static async Task<IResult> CreateProvider(

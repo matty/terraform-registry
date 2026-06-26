@@ -5,6 +5,7 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IProviderRepository
 {
     Task<IReadOnlyList<TerraformProvider>> ListProvidersAsync(string? q, int offset, int limit);
+    Task<int> CountProvidersAsync(string? q);
     Task<TerraformProvider?> GetProviderAsync(string providerNamespace, string type);
     Task<TerraformProvider> CreateProviderAsync(TerraformProvider provider);
     Task<bool> UpdateProviderAsync(string providerNamespace, string type, string? displayName, string? description, string? sourceRepositoryUrl);

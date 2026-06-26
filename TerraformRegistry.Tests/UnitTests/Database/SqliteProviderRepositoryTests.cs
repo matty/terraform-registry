@@ -34,6 +34,22 @@ public class SqliteProviderRepositoryTests
     }
 
     [Fact]
+    public async Task CountProvidersAsyncReturnsFilteredActiveProviderCount()
+    {
+        using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
+        var repository = fixture.Repository;
+
+        await repository.CreateProviderAsync(NewProvider("acme", "example"));
+        await repository.CreateProviderAsync(NewProvider("acme", "ignored"));
+        await repository.CreateProviderAsync(NewProvider("other", "example"));
+        Assert.True(await repository.DeleteProviderAsync("acme", "ignored"));
+
+        var total = await repository.CountProvidersAsync("acme");
+
+        Assert.Equal(1, total);
+    }
+
+    [Fact]
     public async Task GetProviderVersionsAsyncReturnsPlatformsForActiveVersionsOnly()
     {
         using var fixture = await SqliteProviderRepositoryFixture.CreateAsync();
@@ -132,6 +148,15 @@ public class SqliteProviderRepositoryTests
         Assert.True(await repository.RevokeGpgKeyAsync("acme", "ABC123"));
         Assert.Null(await repository.GetGpgKeyAsync("acme", "ABC123"));
     }
+
+    private static TerraformProvider NewProvider(string providerNamespace, string type) => new()
+    {
+        Namespace = providerNamespace,
+        Type = type,
+        DisplayName = type,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
 
     private sealed class SqliteProviderRepositoryFixture : IDisposable
     {

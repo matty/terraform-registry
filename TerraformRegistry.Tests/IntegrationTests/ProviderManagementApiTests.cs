@@ -43,6 +43,28 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     }
 
     [Fact]
+    public async Task ListProvidersReturnsTotalCountForCurrentQuery()
+    {
+        var client = await CreateClientWithPermissionsAsync(
+            "provider-list-total@example.com",
+            "provider-list-total",
+            [Permissions.ProvidersPublish, Permissions.ProvidersRead]);
+        var ns = NewNamespace();
+        await CreateProviderAsync(client, $"{ns}a");
+        await CreateProviderAsync(client, $"{ns}b");
+        await CreateProviderAsync(client, $"{ns}c");
+
+        var response = await client.GetAsync($"/api/providers?q={ns}&offset=0&limit=2");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, json.GetProperty("providers").GetArrayLength());
+        Assert.Equal(0, json.GetProperty("offset").GetInt32());
+        Assert.Equal(2, json.GetProperty("limit").GetInt32());
+        Assert.Equal(3, json.GetProperty("total").GetInt32());
+    }
+
+    [Fact]
     public async Task CreateProviderWithPublishPermissionReturnsCreatedAndCanBeRead()
     {
         var client = await CreateClientWithPermissionsAsync(

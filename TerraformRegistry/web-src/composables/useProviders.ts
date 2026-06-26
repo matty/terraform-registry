@@ -64,6 +64,7 @@ export interface ProvidersResponse {
   providers: TerraformProvider[];
   offset: number;
   limit: number;
+  total: number;
 }
 
 export interface ProviderVersionsResponse {
