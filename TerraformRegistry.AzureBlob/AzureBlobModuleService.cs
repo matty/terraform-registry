@@ -218,7 +218,7 @@ public class AzureBlobModuleService : ModuleService
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
         // Create a consistent blob path format for easy retrieval
-        var blobPath = $"{moduleNamespace}/{name}-{provider}-{version}.zip";
+        var blobPath = $"{moduleNamespace}/{name}-{provider}-{version}{ModuleArchiveFormat.GetFileSuffix(metadata)}";
         var blobClient = _containerClient.GetBlobClient(blobPath);
 
         // Check if blob already exists to avoid duplication or allow replacement

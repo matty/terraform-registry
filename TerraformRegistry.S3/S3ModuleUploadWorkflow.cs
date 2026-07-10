@@ -53,7 +53,8 @@ internal sealed class S3ModuleUploadWorkflow(
             return false;
         }
 
-        var logicalObjectKey = S3ModuleObjectKeys.CreateLogicalObjectKey(@namespace, name, provider, version);
+        var logicalObjectKey = S3ModuleObjectKeys.CreateLogicalObjectKey(@namespace, name, provider, version,
+            ModuleArchiveFormat.GetFileSuffix(metadata));
         var objectKey = S3ModuleObjectKeys.CreateFinalObjectKey(logicalObjectKey);
         var newModule = new ModuleStorage
         {

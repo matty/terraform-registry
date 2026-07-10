@@ -189,7 +189,8 @@ public class S3ModuleServiceUploadTests
             Source = new ModuleSourceInfo
             {
                 Kind = "mirror",
-                Origin = "registry.example.com"
+                Origin = "registry.example.com",
+                ArchiveFormat = "tar.gz"
             }
         };
 
@@ -219,6 +220,7 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(addedModule);
         Assert.Equal("mirror", addedModule!.Metadata.Source?.Kind);
         Assert.Equal("registry.example.com", addedModule.Metadata.Source?.Origin);
+        Assert.EndsWith(".tar.gz", addedModule.FilePath, StringComparison.Ordinal);
     }
 
     [Fact]

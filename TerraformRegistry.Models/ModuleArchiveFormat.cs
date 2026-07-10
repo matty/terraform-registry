@@ -5,6 +5,15 @@ namespace TerraformRegistry.Models;
 /// </summary>
 public static class ModuleArchiveFormat
 {
+    public static string GetFileSuffix(ModuleArtifactMetadata? metadata)
+    {
+        var recordedFormat = metadata?.Source?.ArchiveFormat;
+        return string.Equals(recordedFormat, "tar.gz", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(recordedFormat, "tgz", StringComparison.OrdinalIgnoreCase)
+            ? ".tar.gz"
+            : ".zip";
+    }
+
     public static string? GetGoGetterHint(ModuleStorage moduleStorage)
     {
         var recordedFormat = moduleStorage.Metadata.Source?.ArchiveFormat;

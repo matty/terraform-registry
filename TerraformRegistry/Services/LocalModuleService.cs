@@ -285,7 +285,7 @@ public class LocalModuleService : ModuleService
         var namespaceDir = GetNamespaceDirectory(moduleNamespace);
         if (!Directory.Exists(namespaceDir)) Directory.CreateDirectory(namespaceDir);
 
-        var fileName = $"{name}-{provider}-{version}.zip";
+        var fileName = $"{name}-{provider}-{version}{ModuleArchiveFormat.GetFileSuffix(metadata)}";
         var tempFileName = $"{fileName}.tmp";
         var tempFilePath = GetContainedPath(namespaceDir, tempFileName);
         var finalFilePath = GetContainedPath(namespaceDir, fileName);

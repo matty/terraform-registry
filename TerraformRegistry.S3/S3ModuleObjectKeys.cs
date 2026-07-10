@@ -2,14 +2,19 @@ namespace TerraformRegistry.S3;
 
 internal static class S3ModuleObjectKeys
 {
-    public static string CreateLogicalObjectKey(string @namespace, string name, string provider, string version)
+    public static string CreateLogicalObjectKey(string @namespace, string name, string provider, string version,
+        string fileSuffix)
     {
-        return $"{@namespace}/{name}-{provider}-{version}.zip";
+        return $"{@namespace}/{name}-{provider}-{version}{fileSuffix}";
     }
 
     public static string CreateFinalObjectKey(string logicalObjectKey)
     {
-        return $"{logicalObjectKey}.{Guid.NewGuid():N}";
+        var fileSuffix = logicalObjectKey.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+            ? ".tar.gz"
+            : ".zip";
+        var stem = logicalObjectKey[..^fileSuffix.Length];
+        return $"{stem}.{Guid.NewGuid():N}{fileSuffix}";
     }
 
     public static string CreateTemporaryObjectKey(string objectKey)
