@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Services;
 using Xunit.Abstractions;
 
@@ -89,8 +90,10 @@ public class TerraformLoginTokenTests(ITestOutputHelper output) : IntegrationTes
         using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
         var user = await apiKeyService.GetOrCreateUserAsync(email, "test", Guid.NewGuid().ToString("N"));
+        await permissionService.EnsureDefaultRoleAsync(user.Id);
 
         var jwt = jwtService.GenerateToken(user.Id, email, "CLI User", "test");
         var client = Factory.CreateClient(new WebApplicationFactoryClientOptions

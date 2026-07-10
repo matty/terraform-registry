@@ -18,6 +18,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
         using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
         var user = new User
         {
@@ -29,6 +30,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
             UpdatedAt = DateTime.UtcNow
         };
         await dbService.AddUserAsync(user);
+        await permissionService.EnsureDefaultRoleAsync(user.Id);
 
         var (rawToken, apiKey) = await apiKeyService.CreateApiKeyAsync(user.Id, "expired key");
         apiKey.ExpiresAt = DateTime.UtcNow.AddHours(-1);
@@ -45,11 +47,40 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
     }
 
     [Fact]
+    public async Task ApiKeyForUserWithoutRolesReturnsForbidden()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+
+        var user = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "zero-role-test@example.com",
+            Provider = "test",
+            ProviderId = "test-zero-role",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await dbService.AddUserAsync(user);
+
+        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "zero role key");
+
+        var client = Factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
+
+        var response = await client.GetAsync("/v1/modules");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ValidApiKeyWithFutureExpirationSucceeds()
     {
         using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
         var user = new User
         {
@@ -61,6 +92,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
             UpdatedAt = DateTime.UtcNow
         };
         await dbService.AddUserAsync(user);
+        await permissionService.EnsureDefaultRoleAsync(user.Id);
 
         var (rawToken, apiKey) = await apiKeyService.CreateApiKeyAsync(user.Id, "future key");
         apiKey.ExpiresAt = DateTime.UtcNow.AddDays(30);
@@ -79,6 +111,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
         using var scope = Factory.Services.CreateScope();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 
         var user = new User
         {
@@ -90,6 +123,7 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
             UpdatedAt = DateTime.UtcNow
         };
         await dbService.AddUserAsync(user);
+        await permissionService.EnsureDefaultRoleAsync(user.Id);
 
         var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "no expiry key");
 
