@@ -194,19 +194,10 @@ public static class ModuleHandlers
             }
         });
 
-        // Terraform CLI expects 204 + X-Terraform-Get. Portal/browser should follow a redirect.
-        var accept = context.Request.Headers["Accept"].ToString();
-        var isTerraformClient = userAgent.Contains("Terraform", StringComparison.OrdinalIgnoreCase) ||
-                                accept.Contains("terraform", StringComparison.OrdinalIgnoreCase);
-
-        if (isTerraformClient)
-        {
-            return NoContent();
-        }
-
-        context.Response.Headers.Location = downloadPath;
-        context.Response.StatusCode = StatusCodes.Status302Found;
-        return Empty;
+        // The module registry protocol always uses 204 with X-Terraform-Get.  The
+        // result must not vary with User-Agent because Terraform-compatible clients
+        // are not required to identify themselves as Terraform.
+        return NoContent();
     }
 
     /// <summary>
