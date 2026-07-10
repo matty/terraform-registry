@@ -217,13 +217,24 @@ public class LocalModuleService : ModuleService
             return null;
         }
 
+        var filePath = Path.GetFullPath(moduleStorage.FilePath);
+        if (!File.Exists(filePath))
+        {
+            RegistryLog.Warning(_logger,
+                "Module {Namespace}/{Name}/{Provider}/{Version} exists in the database but its package is missing from local storage.",
+                moduleNamespace, name, provider, version);
+            return null;
+        }
+
         // Generate a unique token
         var token = Guid.NewGuid().ToString("N");
         var expiry = DateTime.UtcNow.Add(TokenLifetime);
-        DownloadTokens[token] = (Path.GetFullPath(moduleStorage.FilePath), expiry);
+        DownloadTokens[token] = (filePath, expiry);
 
-        // Return the download link (adjust the base path as needed)
-        return $"/module/download?token={token}";
+        var archiveHint = ModuleArchiveFormat.GetGoGetterHint(moduleStorage);
+        return string.IsNullOrEmpty(archiveHint)
+            ? $"/module/download?token={token}"
+            : $"/module/download?token={token}&archive={Uri.EscapeDataString(archiveHint)}";
     }
 
     public override async Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider,

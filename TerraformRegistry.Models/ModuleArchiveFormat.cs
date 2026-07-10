@@ -1,0 +1,22 @@
+namespace TerraformRegistry.Models;
+
+/// <summary>
+/// Resolves the go-getter archive hint for a stored module artifact.
+/// </summary>
+public static class ModuleArchiveFormat
+{
+    public static string? GetGoGetterHint(ModuleStorage moduleStorage)
+    {
+        var recordedFormat = moduleStorage.Metadata.Source?.ArchiveFormat;
+        if (string.Equals(recordedFormat, "tar.gz", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(recordedFormat, "tgz", StringComparison.OrdinalIgnoreCase))
+        {
+            return "tar.gz";
+        }
+
+        return moduleStorage.FilePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+               moduleStorage.FilePath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)
+            ? "tar.gz"
+            : null;
+    }
+}
