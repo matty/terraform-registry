@@ -201,8 +201,16 @@ jobs:
           context: .
           load: true
           tags: ${{ env.SCAN_IMAGE_NAME }}
+          build-args: |
+            FRONTEND_BUILD_MARKER=frontend-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify frontend marker in image
+        run: |
+          expected="frontend-${{ github.sha }}"
+          actual="$(docker run --rm --entrypoint cat "${{ env.SCAN_IMAGE_NAME }}" /app/web/.build-marker)"
+          test "$actual" = "$expected"
 
       - name: Run Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -288,6 +296,8 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FRONTEND_BUILD_MARKER=frontend-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           sbom: true
