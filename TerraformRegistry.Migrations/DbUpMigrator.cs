@@ -30,8 +30,8 @@ public class DbUpMigrator
         var upgrader = BuildUpgrader(provider, connectionString, scriptFilter);
 
         var executedScripts = upgrader.GetExecutedScripts();
+        ValidateMigrationState(provider, connectionString, executedScripts);
         BootstrapExistingDatabase(provider, connectionString, upgrader, executedScripts);
-        RepairOverBootstrappedJournal(provider, connectionString, upgrader, executedScripts);
 
         var result = upgrader.PerformUpgrade();
 
@@ -92,6 +92,135 @@ public class DbUpMigrator
 
         return scriptName => scriptName.Contains(folder, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    ///     Refuses to guess how to recover a database whose journal and schema disagree.
+    ///     DbUp's journal is the source of truth for a known upgrade path; silently editing it
+    ///     can skip destructive scripts or make a partially applied migration permanent.
+    /// </summary>
+    private void ValidateMigrationState(
+        string provider,
+        string connectionString,
+        List<string> executedScripts)
+    {
+        var allScripts = Assembly.GetExecutingAssembly()
+            .GetManifestResourceNames()
+            .Where(GetScriptFilter(provider))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+
+        if (executedScripts.Any(script => !allScripts.Contains(script, StringComparer.OrdinalIgnoreCase)))
+            ThrowUnsafeState(provider, "the DbUp journal contains a script that is not embedded in this application version");
+
+        var legacyMigrationCount = provider switch
+        {
+            "postgres" => GetPostgresLegacyMigrationCount(connectionString, dropTable: false),
+            "sqlite" => GetSqliteLegacyMigrationCount(connectionString, dropTable: false),
+            _ => throw new ArgumentException($"Unsupported database provider: {provider}")
+        };
+
+        var hasLegacyJournal = provider switch
+        {
+            "postgres" => HasPostgresTable(connectionString, "schema_version"),
+            "sqlite" => HasSqliteTable(connectionString, "schema_version"),
+            _ => false
+        };
+
+        if (hasLegacyJournal && executedScripts.Count > 0)
+            ThrowUnsafeState(provider, "both the legacy schema_version table and the DbUp journal are present");
+
+        if (hasLegacyJournal && (legacyMigrationCount == 0 || legacyMigrationCount > allScripts.Count))
+            ThrowUnsafeState(provider, $"the legacy schema_version table contains {legacyMigrationCount} entries, which cannot be mapped safely to {allScripts.Count} embedded scripts");
+
+        if (executedScripts.Count == 0)
+        {
+            if (!hasLegacyJournal && HasApplicationSchema(provider, connectionString))
+                ThrowUnsafeState(provider, "application tables exist but neither a legacy journal nor a DbUp journal entry identifies their migration state");
+
+            if (hasLegacyJournal)
+                ValidateSchemaForScripts(provider, connectionString, allScripts.Take(legacyMigrationCount));
+
+            return;
+        }
+
+        var expectedPrefix = allScripts.Take(executedScripts.Count).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (executedScripts.Count != expectedPrefix.Count || !executedScripts.All(expectedPrefix.Contains))
+            ThrowUnsafeState(provider, "the DbUp journal is not a contiguous prefix of the embedded migration chain");
+
+        ValidateSchemaForScripts(provider, connectionString, executedScripts);
+    }
+
+    private static void ValidateSchemaForScripts(string provider, string connectionString, IEnumerable<string> scripts)
+    {
+        foreach (var scriptName in scripts)
+        {
+            foreach (var table in RequiredTablesForScript(scriptName))
+            {
+                var exists = provider switch
+                {
+                    "postgres" => HasPostgresTable(connectionString, table),
+                    "sqlite" => HasSqliteTable(connectionString, table),
+                    _ => false
+                };
+
+                if (!exists)
+                    ThrowUnsafeState(provider, $"the journal records '{scriptName}' but required table '{table}' is missing");
+            }
+        }
+    }
+
+    private static IEnumerable<string> RequiredTablesForScript(string scriptName)
+    {
+        // These table sentinels cover every migration that creates durable state.  Migrations
+        // which only add columns/indexes are intentionally not inferred from a table check.
+        return scriptName switch
+        {
+            var name when name.Contains("001_initial_schema", StringComparison.OrdinalIgnoreCase) => ["modules"],
+            var name when name.Contains("002_users_and_api_keys", StringComparison.OrdinalIgnoreCase) => ["users", "api_keys"],
+            var name when name.Contains("004_downloads", StringComparison.OrdinalIgnoreCase) => ["module_downloads"],
+            var name when name.Contains("005_webhooks", StringComparison.OrdinalIgnoreCase) => ["webhooks"],
+            var name when name.Contains("006_vcs_connections", StringComparison.OrdinalIgnoreCase) => ["vcs_connections"],
+            var name when name.Contains("007_vcs_sources", StringComparison.OrdinalIgnoreCase) => ["vcs_sources"],
+            var name when name.Contains("008_rbac", StringComparison.OrdinalIgnoreCase) => ["roles", "user_roles"],
+            var name when name.Contains("009_audit_logs", StringComparison.OrdinalIgnoreCase) => ["audit_logs"],
+            var name when name.Contains("013_module_extractions", StringComparison.OrdinalIgnoreCase) => ["module_extractions"],
+            var name when name.Contains("013_provider_registry", StringComparison.OrdinalIgnoreCase) => ["providers", "provider_versions", "provider_platforms"],
+            var name when name.Contains("014_runtime_settings", StringComparison.OrdinalIgnoreCase) => ["runtime_settings"],
+            var name when name.Contains("015_module_llm_contexts", StringComparison.OrdinalIgnoreCase) => ["module_llm_contexts"],
+            var name when name.Contains("016_mirror_cache", StringComparison.OrdinalIgnoreCase) => ["mirror_provider_indexes", "mirror_provider_packages", "mirror_module_versions", "mirror_module_packages"],
+            _ => []
+        };
+    }
+
+    private static bool HasApplicationSchema(string provider, string connectionString) => provider switch
+    {
+        "postgres" => HasPostgresTable(connectionString, "modules") || HasPostgresTable(connectionString, "users"),
+        "sqlite" => HasSqliteTable(connectionString, "modules") || HasSqliteTable(connectionString, "users"),
+        _ => false
+    };
+
+    private static bool HasPostgresTable(string connectionString, string tableName)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connectionString);
+        conn.Open();
+        using var command = conn.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = @name)";
+        command.Parameters.AddWithValue("name", tableName);
+        return (bool)(command.ExecuteScalar() ?? false);
+    }
+
+    private static bool HasSqliteTable(string connectionString, string tableName)
+    {
+        using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        conn.Open();
+        using var command = conn.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = @name";
+        command.Parameters.AddWithValue("@name", tableName);
+        return (long)(command.ExecuteScalar() ?? 0L) > 0;
+    }
+
+    private static void ThrowUnsafeState(string provider, string detail) => throw new InvalidOperationException(
+        $"Unsafe database migration state for {provider}: {detail}. The application will not modify this database; restore a verified backup or reconcile the journal and schema manually before retrying.");
 
     /// <summary>
     ///     Detects existing databases migrated by the legacy MigrationManager and

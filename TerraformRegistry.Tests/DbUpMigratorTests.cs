@@ -228,6 +228,60 @@ public class DbUpMigratorTests : IDisposable
         Assert.Throws<ArgumentException>(() => migrator.Migrate("mysql", "fake-connection"));
     }
 
+    [Fact]
+    public void MigrateFailsClosedWhenApplicationSchemaIsUnjournaled()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "CREATE TABLE modules (id INTEGER PRIMARY KEY)";
+        command.ExecuteNonQuery();
+
+        var migrator = new DbUpMigrator(_logger);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => migrator.Migrate("sqlite", _connectionString));
+
+        Assert.Contains("Unsafe database migration state", exception.Message);
+        Assert.Contains("neither a legacy journal nor a DbUp journal entry", exception.Message);
+        Assert.DoesNotContain("SchemaVersions", GetSqliteTableNames(_connection));
+    }
+
+    [Fact]
+    public void MigrateFailsClosedWhenJournaledSchemaIsMissingRequiredTable()
+    {
+        var migrator = new DbUpMigrator(_logger);
+        migrator.Migrate("sqlite", _connectionString);
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText = "DROP TABLE audit_logs";
+            command.ExecuteNonQuery();
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(() => migrator.Migrate("sqlite", _connectionString));
+
+        Assert.Contains("Unsafe database migration state", exception.Message);
+        Assert.Contains("009_audit_logs", exception.Message);
+        Assert.Contains("audit_logs", exception.Message);
+        Assert.Equal(GetEmbeddedScriptNames(".Scripts.SQLite.").Count, GetSqliteJournalEntryCount(_connection));
+    }
+
+    [Fact]
+    public void MigrateFailsClosedWhenJournalHasGap()
+    {
+        var migrator = new DbUpMigrator(_logger);
+        migrator.Migrate("sqlite", _connectionString);
+
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText = "DELETE FROM SchemaVersions WHERE ScriptName LIKE '%002_users_and_api_keys%'";
+            Assert.Equal(1, command.ExecuteNonQuery());
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(() => migrator.Migrate("sqlite", _connectionString));
+
+        Assert.Contains("Unsafe database migration state", exception.Message);
+        Assert.Contains("not a contiguous prefix", exception.Message);
+    }
+
     private static List<string> GetEmbeddedScriptNames(string providerFolder)
     {
         return typeof(DbUpMigrator).Assembly
@@ -252,6 +306,23 @@ public class DbUpMigratorTests : IDisposable
         return scriptNames
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static long GetSqliteJournalEntryCount(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM SchemaVersions";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    private static List<string> GetSqliteTableNames(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table'";
+        using var reader = command.ExecuteReader();
+        var tables = new List<string>();
+        while (reader.Read()) tables.Add(reader.GetString(0));
+        return tables;
     }
 
     private static List<string> GetSqliteColumns(SqliteConnection connection, string tableName)

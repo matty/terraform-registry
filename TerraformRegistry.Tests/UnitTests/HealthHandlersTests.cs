@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
+using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Tests.UnitTests;
 
@@ -30,6 +31,7 @@ public class HealthHandlersTests
             database.Object,
             modules.Object,
             providers.Object,
+            InitializedReadiness(),
             context,
             configuration);
 
@@ -61,6 +63,7 @@ public class HealthHandlersTests
             database.Object,
             modules.Object,
             providers.Object,
+            InitializedReadiness(),
             context,
             configuration);
 
@@ -71,6 +74,34 @@ public class HealthHandlersTests
         var providerStorage = json.RootElement.GetProperty("checks").GetProperty("providerArtifactStorage");
         Assert.Equal("unhealthy", providerStorage.GetProperty("status").GetString());
         Assert.Equal("provider bucket unavailable", providerStorage.GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task HandleReadyBeforeInitialStoragePassReturns503()
+    {
+        var database = new Mock<IDatabaseService>();
+        database.Setup(service => service.CheckConnectionAsync()).ReturnsAsync(true);
+
+        var modules = new Mock<IModuleService>();
+        modules.Setup(service => service.CheckStorageAsync()).ReturnsAsync((true, null));
+
+        var providers = new Mock<IProviderArtifactStorage>();
+        providers.Setup(storage => storage.CheckStorageAsync(It.IsAny<CancellationToken>())).ReturnsAsync((true, null));
+
+        var context = CreateAuthenticatedContext();
+        var result = await HealthHandlers.HandleReady(
+            database.Object,
+            modules.Object,
+            providers.Object,
+            new StartupReadiness(),
+            context,
+            CreateConfiguration());
+
+        var json = await ExecuteAndReadJsonAsync(result, context);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Equal("not_ready", json.RootElement.GetProperty("status").GetString());
+        Assert.Equal("unhealthy", json.RootElement.GetProperty("checks").GetProperty("startup").GetProperty("status").GetString());
     }
 
     private static DefaultHttpContext CreateAuthenticatedContext()
@@ -96,6 +127,13 @@ public class HealthHandlersTests
                 ["AuthorizationToken"] = "ready-test-token"
             })
             .Build();
+    }
+
+    private static IStartupReadiness InitializedReadiness()
+    {
+        var readiness = new StartupReadiness();
+        readiness.MarkStorageInitialized();
+        return readiness;
     }
 
     private static async Task<JsonDocument> ExecuteAndReadJsonAsync(IResult result, DefaultHttpContext context)

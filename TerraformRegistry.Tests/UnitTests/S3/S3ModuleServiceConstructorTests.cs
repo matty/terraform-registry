@@ -113,7 +113,7 @@ public class S3ModuleServiceConstructorTests
     }
 
     [Fact]
-    public void ConstructorUsesProvidedIAmazonS3AndSkipsFactory()
+    public async Task InitializationUsesProvidedIAmazonS3AndSkipsFactory()
     {
         var config = CreateConfiguration(new Dictionary<string, string?>
 (StringComparer.Ordinal)
@@ -133,6 +133,12 @@ public class S3ModuleServiceConstructorTests
         _mockClientFactory.Verify(
             x => x.Create(It.IsAny<AmazonS3Config>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()),
             Times.Never);
+        _mockS3Client.Verify(
+            x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default),
+            Times.Never);
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
         _mockS3Client.Verify(
             x => x.ListObjectsV2Async(
                 It.Is<ListObjectsV2Request>(r => r.BucketName == "modules" && r.MaxKeys == 1),

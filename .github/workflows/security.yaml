@@ -7,10 +7,14 @@ on:
       - develop
       - "release/**"
       - "hotfix/**"
+      - "remediation/phase/**"
   pull_request:
     branches:
       - main
       - develop
+      - "remediation/phase/**"
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "27 2 * * 1"
   workflow_dispatch:
@@ -112,7 +116,7 @@ jobs:
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "0"
+          exit-code: "1"
           limit-severities-for-sarif: true
           skip-dirs: TerraformRegistry/web
 

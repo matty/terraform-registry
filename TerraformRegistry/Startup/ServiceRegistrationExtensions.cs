@@ -34,6 +34,7 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<IS3ClientFactory, S3ClientFactory>();
 
         services.AddSingleton<DbUpMigrator>();
+        services.AddSingleton<IStartupReadiness, StartupReadiness>();
         services.AddSingleton<IInitializableDb>(provider =>
         {
             var db = provider.GetRequiredService<IDatabaseService>();
@@ -46,6 +47,7 @@ internal static class ServiceRegistrationExtensions
         services.AddProviderRegistryServices();
 
         services.AddHostedService<DatabaseInitializerHostedService>();
+        services.AddHostedService<StorageInitializationHostedService>();
         services.AddHttpClient();
         services.AddHttpClient("TerraformRegistryMirrorDiscovery", client =>
             {

@@ -91,22 +91,14 @@ public class AzureBlobModuleService : ModuleService
         // Initialize Azure Blob Storage container client
         _containerClient = clientToUse.GetBlobContainerClient(_containerName);
 
-        // Ensure container exists
-        try
-        {
-            RegistryLog.Information(_logger, "Ensuring blob container '{ContainerName}' exists...", _containerName);
-            _containerClient.CreateIfNotExists();
-            RegistryLog.Information(_logger, "Blob container '{ContainerName}' is ready.", _containerName);
-        }
-        catch (Exception ex)
-        {
-            RegistryLog.Error(_logger, ex,
-                "Failed to create or verify blob container '{ContainerName}'. This may prevent module operations.",
-                _containerName);
-            throw; // Re-throw as this is a critical failure for the service's operation.
-        }
+    }
 
-        LoadExistingModulesAsync().GetAwaiter().GetResult();
+    public override async Task InitializeStorageAsync(CancellationToken cancellationToken)
+    {
+        RegistryLog.Information(_logger, "Ensuring blob container '{ContainerName}' exists...", _containerName);
+        await _containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+        await LoadExistingModulesAsync(cancellationToken);
+        RegistryLog.Information(_logger, "Blob container '{ContainerName}' is ready.", _containerName);
     }
 
     /// <summary>
@@ -343,7 +335,7 @@ public class AzureBlobModuleService : ModuleService
     ///     2. It ensures consistency between what's in blob storage and what's in the database
     ///     3. It helps with migration scenarios when moving from one database to another
     /// </remarks>
-    private async Task LoadExistingModulesAsync()
+    private async Task LoadExistingModulesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -351,7 +343,7 @@ public class AzureBlobModuleService : ModuleService
             var syncCount = 0;
 
             // List all blobs in the container
-            await foreach (var blobItem in _containerClient.GetBlobsAsync())
+            await foreach (var blobItem in _containerClient.GetBlobsAsync(cancellationToken: cancellationToken))
             {
                 try
                 {
@@ -359,7 +351,7 @@ public class AzureBlobModuleService : ModuleService
                     var blobClient = _containerClient.GetBlobClient(blobItem.Name);
 
                     // Get blob metadata
-                    var properties = await blobClient.GetPropertiesAsync();
+                    var properties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
 
                     ModuleStorage? module = null;
 
@@ -458,8 +450,8 @@ public class AzureBlobModuleService : ModuleService
         }
         catch (Exception ex)
         {
-            // Log any errors during initialization
             RegistryLog.Error(_logger, ex, "Error during blob storage/database synchronization");
+            throw new InvalidOperationException("Initial Azure Blob storage synchronization failed.", ex);
         }
     }
 

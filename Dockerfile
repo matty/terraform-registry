@@ -35,7 +35,7 @@ ENV TF_REG_Sqlite__ConnectionString="Data Source=/data/terraform.db"
 RUN apk upgrade --no-cache
 COPY --from=publish /app/publish .
 COPY --from=terraform-config-inspect /out/terraform-config-inspect /usr/local/bin/terraform-config-inspect
-RUN mkdir -p /app/modules /data && chown app:app /app/modules /data
+RUN mkdir -p /app/modules /app/providers /data && chown app:app /app/modules /app/providers /data
 # Create web directory and copy static files
 COPY TerraformRegistry/web /app/web
 USER app

@@ -36,11 +36,14 @@ public class LocalModuleService : ModuleService
         // Log the storage path being used
         RegistryLog.Information(_logger, "Using local module storage path: {Path}", _moduleStorageRoot);
 
-        // Ensure module storage directory exists
-        if (!Directory.Exists(_moduleStorageRoot)) Directory.CreateDirectory(_moduleStorageRoot);
+    }
 
-        // Load existing modules from disk
+    public override Task InitializeStorageAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Directory.CreateDirectory(_moduleStorageRoot);
         LoadExistingModules();
+        return Task.CompletedTask;
     }
 
     /// <summary>

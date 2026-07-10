@@ -1,9 +1,10 @@
--- Disable FK checks during migration
-PRAGMA foreign_keys=OFF;
-
 -- ============================================================
--- Fix 1: Recreate modules table (description nullable)
+-- Fix 1: Recreate modules and its children (description nullable)
 -- ============================================================
+--
+-- SQLite does not allow PRAGMA foreign_keys to be changed inside DbUp's
+-- transaction. Rebuild the dependent table before replacing its parent so
+-- migrations are safe with foreign-key enforcement enabled.
 CREATE TABLE modules_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     namespace TEXT NOT NULL,
@@ -19,28 +20,33 @@ CREATE TABLE modules_new (
 );
 INSERT INTO modules_new (id, namespace, name, provider, version, description, storage_path, published_at, dependencies, deleted_at)
     SELECT id, namespace, name, provider, version, description, storage_path, published_at, dependencies, deleted_at FROM modules;
+
+CREATE TABLE module_downloads_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_id INTEGER REFERENCES modules_new(id) ON DELETE CASCADE,
+    namespace TEXT NOT NULL,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    version TEXT NOT NULL,
+    download_time TEXT NOT NULL DEFAULT (datetime('now')),
+    client_ip TEXT,
+    user_agent TEXT
+);
+INSERT INTO module_downloads_new (id, module_id, namespace, name, provider, version, download_time, client_ip, user_agent)
+    SELECT id, module_id, namespace, name, provider, version, download_time, client_ip, user_agent FROM module_downloads;
+DROP TABLE module_downloads;
 DROP TABLE modules;
 ALTER TABLE modules_new RENAME TO modules;
+ALTER TABLE module_downloads_new RENAME TO module_downloads;
 CREATE INDEX IF NOT EXISTS idx_modules_lookup ON modules(namespace, name, provider);
 CREATE INDEX IF NOT EXISTS idx_modules_deleted_at ON modules(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_module_downloads_time ON module_downloads(download_time);
 
 -- ============================================================
--- Fix 2: Recreate users table (add UNIQUE provider+provider_id)
+-- Fix 2: Add UNIQUE provider+provider_id without rebuilding users.
+-- Users are referenced by api_keys, webhooks, vcs_sources and user_roles.
 -- ============================================================
-CREATE TABLE users_new (
-    id TEXT PRIMARY KEY,
-    email TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE(email),
-    UNIQUE(provider, provider_id)
-);
-INSERT INTO users_new (id, email, provider, provider_id, created_at, updated_at)
-    SELECT id, email, provider, provider_id, created_at, updated_at FROM users;
-DROP TABLE users;
-ALTER TABLE users_new RENAME TO users;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider_provider_id ON users(provider, provider_id);
 
 -- ============================================================
 -- Fix 3: Recreate api_keys table (add ON DELETE CASCADE)
@@ -73,6 +79,3 @@ CREATE INDEX IF NOT EXISTS idx_vcs_sources_connection ON vcs_sources(connection_
 CREATE INDEX IF NOT EXISTS idx_module_downloads_namespace ON module_downloads(namespace);
 CREATE INDEX IF NOT EXISTS idx_module_downloads_name ON module_downloads(name);
 CREATE INDEX IF NOT EXISTS idx_module_downloads_provider ON module_downloads(provider);
-
--- Re-enable FK checks
-PRAGMA foreign_keys=ON;
