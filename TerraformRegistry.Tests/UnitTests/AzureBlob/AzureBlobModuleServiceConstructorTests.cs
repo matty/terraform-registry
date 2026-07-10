@@ -29,9 +29,9 @@ public class AzureBlobModuleServiceConstructorTests
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(It.IsAny<string>()))
             .Returns(_mockBlobContainerClient.Object);
         _mockBlobContainerClient.Setup(c =>
-                c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
+                c.CreateIfNotExistsAsync(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
                     It.IsAny<BlobContainerEncryptionScopeOptions>(), It.IsAny<CancellationToken>()))
-            .Returns(Mock.Of<Response<BlobContainerInfo>>());
+            .ReturnsAsync(Mock.Of<Response<BlobContainerInfo>>());
         _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
             .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
@@ -50,9 +50,9 @@ public class AzureBlobModuleServiceConstructorTests
         return configBuilder.Build();
     }
 
-    // Test: Should initialize clients and create the container if it does not exist
+    // Storage I/O is deferred until hosted startup has completed database migration.
     [Fact]
-    public void ConstructorInitializesClientsAndCreatesContainerIfNotExists()
+    public async Task InitializationCreatesContainerAfterSideEffectFreeConstruction()
     {
         // Arrange
         var settings = new Dictionary<string, string?>
@@ -74,7 +74,12 @@ public class AzureBlobModuleServiceConstructorTests
         Assert.NotNull(service);
         _mockBlobServiceClient.Verify(s => s.GetBlobContainerClient(_containerName), Times.Once);
         _mockBlobContainerClient.Verify(
-            c => c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()), Times.Once);
+            c => c.CreateIfNotExistsAsync(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()), Times.Never);
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
+        _mockBlobContainerClient.Verify(
+            c => c.CreateIfNotExistsAsync(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // Test: Should throw ArgumentNullException if ContainerName is missing from configuration
@@ -166,9 +171,9 @@ public class AzureBlobModuleServiceConstructorTests
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
-    // Test: Should log and rethrow if CreateIfNotExists throws
+    // Test: Storage initialization propagates container failures.
     [Fact]
-    public void ConstructorLogsAndRethrowsIfCreateIfNotExistsFails()
+    public async Task InitializationRethrowsIfCreateIfNotExistsFails()
     {
         var settings = new Dictionary<string, string?>
 (StringComparer.Ordinal)
@@ -179,24 +184,18 @@ public class AzureBlobModuleServiceConstructorTests
         var configuration = CreateConfiguration(settings);
         var testException = new InvalidOperationException("fail");
         _mockBlobContainerClient.Setup(c =>
-                c.CreateIfNotExists(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()))
+                c.CreateIfNotExistsAsync(PublicAccessType.None, null, null, It.IsAny<CancellationToken>()))
             .Throws(testException);
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName))
             .Returns(_mockBlobContainerClient.Object);
-        var ex = Assert.Throws<InvalidOperationException>(() =>
-            new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
-                _mockBlobServiceClient.Object));
+        var service = new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
+            _mockBlobServiceClient.Object);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.InitializeStorageAsync(CancellationToken.None));
         Assert.Equal(testException, ex);
-        _mockLogger.Verify(x => x.Log(
-            LogLevel.Error,
-            It.IsAny<EventId>(),
-            It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to create or verify blob container")),
-            testException,
-            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
     [Fact]
-    public void ConstructorSynchronizesExistingBlobsIntoDatabase()
+    public async Task InitializationSynchronizesExistingBlobsIntoDatabase()
     {
         var settings = new Dictionary<string, string?>
 (StringComparer.Ordinal)
@@ -229,6 +228,9 @@ public class AzureBlobModuleServiceConstructorTests
 
         var service = new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
             _mockBlobServiceClient.Object);
+
+        _mockDatabaseService.Verify(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()), Times.Never);
+        await service.InitializeStorageAsync(CancellationToken.None);
 
         Assert.NotNull(service);
         _mockDatabaseService.Verify(db => db.AddModuleAsync(It.Is<TerraformRegistry.Models.ModuleStorage>(m =>

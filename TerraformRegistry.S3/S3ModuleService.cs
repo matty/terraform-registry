@@ -51,8 +51,10 @@ public class S3ModuleService : ModuleService
         _uploadWorkflow = new S3ModuleUploadWorkflow(_databaseService, _objectStore, logger);
         _purgeWorkflow = new S3ModulePurgeWorkflow(_databaseService, _objectStore, logger);
 
-        _objectStore.TryPrimeStorage();
     }
+
+    public override Task InitializeStorageAsync(CancellationToken cancellationToken) =>
+        _objectStore.InitializeStorageAsync(cancellationToken);
 
     public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
     {

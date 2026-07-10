@@ -30,12 +30,16 @@ public class LocalModuleServiceTests
         if (Directory.Exists(_testModulePath)) Directory.Delete(_testModulePath, true);
     }
 
-    // Verifies that the constructor creates the module storage directory if it does not exist
+    // Storage work is deferred until hosted startup completes database migration.
     [Fact]
-    public void ConstructorCreatesModuleStorageDirectory()
+    public async Task InitializeStorageCreatesModuleStorageDirectory()
     {
         // Arrange/Act
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        Assert.False(Directory.Exists(_testModulePath));
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
         // Assert
         Assert.True(Directory.Exists(_testModulePath));
     }

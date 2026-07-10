@@ -17,6 +17,7 @@ public static class HealthHandlers
         IDatabaseService dbService,
         IModuleService moduleService,
         IProviderArtifactStorage providerArtifactStorage,
+        IStartupReadiness startupReadiness,
         HttpContext context,
         IConfiguration configuration)
     {
@@ -28,7 +29,7 @@ public static class HealthHandlers
         var dbHealthy = await dbTask;
         var (storageHealthy, storageReason) = await storageTask;
         var (providerStorageHealthy, providerStorageReason) = await providerStorageTask;
-        var isReady = dbHealthy && storageHealthy && providerStorageHealthy;
+        var isReady = startupReadiness.IsStorageInitialized && dbHealthy && storageHealthy && providerStorageHealthy;
 
         var wantDetail = string.Equals(
             context.Request.Query["detail"].FirstOrDefault(),
@@ -47,6 +48,11 @@ public static class HealthHandlers
                     database = new
                     {
                         status = dbHealthy ? "healthy" : "unhealthy"
+                    },
+                    startup = new
+                    {
+                        status = startupReadiness.IsStorageInitialized ? "healthy" : "unhealthy",
+                        reason = startupReadiness.IsStorageInitialized ? null : "Initial storage initialization has not completed"
                     },
                     storage = new
                     {

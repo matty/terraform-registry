@@ -14,20 +14,13 @@ internal sealed class S3ModuleObjectStore(
     int presignedUrlExpiryMinutes,
     ILogger logger)
 {
-    public void TryPrimeStorage()
+    public async Task InitializeStorageAsync(CancellationToken cancellationToken)
     {
-        try
+        await s3Client.ListObjectsV2Async(new ListObjectsV2Request
         {
-            s3Client.ListObjectsV2Async(new ListObjectsV2Request
-            {
-                BucketName = bucketName,
-                MaxKeys = 1
-            }).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            RegistryLog.Error(logger, ex, "Failed to reach S3 bucket '{BucketName}' during startup.", bucketName);
-        }
+            BucketName = bucketName,
+            MaxKeys = 1
+        }, cancellationToken);
     }
 
     public async Task<(bool Healthy, string? Reason)> CheckStorageAsync()
