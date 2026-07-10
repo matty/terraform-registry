@@ -80,6 +80,8 @@ jobs:
             --logger "trx;LogFileName=test_results.trx" \
             --results-directory "$TEST_RESULTS_DIR" \
             --collect "XPlat Code Coverage" \
+            --blame-hang \
+            --blame-hang-timeout 5m \
             -- \
             DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
         env:
