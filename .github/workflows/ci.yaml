@@ -227,8 +227,16 @@ jobs:
       - dotnet
       - frontend
       - docker
-    # Merge-queue and PR builds are deliberately ineligible for registry credentials.
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_image)
+    # PRs, merge-queue candidates, and remediation-phase branches are deliberately
+    # ineligible for registry credentials.  Only integration/release pushes (or an
+    # explicitly requested manual publication) may receive package write access.
+    if: >-
+      (github.event_name == 'push' &&
+        (github.ref == 'refs/heads/main' ||
+         github.ref == 'refs/heads/develop' ||
+         startsWith(github.ref, 'refs/heads/release/') ||
+         startsWith(github.ref, 'refs/heads/hotfix/'))) ||
+      (github.event_name == 'workflow_dispatch' && inputs.push_image)
     runs-on: ubuntu-latest
     permissions:
       contents: write
