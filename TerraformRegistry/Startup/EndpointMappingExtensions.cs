@@ -41,8 +41,9 @@ internal static class EndpointMappingExtensions
 
         app.MapGet("/ready",
                 (IDatabaseService dbService, IModuleService moduleService,
-                        IProviderArtifactStorage providerArtifactStorage, HttpContext context, IConfiguration config) =>
-                    HealthHandlers.HandleReady(dbService, moduleService, providerArtifactStorage, context, config))
+                        IProviderArtifactStorage providerArtifactStorage, IStartupReadiness startupReadiness,
+                        HttpContext context, IConfiguration config) =>
+                    HealthHandlers.HandleReady(dbService, moduleService, providerArtifactStorage, startupReadiness, context, config))
             .WithTags("Health")
             .WithDescription("Readiness probe — use ?detail=true with auth for component details")
             .Produces(200)

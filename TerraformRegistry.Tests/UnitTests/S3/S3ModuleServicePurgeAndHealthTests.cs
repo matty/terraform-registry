@@ -715,8 +715,7 @@ public class S3ModuleServicePurgeAndHealthTests
     public async Task CheckStorageAsyncReturnsUnhealthyWhenListFails()
     {
         _mockS3Client
-            .SetupSequence(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
-            .ReturnsAsync(new ListObjectsV2Response())
+            .Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), default))
             .ThrowsAsync(new AmazonS3Exception("bucket unavailable"));
 
         var service = CreateService();
