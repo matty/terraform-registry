@@ -119,6 +119,9 @@ jobs:
           exit-code: "1"
           limit-severities-for-sarif: true
           skip-dirs: TerraformRegistry/web
+          # DEV-DOCKER-001: tracked exception until P1-DOCKER makes the development image non-root.
+          # Expires 2026-09-30; do not add further skip-files without a reviewed exception.
+          skip-files: Dockerfile.dev
 
       - name: Upload Trivy filesystem scan
         uses: github/codeql-action/upload-sarif@v4

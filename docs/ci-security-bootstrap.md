@@ -16,6 +16,11 @@ workflow for HIGH or CRITICAL findings. Exceptions require a separately
 reviewed, time-bounded policy change; they must not be made non-blocking in a
 remediation branch.
 
+`DEV-DOCKER-001` is the sole current exception: `Dockerfile.dev` is excluded
+from the filesystem scan until `P1-DOCKER` makes that development-only image
+non-root. It expires on 2026-09-30 and does not affect the production
+`Dockerfile`, which remains scanned and blocking.
+
 Merge-queue and pull-request jobs have read-only repository permissions. Image
 publication is in the separate `Publish Docker image` job, which is eligible
 only for `push` events or an explicitly requested `workflow_dispatch` with
