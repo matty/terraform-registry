@@ -201,6 +201,7 @@ public class DbUpIncrementalMigrationTests : IDisposable
     public void Migration010FixesConstraintsAndAddsIndexes()
     {
         MigrateUpTo(10, _connectionString);
+        MigrateUpTo(10, _connectionString); // DbUp journal makes the second run a no-op.
 
         // Verify modules.description is now nullable (insert with NULL description)
         using var cmd = _connection.CreateCommand();
@@ -236,6 +237,97 @@ public class DbUpIncrementalMigrationTests : IDisposable
         Assert.Contains("idx_module_downloads_namespace", indexes);
         Assert.Contains("idx_module_downloads_name", indexes);
         Assert.Contains("idx_module_downloads_provider", indexes);
+    }
+
+    [Fact]
+    public void Migration010PreservesPopulatedForeignKeyChildrenAndPassesForeignKeyCheck()
+    {
+        MigrateUpTo(9, _connectionString);
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO modules (id, namespace, name, provider, version, description, storage_path, published_at, dependencies)
+            VALUES (42, 'hashicorp', 'consul', 'aws', '1.0.0', 'Consul', '/modules/consul', '2026-01-01T00:00:00Z', '[]');
+            INSERT INTO module_downloads (id, module_id, namespace, name, provider, version, download_time, client_ip, user_agent)
+            VALUES (84, 42, 'hashicorp', 'consul', 'aws', '1.0.0', '2026-01-02T00:00:00Z', '127.0.0.1', 'migration-test');
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'user@example.com', 'github', '123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO api_keys (id, user_id, description, token_hash, prefix, is_shared, created_at)
+            VALUES ('key-1', 'user-1', 'key', 'hash', 'tfr_', 0, '2026-01-01T00:00:00Z');
+            INSERT INTO webhooks (id, user_id, url, events, is_active, format, created_at, updated_at)
+            VALUES ('hook-1', 'user-1', 'https://example.com/hook', 'module.published', 1, 'generic', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('connection-1', 'GitHub', 'github', 'secret', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, connection_id, is_active, created_at, updated_at)
+            VALUES ('source-1', 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'connection-1', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO roles (id, name, description, permissions, is_system, created_at, updated_at)
+            VALUES ('role-1', 'reader', 'Reader', '[]', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO user_roles (user_id, role_id, assigned_at)
+            VALUES ('user-1', 'role-1', '2026-01-01T00:00:00Z');";
+        cmd.ExecuteNonQuery();
+
+        MigrateUpTo(10, _connectionString);
+
+        foreach (var (table, id) in new[]
+        {
+            ("modules", "42"), ("module_downloads", "84"), ("users", "user-1"),
+            ("api_keys", "key-1"), ("webhooks", "hook-1"), ("vcs_sources", "source-1")
+        })
+        {
+            cmd.CommandText = $"SELECT COUNT(*) FROM {table} WHERE id = $id";
+            cmd.Parameters.Clear();
+            cmd.Parameters.AddWithValue("$id", id);
+            Assert.Equal(1L, (long)cmd.ExecuteScalar()!);
+        }
+
+        cmd.CommandText = "PRAGMA foreign_key_check";
+        using (var foreignKeyCheck = cmd.ExecuteReader())
+        {
+            Assert.False(foreignKeyCheck.Read());
+        }
+
+        cmd.CommandText = "DELETE FROM users WHERE id = 'user-1'";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = "SELECT COUNT(*) FROM api_keys WHERE id = 'key-1'";
+        Assert.Equal(0L, (long)cmd.ExecuteScalar()!);
+    }
+
+    [Fact]
+    public void Migration010RollsBackCompletelyWhenExistingUsersCannotSatisfyNewUniqueConstraint()
+    {
+        MigrateUpTo(9, _connectionString);
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO modules (id, namespace, name, provider, version, description, storage_path, published_at, dependencies)
+            VALUES (42, 'hashicorp', 'consul', 'aws', '1.0.0', 'required before 010', '/modules/consul', '2026-01-01T00:00:00Z', '[]');
+            INSERT INTO module_downloads (id, module_id, namespace, name, provider, version, download_time)
+            VALUES (84, 42, 'hashicorp', 'consul', 'aws', '1.0.0', '2026-01-02T00:00:00Z');
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'first@example.com', 'github', 'duplicate', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-2', 'second@example.com', 'github', 'duplicate', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');";
+        cmd.ExecuteNonQuery();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MigrateUpTo(10, _connectionString));
+        Assert.Contains("UNIQUE constraint failed", exception.ToString());
+
+        cmd.CommandText = "SELECT COUNT(*) FROM module_downloads WHERE id = 84 AND module_id = 42";
+        Assert.Equal(1L, (long)cmd.ExecuteScalar()!);
+        Assert.DoesNotContain("modules_new", GetTables(_connection));
+        Assert.DoesNotContain("module_downloads_new", GetTables(_connection));
+
+        cmd.CommandText = "PRAGMA table_info(modules)";
+        using var tableInfo = cmd.ExecuteReader();
+        var descriptionIsStillRequired = false;
+        while (tableInfo.Read())
+        {
+            if (string.Equals(tableInfo.GetString(1), "description", StringComparison.Ordinal))
+            {
+                descriptionIsStillRequired = tableInfo.GetInt64(3) == 1;
+            }
+        }
+        Assert.True(descriptionIsStillRequired);
     }
 
     [Fact]
