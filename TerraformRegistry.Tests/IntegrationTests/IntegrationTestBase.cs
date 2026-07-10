@@ -66,6 +66,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                         ["ModuleStoragePath"] = moduleStoragePath,
                         ["ModuleExtraction:Enabled"] = "false",
                         ["ProviderStoragePath"] = providerStoragePath,
+                        ["PORT"] = "0",
                         ["AuthorizationToken"] = _authToken,
                         ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"
                     });
