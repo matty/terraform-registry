@@ -1,0 +1,47 @@
+phase	package	branch	requirements	depends_on
+0	P0-GUARD	fix/audit-p0-startup-migration-guard	DB-003,DB-004,DB-005,STO-005	
+0	P0-PG	fix/audit-p0-postgres-migration	DB-001	P0-GUARD
+0	P0-SQLITE	fix/audit-p0-sqlite-migration	DB-002	P0-GUARD
+0	P0-MATRIX	test/audit-p0-migration-matrix	DB-006	P0-PG,P0-SQLITE
+1	P1-PROTOCOL	fix/audit-p1-module-protocol-status	MOD-004	
+1	P1-ARCHIVE	fix/audit-p1-archive-format-contract	MOD-001,MOD-002	
+1	P1-AUTH	security/audit-p1-zero-role-least-privilege	IAM-001,IAM-011	
+1	P1-SEMVER	fix/audit-p1-semver-total-order	MOD-006	
+1	P1-DOCKER	fix/audit-p1-container-storage-permissions	DEP-002	
+1	P1-DOWNLOAD	fix/audit-p1-download-conformance	MOD-003,MOD-007,MOD-008	P1-PROTOCOL,P1-ARCHIVE
+1	P1-FRONTEND	fix/audit-p1-frontend-image-provenance	DEP-003	P1-DOCKER
+1	P1-KEY-PERM	security/audit-p1-api-key-permission	IAM-005	
+1	P1-PROXY	security/audit-p1-trusted-proxy-cookies	IAM-009	
+1	P1-AZURE-SAS	fix/audit-p1-azure-delegation-sas	DEP-001	P1-DOWNLOAD
+2	P2-RATE	security/audit-p2-endpoint-rate-limit-foundation	ING-004	
+2	P2-ARCHIVE	security/audit-p2-archive-validation-limits	MOD-005,ING-001	P2-RATE
+2	P2-ADMISSION	security/audit-p2-user-admission-disable	IAM-002,IAM-012	P2-RATE
+2	P2-APIKEY	security/audit-p2-api-key-digest-rate-limit	IAM-006,IAM-007	P2-RATE
+2	P2-PROVIDER	security/audit-p2-provider-upload-streaming	PERF-002	P2-RATE
+2	P2-DOWNLOAD-TOKENS	security/audit-p2-stateless-download-tokens	IAM-008	P2-RATE
+2	P2-AUTH-CODES	feat/audit-p2-durable-authorization-codes	IAM-013	P2-RATE
+2	P2-VCS	security/audit-p2-vcs-webhook-ingress	VCS-001,VCS-002	P2-ARCHIVE
+2	P2-ACL	feat/audit-p2-namespace-maintainer-acl	IAM-003,IAM-004	P2-ADMISSION
+2	P2-RATE-ATTACH	security/audit-p2-endpoint-rate-limit-attachments	ING-006	P2-ARCHIVE,P2-APIKEY,P2-PROVIDER,P2-VCS
+2b	P2B-MIR-CONFIG	feat/audit-p2b-mirror-runtime-limits	MIR-001,MIR-002,MIR-003,MIR-004,ING-006	
+2b	P2B-MIR-LEASE	fix/audit-p2b-mirror-singleflight-heartbeats	MIR-005,MIR-006	P2B-MIR-CONFIG
+2b	P2B-MIR-LAZY	perf/audit-p2b-provider-lazy-platforms	MIR-007	P2B-MIR-LEASE
+2b	P2B-MIR-TRUST	security/audit-p2b-provider-signatures	MIR-008	P2B-MIR-LAZY
+2b	P2B-LIST	perf/audit-p2b-module-list-sql	PERF-001	
+3	P3-CONTRACT	refactor/audit-p3-publication-commit-contract	STO-contract	
+3	P3-JOBS	feat/audit-p3-durable-extraction-jobs	ING-002,ING-003,ING-005	P3-CONTRACT
+3	P3-LOCAL	fix/audit-p3-local-atomic-publication	STO-001,STO-002,STO-003,STO-004	P3-JOBS
+3	P3-AZURE	fix/audit-p3-azure-atomic-publication	STO-001,STO-002,STO-003,STO-004	P3-JOBS
+3	P3-S3	fix/audit-p3-s3-replacement-consistency	STO-001,STO-002,STO-003,STO-004	P3-JOBS
+4	P4-MIR-ADMIN	feat/audit-p4-mirror-control-plane	MIR-009	Phase-2B
+4	P4-PROVIDER-QUERY	perf/audit-p4-provider-query-path	PERF-003	
+4	P4-RECONCILE	perf/audit-p4-async-storage-reconciliation	STO-006	Phase-3
+5	P5-SIDE-EFFECTS	feat/audit-p5-durable-side-effects	REL-001,REL-002	Phase-3
+5	P5-HTTP	perf/audit-p5-http-delivery	REL-003	
+5	P5-HEADERS	security/audit-p5-browser-security-headers	REL-004	
+5	P5-REDIRECT	security/audit-p5-local-return-paths	IAM-010	
+5	P5-SUPPLY	chore/audit-p5-supply-chain-pinning	SUP-002,SUP-003	
+5	P5-CANCEL	refactor/audit-p5-request-cancellation	PERF-004	P5-SIDE-EFFECTS,P5-HTTP,P5-HEADERS,P5-REDIRECT,P5-SUPPLY
+6	P6-E2E	test/audit-p6-terraform-backend-matrix	Certification	Phase-5
+6	P6-FAULT-LOAD	test/audit-p6-fault-load-certification	Certification	Phase-5
+6	P6-RUNBOOKS	docs/audit-p6-upgrade-rollback-runbooks	Certification	Phase-5
