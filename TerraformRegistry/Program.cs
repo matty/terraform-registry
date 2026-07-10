@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
+using System.Net;
 using NSwag;
 using NSwag.Generation.Processors.Security;
 using TerraformRegistry.API.Interfaces;
@@ -77,6 +79,25 @@ if (authToken == "default-auth-token"
 {
     throw new InvalidOperationException(
         "AuthorizationToken is set to the default placeholder value. Configure a unique secret before running outside Development/Test.");
+}
+
+var trustedProxies = app.Configuration["TrustedProxies"];
+if (!string.IsNullOrWhiteSpace(trustedProxies))
+{
+    var forwardedHeaders = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1
+    };
+    forwardedHeaders.KnownIPNetworks.Clear();
+    forwardedHeaders.KnownProxies.Clear();
+    foreach (var value in trustedProxies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        if (!IPAddress.TryParse(value, out var address))
+            throw new InvalidOperationException($"TrustedProxies contains an invalid IP address: '{value}'.");
+        forwardedHeaders.KnownProxies.Add(address);
+    }
+    app.UseForwardedHeaders(forwardedHeaders);
 }
 
 app.UseHttpsRedirection();
