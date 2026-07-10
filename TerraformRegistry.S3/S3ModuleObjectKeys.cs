@@ -3,7 +3,7 @@ namespace TerraformRegistry.S3;
 internal static class S3ModuleObjectKeys
 {
     public static string CreateLogicalObjectKey(string @namespace, string name, string provider, string version,
-        string fileSuffix)
+        string fileSuffix = ".zip")
     {
         return $"{@namespace}/{name}-{provider}-{version}{fileSuffix}";
     }
