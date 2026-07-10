@@ -7,10 +7,14 @@ on:
       - develop
       - "release/**"
       - "hotfix/**"
+      - "remediation/phase/**"
   pull_request:
     branches:
       - main
       - develop
+      - "remediation/phase/**"
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       version:
@@ -133,7 +137,6 @@ jobs:
       - name: Run npm audit
         working-directory: TerraformRegistry/web-src
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Generate frontend
         working-directory: TerraformRegistry/web-src
@@ -148,16 +151,13 @@ jobs:
           retention-days: 7
 
   docker:
-    name: Docker build, scan, publish
+    name: Docker build and scan
     needs:
       - dotnet
       - frontend
     runs-on: ubuntu-latest
     permissions:
-      attestations: write
-      contents: write
-      id-token: write
-      packages: write
+      contents: read
       security-events: write
 
     steps:
@@ -221,9 +221,51 @@ jobs:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
+  publish-image:
+    name: Publish Docker image
+    needs:
+      - dotnet
+      - frontend
+      - docker
+    # Merge-queue and PR builds are deliberately ineligible for registry credentials.
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_image)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve version
+        id: resolved-version
+        run: |
+          VERSION="$(.github/scripts/resolve-version.sh "${{ inputs.version }}")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=terraform-registry
+            org.opencontainers.image.description=Private Terraform module registry
+          tags: |
+            type=raw,value=${{ steps.resolved-version.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=release,enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -231,7 +273,6 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
-        if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.push_image)
         with:
           context: .
           push: true
