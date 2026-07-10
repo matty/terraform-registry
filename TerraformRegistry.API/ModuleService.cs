@@ -10,6 +10,12 @@ namespace TerraformRegistry.API;
 public abstract class ModuleService : IModuleService
 {
     /// <summary>
+    ///     Performs storage work that must run only after database migration has completed.
+    ///     Constructors must remain side-effect free so application startup can establish schema safety first.
+    /// </summary>
+    public virtual Task InitializeStorageAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
     ///     Lists all modules
     /// </summary>
     public abstract Task<ModuleList> ListModulesAsync(ModuleSearchRequest request);

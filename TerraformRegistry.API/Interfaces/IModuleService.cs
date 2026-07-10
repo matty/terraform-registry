@@ -8,6 +8,11 @@ namespace TerraformRegistry.API.Interfaces;
 public interface IModuleService
 {
     /// <summary>
+    ///     Performs required storage initialization after database migration has completed.
+    /// </summary>
+    Task InitializeStorageAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     ///     Lists all modules
     /// </summary>
     Task<ModuleList> ListModulesAsync(ModuleSearchRequest request);
