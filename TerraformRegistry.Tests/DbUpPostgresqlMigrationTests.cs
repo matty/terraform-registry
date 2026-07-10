@@ -884,11 +884,23 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     private string CreateFreshDatabase()
     {
         var dbName = $"test_{Guid.NewGuid():N}";
-        using var conn = new NpgsqlConnection(_postgresContainer.GetConnectionString());
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"CREATE DATABASE \"{dbName}\"";
-        cmd.ExecuteNonQuery();
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try
+            {
+                using var conn = new NpgsqlConnection(_postgresContainer.GetConnectionString());
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"CREATE DATABASE \"{dbName}\"";
+                cmd.ExecuteNonQuery();
+                break;
+            }
+            catch (PostgresException exception) when (exception.SqlState == "57P03" && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(250));
+            }
+        }
 
         var builder = new NpgsqlConnectionStringBuilder(_postgresContainer.GetConnectionString())
         {
