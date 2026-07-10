@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.RegularExpressions;
 
 namespace TerraformRegistry.API.Utilities;
@@ -79,11 +80,21 @@ public static class SemVerValidator
     /// </returns>
     public static int? Compare(string version1, string version2)
     {
-        if (!TryParse(version1, out var major1, out var minor1, out var patch1, out var prerelease1, out _) ||
-            !TryParse(version2, out var major2, out var minor2, out var patch2, out var prerelease2, out _))
+        var match1 = SemVerPattern.Match(version1 ?? string.Empty);
+        var match2 = SemVerPattern.Match(version2 ?? string.Empty);
+        if (!match1.Success || !match2.Success)
         {
             return null;
         }
+
+        var major1 = BigInteger.Parse(match1.Groups[1].Value, CultureInfo.InvariantCulture);
+        var minor1 = BigInteger.Parse(match1.Groups[2].Value, CultureInfo.InvariantCulture);
+        var patch1 = BigInteger.Parse(match1.Groups[3].Value, CultureInfo.InvariantCulture);
+        var major2 = BigInteger.Parse(match2.Groups[1].Value, CultureInfo.InvariantCulture);
+        var minor2 = BigInteger.Parse(match2.Groups[2].Value, CultureInfo.InvariantCulture);
+        var patch2 = BigInteger.Parse(match2.Groups[3].Value, CultureInfo.InvariantCulture);
+        var prerelease1 = match1.Groups[4].Success ? match1.Groups[4].Value : null;
+        var prerelease2 = match2.Groups[4].Success ? match2.Groups[4].Value : null;
 
         // Compare major.minor.patch
         var result = major1.CompareTo(major2);
@@ -116,8 +127,8 @@ public static class SemVerValidator
             var id1 = identifiers1[i];
             var id2 = identifiers2[i];
 
-            var isNum1 = int.TryParse(id1, out var num1);
-            var isNum2 = int.TryParse(id2, out var num2);
+            var isNum1 = BigInteger.TryParse(id1, NumberStyles.None, CultureInfo.InvariantCulture, out var num1);
+            var isNum2 = BigInteger.TryParse(id2, NumberStyles.None, CultureInfo.InvariantCulture, out var num2);
 
             int result;
 

@@ -112,6 +112,8 @@ public class SemVerValidatorTests
     [InlineData("1.0.0-alpha.1", "1.0.0-alpha", 1)] // longer prerelease > shorter prerelease
     [InlineData("1.0.0-1", "1.0.0-2", -1)] // numeric identifiers
     [InlineData("1.0.0-2", "1.0.0-1", 1)] // numeric identifiers
+    [InlineData("99999999999999999999999.0.0", "1.0.0", 1)]
+    [InlineData("1.0.0-99999999999999999999999", "1.0.0-2", 1)]
     [InlineData("1.0.0-alpha.1", "1.0.0-alpha.1.beta", -1)] // length comparison after common part
 
     // Invalid versions
