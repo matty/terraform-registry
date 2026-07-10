@@ -189,7 +189,10 @@ internal static class ModuleEndpointMappingExtensions
                 return;
             }
 
-            context.Response.ContentType = "application/zip";
+            context.Response.ContentType = filePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+                                           filePath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)
+                ? "application/gzip"
+                : "application/zip";
             context.Response.Headers["Content-Disposition"] = $"attachment; filename=\"{Path.GetFileName(filePath)}\"";
             await context.Response.SendFileAsync(filePath);
         });
