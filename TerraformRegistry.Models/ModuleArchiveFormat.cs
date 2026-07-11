@@ -26,6 +26,6 @@ public static class ModuleArchiveFormat
         return moduleStorage.FilePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
                moduleStorage.FilePath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)
             ? "tar.gz"
-            : null;
+            : "zip";
     }
 }

@@ -167,6 +167,7 @@ public class LocalModuleServiceTests
         // Assert
         Assert.NotNull(result);
         Assert.StartsWith("/module/download?token=", result);
+        Assert.Contains("archive=zip", result, StringComparison.Ordinal);
     }
 
     [Fact]
