@@ -154,6 +154,7 @@ public class AzureBlobModuleServiceDownloadTests
 
         var mockBlobClient = new Mock<BlobClient>();
         mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        mockBlobClient.SetupGet(bc => bc.CanGenerateSasUri).Returns(true);
         var fakeSasUri =
             new Uri($"https://fakeaccount.blob.core.windows.net/{_containerName}/path/to/blob.zip?sastoken");
         mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>())).Returns(fakeSasUri);
@@ -201,6 +202,7 @@ public class AzureBlobModuleServiceDownloadTests
 
         var mockBlobClient = new Mock<BlobClient>();
         mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        mockBlobClient.SetupGet(bc => bc.CanGenerateSasUri).Returns(true);
         mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>()))
             .Throws(new InvalidOperationException("SAS error"));
 
@@ -225,7 +227,7 @@ public class AzureBlobModuleServiceDownloadTests
     }
 
     [Fact]
-    public async Task GetModuleDownloadPathAsyncFallsBackToBlobUriWhenSasGenerationNotSupported()
+    public async Task GetModuleDownloadPathAsyncFailsClosedWhenSasGenerationIsUnavailable()
     {
         var moduleStorage = new ModuleStorage
         {
@@ -246,9 +248,6 @@ public class AzureBlobModuleServiceDownloadTests
         mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
         mockBlobClient.Setup(bc => bc.GenerateSasUri(It.IsAny<BlobSasBuilder>()))
             .Throws(new InvalidOperationException("SAS not supported"));
-        mockBlobClient.SetupGet(bc => bc.Uri)
-            .Returns(new Uri($"https://fakeaccount.blob.core.windows.net/{_containerName}/{moduleStorage.FilePath}"));
-
         _mockContainerClient.Setup(cc => cc.GetBlobClient(moduleStorage.FilePath))
             .Returns(mockBlobClient.Object);
 
@@ -256,7 +255,7 @@ public class AzureBlobModuleServiceDownloadTests
 
         var result = await service.GetModuleDownloadPathAsync("ns", "name", "prov", "1.0.0");
 
-        Assert.Equal(mockBlobClient.Object.Uri.ToString(), result);
+        Assert.Null(result);
     }
 
     [Fact]

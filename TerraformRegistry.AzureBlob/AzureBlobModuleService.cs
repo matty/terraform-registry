@@ -20,6 +20,7 @@ namespace TerraformRegistry.AzureBlob;
 /// </summary>
 public class AzureBlobModuleService : ModuleService
 {
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private readonly string _containerName;
     private readonly IDatabaseService _databaseService;
@@ -89,6 +90,7 @@ public class AzureBlobModuleService : ModuleService
         }
 
         // Initialize Azure Blob Storage container client
+        _blobServiceClient = clientToUse;
         _containerClient = clientToUse.GetBlobContainerClient(_containerName);
 
     }
@@ -168,18 +170,15 @@ public class AzureBlobModuleService : ModuleService
 
             sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-            try
+            if (blobClient.CanGenerateSasUri)
             {
                 var sasToken = blobClient.GenerateSasUri(sasBuilder);
                 return sasToken.ToString();
             }
-            catch (InvalidOperationException)
-            {
-                RegistryLog.Warning(_logger,
-                    "Blob client for {Namespace}/{Name}/{Provider}/{Version} cannot generate SAS URIs directly. Falling back to blob URI.",
-                    moduleNamespace, name, provider, version);
-                return blobClient.Uri.ToString();
-            }
+
+            var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
+            var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(startsOn, sasBuilder.ExpiresOn);
+            return blobClient.GenerateUserDelegationSasUri(sasBuilder, delegationKey.Value).ToString();
         }
         catch (Exception ex)
         {

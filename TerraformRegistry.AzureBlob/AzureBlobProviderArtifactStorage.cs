@@ -11,6 +11,7 @@ namespace TerraformRegistry.AzureBlob;
 
 public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
 {
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly BlobContainerClient _containerClient;
     private readonly string _containerName;
     private readonly ILogger<AzureBlobProviderArtifactStorage> _logger;
@@ -66,6 +67,7 @@ public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
             }
         }
 
+        _blobServiceClient = clientToUse;
         _containerClient = clientToUse.GetBlobContainerClient(_containerName);
         _containerClient.CreateIfNotExists();
     }
@@ -98,7 +100,17 @@ public sealed class AzureBlobProviderArtifactStorage : IProviderArtifactStorage
         };
         sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-        return blobClient.GenerateSasUri(sasBuilder).ToString();
+        if (blobClient.CanGenerateSasUri)
+        {
+            return blobClient.GenerateSasUri(sasBuilder).ToString();
+        }
+
+        var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+            startsOn,
+            sasBuilder.ExpiresOn,
+            cancellationToken);
+        return blobClient.GenerateUserDelegationSasUri(sasBuilder, delegationKey.Value).ToString();
     }
 
     public async Task<Stream?> OpenReadAsync(string storagePath, CancellationToken cancellationToken)

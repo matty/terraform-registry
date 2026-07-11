@@ -12,7 +12,6 @@ public static class ModuleArchiveFormat
             ? "tar.gz"
             : "zip";
     }
-
     public static string GetFileSuffix(ModuleArtifactMetadata? metadata)
     {
         var recordedFormat = metadata?.Source?.ArchiveFormat;
