@@ -152,6 +152,44 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  storage-emulator-contract:
+    name: Storage emulator Terraform contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Azurite and MinIO Terraform contract smoke
+        run: >-
+          bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh
+          --provider all
+          --home "$RUNNER_TEMP/terraform-registry-storage-test"
+
+      - name: Collect storage emulator logs
+        if: failure()
+        run: |
+          harness="$RUNNER_TEMP/terraform-registry-storage-test"
+          project="tfregstorage$(printf '%s' "$harness" | sha256sum | cut -c1-12)"
+          docker compose --project-name "$project" --project-directory "$harness" -f "$harness/compose.yaml" logs --no-color > storage-emulator-compose.log || true
+
+      - name: Upload storage emulator logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: storage-emulator-compose-logs
+          path: storage-emulator-compose.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Clean storage emulator harness
+        if: always()
+        run: >-
+          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          --home "$RUNNER_TEMP/terraform-registry-storage-test" || true
+
   docker:
     name: Docker build and scan
     needs:

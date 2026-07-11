@@ -166,6 +166,7 @@ public class S3ModuleServiceConstructorTests
             .Callback<AmazonS3Config, string?, string?, string?>((cfg, _, _, _) =>
             {
                 Assert.Equal("http://minio:9000", new Uri(cfg.ServiceURL).GetLeftPart(UriPartial.Authority));
+                Assert.True(cfg.UseHttp);
                 Assert.True(cfg.ForcePathStyle);
                 Assert.Equal("eu-west-2", cfg.AuthenticationRegion);
             })

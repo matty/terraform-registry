@@ -67,6 +67,7 @@ public class S3ProviderArtifactStorageTests
         Assert.Equal("registry-artifacts", capturedRequest!.BucketName);
         Assert.Equal("providers/acme/example/1.0.0/package.zip", capturedRequest.Key);
         Assert.Equal(HttpVerb.GET, capturedRequest.Verb);
+        Assert.Equal(Protocol.HTTPS, capturedRequest.Protocol);
         Assert.NotNull(capturedRequest.Expires);
         Assert.InRange(capturedRequest.Expires!.Value, beforeCall.AddMinutes(17), afterCall.AddMinutes(17));
     }
