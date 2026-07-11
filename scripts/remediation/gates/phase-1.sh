@@ -28,16 +28,7 @@ docker run --rm --entrypoint /bin/sh "$IMAGE" -c 'test -w /app/modules && test -
 test "$(docker run --rm --entrypoint cat "$IMAGE" /app/web/.build-marker)" = "$marker"
 
 if [[ "${TF_REGISTRY_REQUIRE_REAL_AZURE:-0}" = 1 ]]; then
-  : "${AZURE_STORAGE_ACCOUNT_NAME:?AZURE_STORAGE_ACCOUNT_NAME is required for the real Azure gate}"
-  : "${AZURE_STORAGE_CONTAINER:?AZURE_STORAGE_CONTAINER is required for the real Azure gate}"
-  command -v az >/dev/null
-  az account show --output none
-  az storage container show \
-    --account-name "$AZURE_STORAGE_ACCOUNT_NAME" \
-    --name "$AZURE_STORAGE_CONTAINER" \
-    --auth-mode login \
-    --output none
-  printf 'Real Azure identity was able to read the configured storage container.\n'
+  bash scripts/remediation/gates/phase-1-real-azure-user-delegation-sas.sh
 else
   printf 'Real Azure managed-identity SAS gate not run; set TF_REGISTRY_REQUIRE_REAL_AZURE=1 in the protected Azure environment.\n'
 fi
