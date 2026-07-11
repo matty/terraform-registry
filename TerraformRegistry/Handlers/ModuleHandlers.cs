@@ -308,7 +308,11 @@ public static class ModuleHandlers
                 ActorUserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier),
                 Metadata = new ModuleArtifactMetadata
                 {
-                    Source = new ModuleSourceInfo { Kind = "api-upload" }
+                    Source = new ModuleSourceInfo
+                    {
+                        Kind = "api-upload",
+                        ArchiveFormat = ModuleArchiveFormat.GetUploadArchiveFormat(moduleFile.FileName)
+                    }
                 }
             }, context.RequestAborted);
 

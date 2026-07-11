@@ -1,0 +1,75 @@
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /workspace --skipApiVersionCheck
+    volumes:
+      - azurite-data:/workspace
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-03-12T17-29-24Z
+    depends_on:
+      - minio
+    entrypoint: >-
+      /bin/sh -c 'until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      mc mb --ignore-existing local/modules'
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: terraform_reg_user
+      POSTGRES_PASSWORD: terraform_reg_password
+      POSTGRES_DB: terraform_registry
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terraform_reg_user -d terraform_registry"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  app:
+    build:
+      context: ${REGISTRY_ROOT}
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      TF_REG_DatabaseProvider: postgres
+      TF_REG_PostgreSQL__ConnectionString: Host=postgres;Database=terraform_registry;Username=terraform_reg_user;Password=terraform_reg_password
+      TF_REG_BaseUrl: https://registry.local
+      TF_REG_StorageProvider: ${STORAGE_PROVIDER}
+      TF_REG_AuthorizationToken: MY_TOKEN_123
+      TF_REG_AzureStorage__ContainerName: modules
+      TF_REG_AzureStorage__ConnectionString: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+      TF_REG_S3__BucketName: modules
+      TF_REG_S3__Region: us-east-1
+      TF_REG_S3__ServiceUrl: http://minio:9000
+      TF_REG_S3__ForcePathStyle: "true"
+      TF_REG_S3__AccessKeyId: minioadmin
+      TF_REG_S3__SecretAccessKey: minioadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "5131"
+
+  caddy:
+    image: caddy:2.10-alpine
+    depends_on:
+      - app
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  azurite-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
