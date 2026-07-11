@@ -2,6 +2,8 @@ name: Phase 1 real Azure gate
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -10,6 +12,15 @@ permissions:
 jobs:
   user-delegation-sas:
     name: Azure user-delegation SAS
+    if: >-
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'test/audit-p1-terraform-deployment-gate')) &&
+      vars.AZURE_CLIENT_ID != '' &&
+      vars.AZURE_TENANT_ID != '' &&
+      vars.AZURE_SUBSCRIPTION_ID != '' &&
+      vars.AZURE_STORAGE_ACCOUNT_NAME != '' &&
+      vars.AZURE_STORAGE_CONTAINER != ''
     runs-on: ubuntu-latest
     environment: remediation-azure-phase-1
     permissions:
