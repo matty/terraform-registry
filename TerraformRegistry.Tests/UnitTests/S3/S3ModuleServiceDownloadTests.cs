@@ -24,17 +24,16 @@ public class S3ModuleServiceDownloadTests
             .ReturnsAsync(new ListObjectsV2Response());
     }
 
-    private static IConfiguration CreateConfiguration()
+    private static IConfiguration CreateConfiguration(string? serviceUrl = null)
     {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-(StringComparer.Ordinal)
-            {
-                ["S3:BucketName"] = "modules",
-                ["S3:Region"] = "eu-west-2",
-                ["S3:PresignedUrlExpiryMinutes"] = "11"
-            })
-            .Build();
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["S3:BucketName"] = "modules",
+            ["S3:Region"] = "eu-west-2",
+            ["S3:PresignedUrlExpiryMinutes"] = "11"
+        };
+        if (serviceUrl != null) values["S3:ServiceUrl"] = serviceUrl;
+        return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
     private static ModuleStorage CreateModuleStorage()
@@ -51,10 +50,10 @@ public class S3ModuleServiceDownloadTests
         };
     }
 
-    private S3ModuleService CreateService()
+    private S3ModuleService CreateService(string? serviceUrl = null)
     {
         return new S3ModuleService(
-            CreateConfiguration(),
+            CreateConfiguration(serviceUrl),
             _mockDatabaseService.Object,
             _mockLogger.Object,
             _mockS3Client.Object);
@@ -67,7 +66,7 @@ public class S3ModuleServiceDownloadTests
             .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0"))
             .ReturnsAsync(value: null);
 
-        var service = CreateService();
+        var service = CreateService("http://minio:9000");
 
         var result = await service.GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0");
 
@@ -135,7 +134,7 @@ public class S3ModuleServiceDownloadTests
             .Callback<GetPreSignedUrlRequest>(request => capturedRequest = request)
             .Returns(expectedUrl);
 
-        var service = CreateService();
+        var service = CreateService("http://minio:9000");
         var beforeCall = DateTime.UtcNow;
 
         var result = await service.GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0");
@@ -146,6 +145,7 @@ public class S3ModuleServiceDownloadTests
         Assert.Equal("modules", capturedRequest!.BucketName);
         Assert.Equal(moduleStorage.FilePath, capturedRequest.Key);
         Assert.Equal(HttpVerb.GET, capturedRequest.Verb);
+        Assert.Equal(Protocol.HTTP, capturedRequest.Protocol);
         Assert.NotNull(capturedRequest.Expires);
         Assert.InRange(
             capturedRequest.Expires!.Value,

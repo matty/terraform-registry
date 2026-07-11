@@ -15,6 +15,7 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
     private readonly ILogger<S3ProviderArtifactStorage> _logger;
     private readonly int _presignedUrlExpiryMinutes;
     private readonly IAmazonS3 _s3Client;
+    private readonly bool _useHttp;
 
     public S3ProviderArtifactStorage(
         IConfiguration configuration,
@@ -31,6 +32,8 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
         }
 
         _bucketName = bucketName;
+        _useHttp = Uri.TryCreate(configuration["S3:ServiceUrl"], UriKind.Absolute, out var configuredEndpoint) &&
+                   string.Equals(configuredEndpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
 
         var region = configuration["S3:Region"];
         if (string.IsNullOrWhiteSpace(region))
@@ -64,6 +67,7 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
         if (!string.IsNullOrWhiteSpace(serviceUrl))
         {
             config.ServiceURL = serviceUrl;
+            config.UseHttp = _useHttp;
         }
 
         _s3Client = (s3ClientFactory ?? new S3ClientFactory()).Create(
@@ -142,6 +146,7 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
             BucketName = _bucketName,
             Key = objectKey,
             Verb = HttpVerb.GET,
+            Protocol = _useHttp ? Protocol.HTTP : Protocol.HTTPS,
             Expires = DateTime.UtcNow.AddMinutes(_presignedUrlExpiryMinutes)
         });
     }
