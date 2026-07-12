@@ -162,6 +162,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Verify storage emulator harness scripts
+        run: |
+          bash scripts/remediation/storage-emulators/test-lifecycle.sh
+          bash scripts/remediation/storage-emulators/test-ci-workflow.sh
+          bash scripts/remediation/storage-emulators/test-smoke-script.sh
+
       - name: Run Azurite and MinIO Terraform contract smoke
         run: >-
           bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh

@@ -50,10 +50,10 @@ run_provider() {
 
   app="$(docker compose --project-name "$project" --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" ps -q app)"
   for _ in $(seq 1 120); do
-    if docker logs "$app" 2>&1 | grep -q 'Application started'; then break; fi
+    if [[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]; then break; fi
     sleep 1
   done
-  docker logs "$app" 2>&1 | grep -q 'Application started'
+  [[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]
 
   unzip -q "$ROOT/TerraformRegistry.Tests/TestData/test-module.zip" -d "$fixture/module"
   tar -C "$fixture/module" -czf "$fixture/test-module.tar.gz" .
