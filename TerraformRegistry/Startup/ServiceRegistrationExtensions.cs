@@ -26,6 +26,7 @@ internal static class ServiceRegistrationExtensions
         IConfiguration configuration)
     {
         services.AddRegistryRateLimiting(configuration);
+        services.AddSingleton<ArtifactDownloadTokenService>();
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
         services.AddOptions<ModuleExtractionOptions>()
@@ -209,7 +210,7 @@ internal static class ServiceRegistrationExtensions
                     provider.GetRequiredService<ILogger<S3ModuleService>>(),
                     null,
                     provider.GetRequiredService<IS3ClientFactory>()),
-                "local" => CreateLocalModuleService(config, db, logger),
+                "local" => CreateLocalModuleService(config, db, logger, provider),
                 _ => throw new InvalidOperationException(
                     $"Invalid storage provider specified: '{storageProvider}'. Check configuration.")
             };
@@ -221,7 +222,8 @@ internal static class ServiceRegistrationExtensions
     private static LocalModuleService CreateLocalModuleService(
         IConfiguration config,
         IDatabaseService db,
-        ILogger<LocalModuleService> logger)
+        ILogger<LocalModuleService> logger,
+        IServiceProvider provider)
     {
         var storagePath = config["ModuleStoragePath"];
         if (string.IsNullOrEmpty(storagePath))
@@ -232,7 +234,7 @@ internal static class ServiceRegistrationExtensions
                 "ModuleStoragePath is missing or empty. Please check your configuration.");
         }
 
-        return new LocalModuleService(config, db, logger);
+        return new LocalModuleService(config, db, logger, provider.GetRequiredService<ArtifactDownloadTokenService>());
     }
 
     private static IServiceCollection AddProviderRegistryServices(this IServiceCollection services)
@@ -256,7 +258,8 @@ internal static class ServiceRegistrationExtensions
                 "local" => new LocalProviderArtifactStorage(
                     config["ProviderStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "providers"),
                     TimeSpan.FromMinutes(expiryMinutes),
-                    provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>()),
+                    provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>(),
+                    provider.GetRequiredService<ArtifactDownloadTokenService>()),
                 _ => throw new InvalidOperationException(
                     $"Provider artifact storage is not implemented for StorageProvider '{storageProvider}'.")
             };

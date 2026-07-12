@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
 using TerraformRegistry.API;
@@ -14,19 +13,19 @@ namespace TerraformRegistry.Services;
 /// </summary>
 public class LocalModuleService : ModuleService
 {
-    // Token storage for download links
-    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens = new(StringComparer.Ordinal);
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(10);
     private readonly IDatabaseService _databaseService;
     private readonly ILogger<LocalModuleService> _logger;
     private readonly string _moduleStoragePath;
     private readonly string _moduleStorageRoot;
+    private readonly ArtifactDownloadTokenService _tokens;
 
     public LocalModuleService(IConfiguration configuration, IDatabaseService databaseService,
-        ILogger<LocalModuleService> logger)
+        ILogger<LocalModuleService> logger, ArtifactDownloadTokenService? tokens = null)
     {
         _databaseService = databaseService;
         _logger = logger;
+        _tokens = tokens ?? new ArtifactDownloadTokenService(configuration);
 
         // Get storage path from configuration, with a reasonable default if not specified
         _moduleStoragePath = configuration["ModuleStoragePath"] ??
@@ -227,9 +226,7 @@ public class LocalModuleService : ModuleService
         }
 
         // Generate a unique token
-        var token = Guid.NewGuid().ToString("N");
-        var expiry = DateTime.UtcNow.Add(TokenLifetime);
-        DownloadTokens[token] = (filePath, expiry);
+        var token = _tokens.Create("module", Path.GetRelativePath(_moduleStorageRoot, filePath), TokenLifetime);
 
         var archiveHint = ModuleArchiveFormat.GetGoGetterHint(moduleStorage);
         return string.IsNullOrEmpty(archiveHint)
@@ -256,20 +253,14 @@ public class LocalModuleService : ModuleService
     }
 
     // Helper for endpoint to validate and retrieve the file path
-    public static bool TryGetFilePathFromToken(string token, out string filePath)
+    public bool TryGetFilePathFromToken(string token, out string filePath)
     {
         filePath = string.Empty;
-        if (!DownloadTokens.TryGetValue(token, out var entry)) return false;
-        if (entry.Expiry > DateTime.UtcNow)
-        {
-            filePath = entry.FilePath;
-            return true;
-        }
-
-        // Expired, remove
-        DownloadTokens.TryRemove(token, out _);
-
-        return false;
+        if (!_tokens.TryValidate(token, "module", out var path)) return false;
+        var candidate = Path.GetFullPath(Path.Combine(_moduleStorageRoot, path));
+        if (!IsInsideStorageRoot(candidate)) return false;
+        filePath = candidate;
+        return true;
     }
 
     /// <summary>

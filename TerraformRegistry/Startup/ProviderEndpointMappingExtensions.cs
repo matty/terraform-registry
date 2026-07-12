@@ -144,7 +144,8 @@ internal static class ProviderEndpointMappingExtensions
         app.MapGet("/provider/download", async context =>
         {
             var token = context.Request.Query["token"].ToString();
-            if (string.IsNullOrEmpty(token) || !LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out var filePath))
+            var storage = context.RequestServices.GetRequiredService<IProviderArtifactStorage>() as LocalProviderArtifactStorage;
+            if (string.IsNullOrEmpty(token) || storage is null || !storage.TryGetFilePathFromToken(token, out var filePath))
             {
                 context.Response.StatusCode = 404;
                 await context.Response.WriteAsync("Invalid or expired download link.");

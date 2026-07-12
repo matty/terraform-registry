@@ -175,7 +175,8 @@ internal static class ModuleEndpointMappingExtensions
         app.MapGet("/module/download", async context =>
         {
             var token = context.Request.Query["token"].ToString();
-            if (string.IsNullOrEmpty(token) || !LocalModuleService.TryGetFilePathFromToken(token, out var filePath))
+            var moduleService = context.RequestServices.GetRequiredService<IModuleService>() as LocalModuleService;
+            if (string.IsNullOrEmpty(token) || moduleService is null || !moduleService.TryGetFilePathFromToken(token, out var filePath))
             {
                 context.Response.StatusCode = 404;
                 await context.Response.WriteAsync("Invalid or expired download link.");

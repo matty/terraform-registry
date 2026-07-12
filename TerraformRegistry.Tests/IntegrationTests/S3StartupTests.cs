@@ -46,6 +46,7 @@ public class S3StartupTests
                         {
                             ["AuthorizationToken"] = "startup-test-auth-token",
                             ["ApiKeySecurity:DigestKey"] = "startup-test-api-key-digest-key-32-chars-minimum",
+                            ["ArtifactDownloadTokens:SigningKey"] = "startup-test-artifact-download-token-signing-key-32-chars-minimum",
                             ["DatabaseProvider"] = "sqlite",
                             ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "startup-test.db")}",
                             ["StorageProvider"] = "s3",
@@ -103,6 +104,7 @@ public class S3StartupTests
                         {
                             ["AuthorizationToken"] = "startup-test-auth-token",
                             ["ApiKeySecurity:DigestKey"] = "startup-test-api-key-digest-key-32-chars-minimum",
+                            ["ArtifactDownloadTokens:SigningKey"] = "startup-test-artifact-download-token-signing-key-32-chars-minimum",
                             ["DatabaseProvider"] = "sqlite",
                             ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "startup-test.db")}",
                             ["StorageProvider"] = "s3",
