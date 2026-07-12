@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+GATE="$ROOT/scripts/remediation/gates/phase-1.sh"
+
+test -x "$GATE"
+grep -Fq 'phase-1-local-terraform-smoke.sh' "$GATE"
+grep -Fq 'phase-1-storage-emulator-terraform-smoke.sh' "$GATE"
+grep -Fq 'ModuleMirrorServiceTests' "$GATE"
+grep -Fq 'ApiKeyExpirationTests' "$GATE"
+grep -Fq 'SemVerValidatorTests' "$GATE"
+grep -Fq 'TF_REGISTRY_REQUIRE_REAL_AZURE' "$GATE"
+grep -Fq 'docker image inspect' "$GATE"
+grep -Fq 'phase-1-real-azure-user-delegation-sas.sh' "$GATE"
+REAL_AZURE_GATE="$ROOT/scripts/remediation/gates/phase-1-real-azure-user-delegation-sas.sh"
+test -x "$REAL_AZURE_GATE"
+grep -Fq -- '--as-user' "$REAL_AZURE_GATE"
+grep -Fq -- '--auth-mode login' "$REAL_AZURE_GATE"
+grep -Fq 'curl --fail' "$REAL_AZURE_GATE"
+grep -Eq '^  phase-1-deployment-gate:' "$ROOT/.github/workflows/ci.yaml"
+grep -Fq 'scripts/remediation/gates/phase-1.sh' "$ROOT/.github/workflows/ci.yaml"
+test -f "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"
+grep -Fq 'azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5' "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"
+grep -Fq 'remediation-azure-phase-1' "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"
+grep -Fq 'id-token: write' "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"
+grep -Fq 'pull_request:' "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"
+grep -Fq 'test/audit-p1-terraform-deployment-gate' "$ROOT/.github/workflows/phase-1-real-azure-gate.yaml"

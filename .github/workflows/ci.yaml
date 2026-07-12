@@ -190,6 +190,20 @@ jobs:
           bash scripts/remediation/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-storage-test" || true
 
+  phase-1-deployment-gate:
+    name: Phase 1 deployment gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p1-terraform-deployment-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run portable Phase 1 deployment gate
+        run: bash scripts/remediation/gates/phase-1.sh
+
   docker:
     name: Docker build and scan
     needs:
