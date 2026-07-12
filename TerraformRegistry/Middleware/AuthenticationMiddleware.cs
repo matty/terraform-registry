@@ -152,24 +152,24 @@ public class AuthenticationMiddleware(
                 RegistryLog.Information(logger, "Processing request for {Path}. No session cookie found.", path);
             }
 
-            // Check 4: JWT in Authorization header (Bearer token)
-            if (!string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            // Check 4: JWT in Authorization header (Bearer token). The validator receives an empty token for
+            // non-bearer requests, so request-controlled format checks never guard token validation.
+            var jwtToken = !string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
+                ? header.Substring(BearerPrefix.Length)
+                : string.Empty;
+            var jwtPrincipal = jwtService.ValidateToken(jwtToken);
+            if (jwtPrincipal != null)
             {
-                var jwtToken = header.Substring(BearerPrefix.Length);
-                var principal = jwtService.ValidateToken(jwtToken);
-                if (principal != null)
+                if (!await IsCurrentUserActiveAsync(context, jwtPrincipal))
                 {
-                    if (!await IsCurrentUserActiveAsync(context, principal))
-                    {
-                        await WriteUnauthorizedResponseAsync(context, path);
-                        return;
-                    }
-
-                    context.User = principal;
-                    await LoadPermissionsIntoClaims(context);
-                    await next(context);
+                    await WriteUnauthorizedResponseAsync(context, path);
                     return;
                 }
+
+                context.User = jwtPrincipal;
+                await LoadPermissionsIntoClaims(context);
+                await next(context);
+                return;
             }
 
             // No valid authentication found

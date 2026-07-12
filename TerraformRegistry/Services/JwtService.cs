@@ -81,6 +81,11 @@ public class JwtService
     /// </summary>
     public ClaimsPrincipal? ValidateToken(string token)
     {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
         try
         {
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
