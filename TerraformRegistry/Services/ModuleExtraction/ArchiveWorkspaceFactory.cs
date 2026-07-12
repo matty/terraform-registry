@@ -144,7 +144,7 @@ public sealed class ArchiveWorkspaceFactory : IArchiveWorkspaceFactory
             await using var output = new FileStream(destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             expandedTotal = await CopyEntryAsync(
-                entry.DataStream ?? throw new InvalidOperationException("Archive entry has no data stream."),
+                entry.DataStream ?? Stream.Null,
                 output,
                 expandedTotal,
                 cancellationToken);

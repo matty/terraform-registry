@@ -30,6 +30,26 @@ public class ArchiveWorkspaceFactoryTests
     }
 
     [Fact]
+    public async Task ArchiveWorkspaceFactoryExtractsEmptyRegularFileFromTarGz()
+    {
+        var tempDir = Directory.CreateTempSubdirectory();
+        var tarGzPath = Path.Combine(tempDir.FullName, "module.tar.gz");
+        await TestArchiveBuilder.CreateTarGzAsync(tarGzPath, ("module/main.tf", string.Empty));
+
+        await using var stream = File.OpenRead(tarGzPath);
+        var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
+        {
+            TempRoot = Path.Combine(tempDir.FullName, "workspaces")
+        });
+
+        await using var workspace = await factory.CreateAsync(stream, CancellationToken.None);
+
+        var file = Path.Combine(workspace.RootPath, "main.tf");
+        Assert.True(File.Exists(file));
+        Assert.Equal(0, new FileInfo(file).Length);
+    }
+
+    [Fact]
     public async Task ArchiveWorkspaceFactoryRejectsArchivesOverConfiguredLimit()
     {
         var tempDir = Directory.CreateTempSubdirectory();
