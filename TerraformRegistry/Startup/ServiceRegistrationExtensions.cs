@@ -119,8 +119,25 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<ApiKeyVerificationGate>();
         services.AddSingleton<JwtService>();
         services.AddSingleton<OAuthService>();
-        services.AddSingleton(new TerraformLoginOptions());
-        services.AddSingleton<ITerraformAuthorizationCodeStore, InMemoryTerraformAuthorizationCodeStore>();
+        var terraformLoginOptions = new TerraformLoginOptions();
+        configuration.GetSection("TerraformLogin").Bind(terraformLoginOptions);
+        services.AddSingleton(terraformLoginOptions);
+        services.AddSingleton<ITerraformAuthorizationCodeStore>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlTerraformAuthorizationCodeStore(
+                    config["PostgreSQL:ConnectionString"] ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing for Terraform authorization codes."),
+                    provider.GetRequiredService<TerraformLoginOptions>()),
+                "sqlite" => new SqliteTerraformAuthorizationCodeStore(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db",
+                    provider.GetRequiredService<TerraformLoginOptions>()),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
         services.AddAnalyticsService();
