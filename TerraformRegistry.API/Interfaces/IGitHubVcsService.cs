@@ -7,7 +7,8 @@ public interface IGitHubVcsService
     Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(
         string? signatureHeader,
         string? eventHeader,
-        string body);
+        string body,
+        CancellationToken cancellationToken);
 
     Task<SyncVcsSourceResult> SyncSourceAsync(
         Guid sourceId,
