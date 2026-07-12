@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.AzureBlob;
@@ -27,7 +28,21 @@ internal static class ServiceRegistrationExtensions
         services.AddRegistryRateLimiting(configuration);
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
-        services.Configure<ModuleExtractionOptions>(configuration.GetSection("ModuleExtraction"));
+        services.AddOptions<ModuleExtractionOptions>()
+            .Bind(configuration.GetSection("ModuleExtraction"))
+            .Validate(options =>
+            {
+                try
+                {
+                    options.Validate();
+                    return true;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            }, "Module extraction limits must all be greater than zero.")
+            .ValidateOnStart();
         services.Configure<MirrorOptions>(configuration.GetSection("Mirror"));
         services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
         services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
@@ -338,6 +353,9 @@ internal static class ServiceRegistrationExtensions
     private static IServiceCollection AddModuleExtractionServices(this IServiceCollection services)
     {
         services.AddSingleton<IArchiveWorkspaceFactory, ArchiveWorkspaceFactory>();
+        services.AddSingleton<IArchiveIngestionValidator>(provider => new ArchiveIngestionValidator(
+            provider.GetRequiredService<IArchiveWorkspaceFactory>(),
+            provider.GetRequiredService<IOptions<ModuleExtractionOptions>>().Value));
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<ReadmeDiscoveryService>();
         services.AddSingleton<ExampleDiscoveryService>();

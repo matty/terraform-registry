@@ -47,4 +47,61 @@ public class ArchiveWorkspaceFactoryTests
         var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
         Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
     }
+
+    [Fact]
+    public async Task ArchiveWorkspaceFactoryRejectsExpandedContentOverConfiguredLimit()
+    {
+        var tempDir = Directory.CreateTempSubdirectory();
+        await using var stream = new MemoryStream(TestArchiveBuilder.CreateZipBytes(("module/main.tf", "0123456789")));
+        var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
+        {
+            TempRoot = Path.Combine(tempDir.FullName, "workspaces"),
+            MaxExpandedArchiveBytes = 4
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.CreateAsync(stream, CancellationToken.None));
+
+        Assert.Contains("expanded", exception.Message, StringComparison.OrdinalIgnoreCase);
+        var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
+        Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
+    }
+
+    [Fact]
+    public async Task ArchiveWorkspaceFactoryRejectsPathTraversalAndCleansWorkspace()
+    {
+        var tempDir = Directory.CreateTempSubdirectory();
+        await using var stream = new MemoryStream(TestArchiveBuilder.CreateZipBytes(("../outside.tf", "resource {}")));
+        var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
+        {
+            TempRoot = Path.Combine(tempDir.FullName, "workspaces")
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.CreateAsync(stream, CancellationToken.None));
+
+        Assert.Contains("escapes", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(Path.Combine(tempDir.FullName, "outside.tf")));
+        var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
+        Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
+    }
+
+    [Fact]
+    public async Task ArchiveWorkspaceFactoryRejectsArchivesOverConfiguredEntryCount()
+    {
+        var tempDir = Directory.CreateTempSubdirectory();
+        await using var stream = new MemoryStream(TestArchiveBuilder.CreateZipBytes(
+            ("module/one.tf", "one"),
+            ("module/two.tf", "two")));
+        var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
+        {
+            TempRoot = Path.Combine(tempDir.FullName, "workspaces"),
+            MaxArchiveEntries = 1
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            factory.CreateAsync(stream, CancellationToken.None));
+
+        Assert.Contains("entry count", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

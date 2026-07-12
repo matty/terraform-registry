@@ -9,16 +9,29 @@ public sealed class ModulePublishCoordinator(
     IModuleExtractionService extractionService,
     WebhookDispatcher webhookDispatcher,
     IAuditService auditService,
-    ILogger<ModulePublishCoordinator> logger) : IModulePublishCoordinator
+    ILogger<ModulePublishCoordinator> logger,
+    IArchiveIngestionValidator? archiveValidator = null) : IModulePublishCoordinator
 {
     public async Task<bool> PublishAsync(ModulePublishRequest request, CancellationToken cancellationToken)
+    {
+        if (archiveValidator is not null)
+        {
+            await using var archive = await archiveValidator.PrepareAsync(request.ModuleContent, cancellationToken);
+            await using var content = archive.OpenRead();
+            return await PublishValidatedAsync(request, content, cancellationToken);
+        }
+
+        return await PublishValidatedAsync(request, request.ModuleContent, cancellationToken);
+    }
+
+    private async Task<bool> PublishValidatedAsync(ModulePublishRequest request, Stream content, CancellationToken cancellationToken)
     {
         var uploaded = await moduleService.UploadModuleAsync(
             request.Namespace,
             request.Name,
             request.Provider,
             request.Version,
-            request.ModuleContent,
+            content,
             request.Description,
             request.Replace,
             request.Metadata);
