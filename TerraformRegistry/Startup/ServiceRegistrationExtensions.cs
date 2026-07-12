@@ -24,6 +24,7 @@ internal static class ServiceRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddRegistryRateLimiting(configuration);
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
         services.Configure<ModuleExtractionOptions>(configuration.GetSection("ModuleExtraction"));

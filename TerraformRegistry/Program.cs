@@ -125,6 +125,7 @@ app.UseMiddleware<AuthenticationMiddleware>(authToken, jwtService);
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 if (enableSwagger)
 {
