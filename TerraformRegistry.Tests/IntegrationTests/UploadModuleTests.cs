@@ -55,6 +55,35 @@ public class UploadModuleTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
+    public async Task DownloadLinkStreamsArtifactAndRejectsTampering()
+    {
+        var authenticatedClient = Factory.CreateClient(new() { AllowAutoRedirect = false });
+        authenticatedClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+        using var upload = CreateModuleUploadContent();
+        var uploadResponse = await authenticatedClient.PostAsync(
+            "/v1/modules/test-ns/test-name/test-provider/2.0.0", upload);
+        Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
+
+        var protocolResponse = await authenticatedClient.GetAsync(
+            "/v1/modules/test-ns/test-name/test-provider/2.0.0/download");
+        Assert.Equal(HttpStatusCode.NoContent, protocolResponse.StatusCode);
+        var downloadLink = Assert.Single(protocolResponse.Headers.GetValues("X-Terraform-Get"));
+
+        var downloadResponse = await Factory.CreateClient().GetAsync(downloadLink);
+        Assert.Equal(HttpStatusCode.OK, downloadResponse.StatusCode);
+        Assert.NotEmpty(await downloadResponse.Content.ReadAsByteArrayAsync());
+
+        var tokenEnd = downloadLink.LastIndexOf("&archive=", StringComparison.Ordinal);
+        if (tokenEnd < 0) tokenEnd = downloadLink.Length;
+        var tokenLastCharacter = tokenEnd - 1;
+        var tamperedLink = downloadLink[..tokenLastCharacter] +
+                           (downloadLink[tokenLastCharacter] == 'A' ? 'B' : 'A') +
+                           downloadLink[(tokenLastCharacter + 1)..];
+        var tamperedResponse = await Factory.CreateClient().GetAsync(tamperedLink);
+        Assert.Equal(HttpStatusCode.NotFound, tamperedResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task UploadInvalidModuleCoordinateReturnsBadRequest()
     {
         var client = Factory.CreateClient();

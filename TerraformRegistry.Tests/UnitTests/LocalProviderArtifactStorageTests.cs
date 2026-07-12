@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using TerraformRegistry.Services;
 
@@ -9,10 +10,7 @@ public class LocalProviderArtifactStorageTests
     public async Task SaveAsyncStoresArtifactInsideProviderStorageRoot()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.FromMinutes(10),
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.FromMinutes(10));
 
         await using var content = new MemoryStream([1, 2, 3]);
 
@@ -27,10 +25,7 @@ public class LocalProviderArtifactStorageTests
     public async Task OpenReadAsyncReturnsStoredArtifactContent()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.FromMinutes(10),
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.FromMinutes(10));
         await using var content = new MemoryStream([4, 5, 6]);
         var result = await storage.SaveAsync("acme/example/1.0.0/file.zip", content, CancellationToken.None);
 
@@ -46,10 +41,7 @@ public class LocalProviderArtifactStorageTests
     public async Task CreateDownloadUrlAsyncReturnsTokenForStoredArtifact()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.FromMinutes(10),
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.FromMinutes(10));
         await using var content = new MemoryStream([1]);
         var result = await storage.SaveAsync("acme/example/1.0.0/file.zip", content, CancellationToken.None);
 
@@ -57,7 +49,7 @@ public class LocalProviderArtifactStorageTests
         var token = tokenUrl.Split("token=", StringSplitOptions.None)[1];
 
         Assert.StartsWith("/provider/download?token=", tokenUrl, StringComparison.Ordinal);
-        Assert.True(LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out var filePath));
+        Assert.True(storage.TryGetFilePathFromToken(token, out var filePath));
         Assert.Equal(Path.GetFullPath(Path.Combine(temp.Path, result.StoragePath)), filePath);
     }
 
@@ -65,26 +57,20 @@ public class LocalProviderArtifactStorageTests
     public async Task OpenTokenAsyncReturnsNullAfterTokenExpires()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.Zero,
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.Zero);
         await using var content = new MemoryStream([1]);
         var result = await storage.SaveAsync("acme/example/1.0.0/file.zip", content, CancellationToken.None);
 
         var tokenUrl = await storage.CreateDownloadUrlAsync(result.StoragePath, CancellationToken.None);
         var token = tokenUrl.Split("token=", StringSplitOptions.None)[1];
-        Assert.False(LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out _));
+        Assert.False(storage.TryGetFilePathFromToken(token, out _));
     }
 
     [Fact]
     public async Task SaveAsyncRejectsPathsOutsideStorageRoot()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.FromMinutes(10),
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.FromMinutes(10));
         await using var content = new MemoryStream([1]);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -95,10 +81,7 @@ public class LocalProviderArtifactStorageTests
     public async Task DeleteAsyncRemovesStoredArtifact()
     {
         using var temp = new TempDirectory();
-        var storage = new LocalProviderArtifactStorage(
-            temp.Path,
-            TimeSpan.FromMinutes(10),
-            NullLogger<LocalProviderArtifactStorage>.Instance);
+        var storage = CreateStorage(temp.Path, TimeSpan.FromMinutes(10));
         await using var content = new MemoryStream([1]);
         var result = await storage.SaveAsync("acme/example/1.0.0/file.zip", content, CancellationToken.None);
 
@@ -123,5 +106,20 @@ public class LocalProviderArtifactStorageTests
                 Directory.Delete(Path, true);
             }
         }
+    }
+
+    private static LocalProviderArtifactStorage CreateStorage(string path, TimeSpan lifetime)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ArtifactDownloadTokens:SigningKey"] = "test-signing-key-that-is-long-enough-to-be-safe-0123456789"
+            })
+            .Build();
+        return new LocalProviderArtifactStorage(
+            path,
+            lifetime,
+            NullLogger<LocalProviderArtifactStorage>.Instance,
+            new ArtifactDownloadTokenService(configuration));
     }
 }

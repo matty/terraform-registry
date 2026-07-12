@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 
@@ -6,17 +5,17 @@ namespace TerraformRegistry.Services;
 
 public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
 {
-    private static readonly ConcurrentDictionary<string, (string FilePath, DateTime Expiry)> DownloadTokens =
-        new(StringComparer.Ordinal);
     private readonly ILogger<LocalProviderArtifactStorage> _logger;
     private readonly string _storageRoot;
     private readonly TimeSpan _tokenLifetime;
+    private readonly ArtifactDownloadTokenService _tokens;
 
-    public LocalProviderArtifactStorage(string storageRoot, TimeSpan tokenLifetime, ILogger<LocalProviderArtifactStorage> logger)
+    public LocalProviderArtifactStorage(string storageRoot, TimeSpan tokenLifetime, ILogger<LocalProviderArtifactStorage> logger, ArtifactDownloadTokenService tokens)
     {
         _storageRoot = Path.GetFullPath(storageRoot);
         _tokenLifetime = tokenLifetime;
         _logger = logger;
+        _tokens = tokens;
         Directory.CreateDirectory(_storageRoot);
     }
 
@@ -34,8 +33,7 @@ public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
     public Task<string> CreateDownloadUrlAsync(string storagePath, CancellationToken cancellationToken)
     {
         var fullPath = GetContainedPath(storagePath);
-        var token = Guid.NewGuid().ToString("N");
-        DownloadTokens[token] = (fullPath, DateTime.UtcNow.Add(_tokenLifetime));
+        var token = _tokens.Create("provider", GetStoragePath(fullPath), _tokenLifetime);
         return Task.FromResult($"/provider/download?token={token}");
     }
 
@@ -75,18 +73,17 @@ public sealed class LocalProviderArtifactStorage : IProviderArtifactStorage
         }
     }
 
-    public static bool TryGetFilePathFromToken(string token, out string filePath)
+
+    public bool TryGetFilePathFromToken(string token, out string filePath)
     {
         filePath = string.Empty;
-        if (!DownloadTokens.TryGetValue(token, out var entry)) return false;
-        if (entry.Expiry <= DateTime.UtcNow)
-        {
-            DownloadTokens.TryRemove(token, out _);
-            return false;
-        }
+        return _tokens.TryValidate(token, "provider", out var path) && TryGetContainedPath(path, out filePath);
+    }
 
-        filePath = entry.FilePath;
-        return true;
+    private bool TryGetContainedPath(string path, out string fullPath)
+    {
+        try { fullPath = GetContainedPath(path); return true; }
+        catch (InvalidOperationException) { fullPath = string.Empty; return false; }
     }
 
     private string GetContainedPath(string storagePath)

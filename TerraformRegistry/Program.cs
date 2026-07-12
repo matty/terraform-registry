@@ -125,6 +125,14 @@ if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") &
         "ApiKeySecurity:DigestKey is set to the default placeholder. Configure a unique secret before running outside Development/Test.");
 }
 apiKeySecurityOptions.ValidateDigestKey();
+var artifactDownloadSigningKey = app.Configuration["ArtifactDownloadTokens:SigningKey"];
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") &&
+    artifactDownloadSigningKey == ArtifactDownloadTokenService.ProductionPlaceholder)
+{
+    throw new InvalidOperationException(
+        "ArtifactDownloadTokens:SigningKey is set to the default placeholder. Configure a unique secret before running outside Development/Test.");
+}
+_ = app.Services.GetRequiredService<ArtifactDownloadTokenService>();
 app.UseMiddleware<PortalAuthenticationMiddleware>(jwtService);
 
 // API key authentication middleware (for /v1/* routes used by Terraform CLI)
