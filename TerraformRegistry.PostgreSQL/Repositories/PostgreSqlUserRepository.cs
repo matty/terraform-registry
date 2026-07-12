@@ -10,7 +10,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
     {
         const string sql =
             """
-            SELECT id, email, provider, provider_id, created_at, updated_at
+            SELECT id, email, provider, provider_id, is_active, created_at, updated_at
             FROM users
             WHERE lower(email) = lower(@email)
             ORDER BY CASE WHEN email = @email THEN 0 ELSE 1 END, created_at ASC
@@ -38,7 +38,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
 
     public async Task<User?> GetUserByIdAsync(string id)
     {
-        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE id = @id";
+        const string sql = "SELECT id, email, provider, provider_id, is_active, created_at, updated_at FROM users WHERE id = @id";
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
@@ -53,8 +53,8 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
     public async Task AddUserAsync(User user)
     {
         const string sql = @"
-            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
-            VALUES (@id, @email, @provider, @providerId, @createdAt, @updatedAt)";
+            INSERT INTO users (id, email, provider, provider_id, is_active, created_at, updated_at)
+            VALUES (@id, @email, @provider, @providerId, @isActive, @createdAt, @updatedAt)";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -64,6 +64,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
         command.Parameters.AddWithValue("@email", user.Email);
         command.Parameters.AddWithValue("@provider", user.Provider);
         command.Parameters.AddWithValue("@providerId", user.ProviderId);
+        command.Parameters.AddWithValue("@isActive", user.IsActive);
         command.Parameters.AddWithValue("@createdAt", user.CreatedAt);
         command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
 
@@ -73,7 +74,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
     public async Task UpdateUserAsync(User user)
     {
         const string sql =
-            "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, updated_at=@updatedAt WHERE id=@id";
+            "UPDATE users SET email=@email, provider=@provider, provider_id=@providerId, is_active=@isActive, updated_at=@updatedAt WHERE id=@id";
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -83,6 +84,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
         command.Parameters.AddWithValue("@email", user.Email);
         command.Parameters.AddWithValue("@provider", user.Provider);
         command.Parameters.AddWithValue("@providerId", user.ProviderId);
+        command.Parameters.AddWithValue("@isActive", user.IsActive);
         command.Parameters.AddWithValue("@updatedAt", user.UpdatedAt);
 
         await command.ExecuteNonQueryAsync();
@@ -100,7 +102,7 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
 
     public async Task<IEnumerable<User>> ListAllUsersAsync()
     {
-        const string sql = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users ORDER BY created_at DESC";
+        const string sql = "SELECT id, email, provider, provider_id, is_active, created_at, updated_at FROM users ORDER BY created_at DESC";
         var users = new List<User>();
 
         await using var connection = new NpgsqlConnection(connectionString);
@@ -123,8 +125,9 @@ public sealed class PostgreSqlUserRepository(string connectionString) : IUserRep
             Email = reader.GetString(1),
             Provider = reader.GetString(2),
             ProviderId = reader.GetString(3),
-            CreatedAt = reader.GetDateTime(4),
-            UpdatedAt = reader.GetDateTime(5)
+            IsActive = reader.GetBoolean(4),
+            CreatedAt = reader.GetDateTime(5),
+            UpdatedAt = reader.GetDateTime(6)
         };
     }
 }

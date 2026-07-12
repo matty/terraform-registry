@@ -172,7 +172,9 @@ public class OAuthService
             Email = email,
             Name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? root.GetProperty("login").GetString() ?? "" : root.GetProperty("login").GetString() ?? "",
             Provider = "github",
-            AvatarUrl = root.TryGetProperty("avatar_url", out var avatarProp) ? avatarProp.GetString() ?? "" : ""
+            AvatarUrl = root.TryGetProperty("avatar_url", out var avatarProp) ? avatarProp.GetString() ?? "" : "",
+            Issuer = "https://github.com",
+            EmailVerified = false
         };
     }
 
@@ -280,7 +282,9 @@ public class OAuthService
             Email = email,
             Name = root.TryGetProperty("displayName", out var nameProp) ? nameProp.GetString() ?? "" : "",
             Provider = "azuread",
-            AvatarUrl = "" // Azure doesn't provide avatar in basic profile
+            AvatarUrl = "", // Azure doesn't provide avatar in basic profile
+            Issuer = new Uri(config.AuthorizationEndpoint).GetLeftPart(UriPartial.Authority),
+            EmailVerified = false
         };
     }
 

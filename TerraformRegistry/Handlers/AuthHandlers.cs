@@ -117,7 +117,13 @@ public static class AuthHandlers
         User user;
         try
         {
-            user = await apiKeyService.GetOrCreateOidcUserAsync(userInfo.Email, provider, userInfo.Id);
+            user = await apiKeyService.GetOrCreateOidcUserAsync(new OidcUserAdmission(
+                userInfo.Email,
+                provider,
+                userInfo.Id,
+                userInfo.Issuer,
+                userInfo.TenantId,
+                userInfo.EmailVerified));
         }
         catch (InvalidOperationException ex)
         {

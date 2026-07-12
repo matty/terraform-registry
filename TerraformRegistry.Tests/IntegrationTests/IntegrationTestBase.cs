@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Startup;
 using Testcontainers.PostgreSql;
 using Xunit.Abstractions;
 using Xunit.Extensions.Logging;
@@ -68,6 +69,8 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                         ["ProviderStoragePath"] = providerStoragePath,
                         ["PORT"] = "0",
                         ["AuthorizationToken"] = _authToken,
+                        ["UserAdmission:Mode"] = "ConstrainedAutoProvision",
+                        ["UserAdmission:AllowedDomains:0"] = "example.com",
                         ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"
                     });
                 });
@@ -79,6 +82,13 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                     {
                         JwtSecretKey = "integration-test-jwt-secret-key-32-chars-minimum",
                         JwtExpiryHours = 24
+                    });
+                    services.RemoveAll<UserAdmissionOptions>();
+                    services.AddSingleton(new UserAdmissionOptions
+                    {
+                        Mode = UserAdmissionMode.ConstrainedAutoProvision,
+                        AllowedDomains = ["example.com"],
+                        RequireVerifiedEmail = false
                     });
                 });
 

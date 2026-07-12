@@ -85,11 +85,16 @@ public class PortalAuthenticationMiddleware(
         if (!string.IsNullOrEmpty(token))
         {
             var principal = jwtService.ValidateToken(token);
-            if (principal != null)
+            if (principal != null && await IsCurrentUserActiveAsync(context, principal))
             {
                 context.User = principal;
                 RegistryLog.Information(logger, "Portal session validated for {Path}. User: {User}", path,
                     principal.Identity?.Name);
+            }
+            else if (principal != null)
+            {
+                context.Response.Cookies.Delete(SessionCookieName);
+                RegistryLog.Warning(logger, "Rejected portal session for inactive or removed user on {Path}", path);
             }
         }
 
@@ -125,6 +130,19 @@ public class PortalAuthenticationMiddleware(
         return ProtectedPortalPaths.Any(p =>
             path.Equals(p, StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<bool> IsCurrentUserActiveAsync(HttpContext context, ClaimsPrincipal principal)
+    {
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return false;
+        }
+
+        using var scope = context.RequestServices.CreateScope();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        return (await dbService.GetUserByIdAsync(userId))?.IsActive == true;
     }
 
     private static bool IsStaticFile(string path)

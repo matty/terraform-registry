@@ -122,6 +122,12 @@ public class AuthenticationMiddleware(
                 var principal = jwtService.ValidateToken(sessionToken);
                 if (principal != null)
                 {
+                    if (!await IsCurrentUserActiveAsync(context, principal))
+                    {
+                        await WriteUnauthorizedResponseAsync(context, path);
+                        return;
+                    }
+
                     context.User = principal;
                     await LoadPermissionsIntoClaims(context);
                     RegistryLog.Information(logger,
@@ -157,6 +163,12 @@ public class AuthenticationMiddleware(
                     var principal = jwtService.ValidateToken(jwtToken);
                     if (principal != null)
                     {
+                        if (!await IsCurrentUserActiveAsync(context, principal))
+                        {
+                            await WriteUnauthorizedResponseAsync(context, path);
+                            return;
+                        }
+
                         context.User = principal;
                         await LoadPermissionsIntoClaims(context);
                         await next(context);
@@ -201,6 +213,19 @@ public class AuthenticationMiddleware(
             foreach (var perm in perms)
                 identity.AddClaim(new Claim("permission", perm));
         }
+    }
+
+    private static async Task<bool> IsCurrentUserActiveAsync(HttpContext context, ClaimsPrincipal principal)
+    {
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return false;
+        }
+
+        using var scope = context.RequestServices.CreateScope();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        return (await dbService.GetUserByIdAsync(userId))?.IsActive == true;
     }
 
     /// <summary>
