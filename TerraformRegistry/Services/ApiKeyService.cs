@@ -4,10 +4,14 @@ using Konscious.Security.Cryptography;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Services;
 
-public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> logger) : IApiKeyService
+public class ApiKeyService(
+    IDatabaseService dbService,
+    ILogger<ApiKeyService> logger,
+    UserAdmissionOptions userAdmissionOptions) : IApiKeyService
 {
     private const int TokenLength = 32;
     // private const string TokenPrefix = "tf-"; // Removed prefix requirement
@@ -75,6 +79,13 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
                     return new ApiKeyValidationResult(null, true);
                 }
 
+                var user = await dbService.GetUserByIdAsync(key.UserId);
+                if (user?.IsActive != true)
+                {
+                    RegistryLog.Warning(logger, "Rejected API key for inactive or missing user {UserId}", key.UserId);
+                    return new ApiKeyValidationResult(null, false);
+                }
+
                 key.LastUsedAt = DateTime.UtcNow;
                 await dbService.UpdateApiKeyAsync(key);
                 return new ApiKeyValidationResult(key, false);
@@ -139,12 +150,17 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
     public async Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId)
     {
-        if (string.IsNullOrWhiteSpace(email))
+        return await GetOrCreateOidcUserAsync(new OidcUserAdmission(email, provider, providerId, provider, string.Empty, true));
+    }
+
+    public async Task<User> GetOrCreateOidcUserAsync(OidcUserAdmission admission)
+    {
+        if (string.IsNullOrWhiteSpace(admission.Email))
         {
             throw new InvalidOperationException("OIDC login requires a non-empty email address.");
         }
 
-        var canonicalEmail = CanonicalizeEmail(email);
+        var canonicalEmail = CanonicalizeEmail(admission.Email);
         var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(canonicalEmail);
         if (matchingUsers.Count > 1)
         {
@@ -155,12 +171,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
         if (user == null)
         {
+            if (userAdmissionOptions.Mode != UserAdmissionMode.ConstrainedAutoProvision ||
+                !userAdmissionOptions.Allows(admission.Issuer, admission.TenantId, canonicalEmail, admission.EmailVerified))
+            {
+                throw new InvalidOperationException("OIDC admission policy denied this new identity.");
+            }
+
             user = new User
             {
                 Id = Guid.NewGuid().ToString(),
                 Email = canonicalEmail,
-                Provider = provider,
-                ProviderId = providerId,
+                Provider = admission.Provider,
+                ProviderId = admission.ProviderId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -168,11 +190,16 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             return user;
         }
 
-        if (!string.Equals(user.Provider, provider, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(user.ProviderId, providerId, StringComparison.Ordinal))
+        if (!string.Equals(user.Provider, admission.Provider, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(user.ProviderId, admission.ProviderId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"The email '{canonicalEmail}' is already linked to a different identity. Manual account linking is required.");
+        }
+
+        if (!user.IsActive)
+        {
+            throw new InvalidOperationException("The user account is disabled.");
         }
 
         return user;

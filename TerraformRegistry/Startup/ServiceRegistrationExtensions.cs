@@ -88,6 +88,10 @@ internal static class ServiceRegistrationExtensions
         var oidcOptions = new OidcOptions();
         configuration.GetSection("Oidc").Bind(oidcOptions);
         services.AddSingleton(oidcOptions);
+        var userAdmissionOptions = new UserAdmissionOptions();
+        configuration.GetSection(UserAdmissionOptions.SectionName).Bind(userAdmissionOptions);
+        userAdmissionOptions.Validate();
+        services.AddSingleton(userAdmissionOptions);
         services.AddSingleton<JwtService>();
         services.AddSingleton<OAuthService>();
         services.AddSingleton(new TerraformLoginOptions());

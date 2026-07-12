@@ -122,6 +122,12 @@ public class AuthenticationMiddleware(
                 var principal = jwtService.ValidateToken(sessionToken);
                 if (principal != null)
                 {
+                    if (!await IsCurrentUserActiveAsync(context, principal))
+                    {
+                        await WriteUnauthorizedResponseAsync(context, path);
+                        return;
+                    }
+
                     context.User = principal;
                     await LoadPermissionsIntoClaims(context);
                     RegistryLog.Information(logger,
@@ -146,23 +152,24 @@ public class AuthenticationMiddleware(
                 RegistryLog.Information(logger, "Processing request for {Path}. No session cookie found.", path);
             }
 
-            // Check 4: JWT in Authorization header (Bearer token)
-            if (!string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
+            // Check 4: JWT in Authorization header (Bearer token). The validator receives an empty token for
+            // non-bearer requests, so request-controlled format checks never guard token validation.
+            var jwtToken = !string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase)
+                ? header.Substring(BearerPrefix.Length)
+                : string.Empty;
+            var jwtPrincipal = jwtService.ValidateToken(jwtToken);
+            if (jwtPrincipal != null)
             {
-                var jwtToken = header.Substring(BearerPrefix.Length);
-                // If we are here, it might be a JWT (or an invalid API key)
-                // Only try JWT validation if it looks like one
-                if (jwtToken.Contains('.', StringComparison.Ordinal) && jwtToken.Count(c => c == '.') == 2)
+                if (!await IsCurrentUserActiveAsync(context, jwtPrincipal))
                 {
-                    var principal = jwtService.ValidateToken(jwtToken);
-                    if (principal != null)
-                    {
-                        context.User = principal;
-                        await LoadPermissionsIntoClaims(context);
-                        await next(context);
-                        return;
-                    }
+                    await WriteUnauthorizedResponseAsync(context, path);
+                    return;
                 }
+
+                context.User = jwtPrincipal;
+                await LoadPermissionsIntoClaims(context);
+                await next(context);
+                return;
             }
 
             // No valid authentication found
@@ -201,6 +208,19 @@ public class AuthenticationMiddleware(
             foreach (var perm in perms)
                 identity.AddClaim(new Claim("permission", perm));
         }
+    }
+
+    private static async Task<bool> IsCurrentUserActiveAsync(HttpContext context, ClaimsPrincipal principal)
+    {
+        var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return false;
+        }
+
+        using var scope = context.RequestServices.CreateScope();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        return (await dbService.GetUserByIdAsync(userId))?.IsActive == true;
     }
 
     /// <summary>
