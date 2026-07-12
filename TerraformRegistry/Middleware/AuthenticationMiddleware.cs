@@ -156,24 +156,19 @@ public class AuthenticationMiddleware(
             if (!string.IsNullOrEmpty(header) && header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase))
             {
                 var jwtToken = header.Substring(BearerPrefix.Length);
-                // If we are here, it might be a JWT (or an invalid API key)
-                // Only try JWT validation if it looks like one
-                if (jwtToken.Contains('.', StringComparison.Ordinal) && jwtToken.Count(c => c == '.') == 2)
+                var principal = jwtService.ValidateToken(jwtToken);
+                if (principal != null)
                 {
-                    var principal = jwtService.ValidateToken(jwtToken);
-                    if (principal != null)
+                    if (!await IsCurrentUserActiveAsync(context, principal))
                     {
-                        if (!await IsCurrentUserActiveAsync(context, principal))
-                        {
-                            await WriteUnauthorizedResponseAsync(context, path);
-                            return;
-                        }
-
-                        context.User = principal;
-                        await LoadPermissionsIntoClaims(context);
-                        await next(context);
+                        await WriteUnauthorizedResponseAsync(context, path);
                         return;
                     }
+
+                    context.User = principal;
+                    await LoadPermissionsIntoClaims(context);
+                    await next(context);
+                    return;
                 }
             }
 
