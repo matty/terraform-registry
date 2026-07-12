@@ -520,7 +520,7 @@ public sealed class ModuleMirrorServiceTests
     }
 
     [Fact]
-    public async Task LatestDownloadUsesUpstreamVersionsWhenNoLocalVersionExists()
+    public async Task LatestDownloadUsesProtocolStatusWithoutTerraformUserAgent()
     {
         var moduleService = new Mock<IModuleService>();
         moduleService.Setup(x => x.GetModuleVersionsAsync("hashicorp", "vpc", "aws"))
@@ -542,7 +542,7 @@ public sealed class ModuleMirrorServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("/module/download?token=latest");
         var context = new DefaultHttpContext();
-        context.Request.Headers.UserAgent = "Terraform/1.9";
+        context.Request.Headers.UserAgent = "generic-http-client";
 
         var result = await ModuleHandlers.DownloadLatestModule(
             "hashicorp",

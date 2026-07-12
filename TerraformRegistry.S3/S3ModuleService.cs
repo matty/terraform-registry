@@ -47,6 +47,8 @@ public class S3ModuleService : ModuleService
             resolvedS3Client,
             bucketName,
             presignedUrlExpiryMinutes,
+            Uri.TryCreate(configuration["S3:ServiceUrl"], UriKind.Absolute, out var endpoint) &&
+            string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase),
             logger);
         _uploadWorkflow = new S3ModuleUploadWorkflow(_databaseService, _objectStore, logger);
         _purgeWorkflow = new S3ModulePurgeWorkflow(_databaseService, _objectStore, logger);
@@ -175,6 +177,8 @@ public class S3ModuleService : ModuleService
         if (!string.IsNullOrWhiteSpace(serviceUrl))
         {
             config.ServiceURL = serviceUrl;
+            config.UseHttp = Uri.TryCreate(serviceUrl, UriKind.Absolute, out var endpoint) &&
+                             string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
         }
 
         return (s3ClientFactory ?? new S3ClientFactory()).Create(

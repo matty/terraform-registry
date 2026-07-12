@@ -165,7 +165,8 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(addedModule);
         Assert.NotNull(deleteRequest);
         Assert.NotEqual(LogicalKey, finalizeRequest!.DestinationKey);
-        Assert.StartsWith(LogicalKey, finalizeRequest.DestinationKey, StringComparison.Ordinal);
+        Assert.StartsWith("ns/name-aws-1.0.0.", finalizeRequest.DestinationKey, StringComparison.Ordinal);
+        Assert.EndsWith(".zip", finalizeRequest.DestinationKey, StringComparison.Ordinal);
         Assert.Equal(putRequest!.Key, finalizeRequest.SourceKey);
         Assert.Equal(finalizeRequest.DestinationKey, addedModule!.FilePath);
         Assert.Equal(putRequest.Key, deleteRequest!.Key);
@@ -189,7 +190,8 @@ public class S3ModuleServiceUploadTests
             Source = new ModuleSourceInfo
             {
                 Kind = "mirror",
-                Origin = "registry.example.com"
+                Origin = "registry.example.com",
+                ArchiveFormat = "tar.gz"
             }
         };
 
@@ -219,6 +221,7 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(addedModule);
         Assert.Equal("mirror", addedModule!.Metadata.Source?.Kind);
         Assert.Equal("registry.example.com", addedModule.Metadata.Source?.Origin);
+        Assert.EndsWith(".tar.gz", addedModule.FilePath, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -289,7 +292,8 @@ public class S3ModuleServiceUploadTests
 
         Assert.True(result);
         Assert.NotNull(addedModule);
-        Assert.StartsWith(LogicalKey, addedModule!.FilePath, StringComparison.Ordinal);
+        Assert.StartsWith("ns/name-aws-1.0.0.", addedModule!.FilePath, StringComparison.Ordinal);
+        Assert.EndsWith(".zip", addedModule.FilePath, StringComparison.Ordinal);
         _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(It.IsAny<ModuleStorage>()), Times.Never);
     }
 
@@ -472,7 +476,8 @@ public class S3ModuleServiceUploadTests
         Assert.NotNull(tempKey);
         Assert.NotNull(finalKey);
         Assert.NotEqual(existingModule.FilePath, finalKey);
-        Assert.StartsWith(LogicalKey, finalKey!, StringComparison.Ordinal);
+        Assert.StartsWith("ns/name-aws-1.0.0.", finalKey!, StringComparison.Ordinal);
+        Assert.EndsWith(".zip", finalKey, StringComparison.Ordinal);
         Assert.Contains(tempKey!, deleteKeys);
         Assert.Contains(existingModule.FilePath, deleteKeys);
         _mockDatabaseService.Verify(x => x.ReplaceModuleExactAsync(

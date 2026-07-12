@@ -186,7 +186,6 @@ public class AuthenticationMiddleware(
 
     /// <summary>
     /// Loads the user's RBAC permissions from the database and adds them as claims.
-    /// If the user has no roles yet, assigns the default role first (lazy bootstrap).
     /// </summary>
     private static async Task LoadPermissionsIntoClaims(HttpContext context)
     {
@@ -196,15 +195,6 @@ public class AuthenticationMiddleware(
         using var permScope = context.RequestServices.CreateScope();
         var permService = permScope.ServiceProvider.GetRequiredService<IPermissionService>();
         var perms = await permService.GetUserPermissionsAsync(userId);
-
-        // Lazy bootstrap: if the user has no permissions (no roles assigned yet),
-        // assign the default role and reload. This handles API-key-only users who
-        // never went through the login flow.
-        if (perms.Length == 0)
-        {
-            await permService.EnsureDefaultRoleAsync(userId);
-            perms = await permService.GetUserPermissionsAsync(userId);
-        }
 
         if (context.User.Identity is ClaimsIdentity identity)
         {

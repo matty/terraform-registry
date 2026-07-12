@@ -16,6 +16,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpGet]
     public async Task<IActionResult> ListKeys()
     {
+        if (!User.HasPermission(Permissions.ApiKeysManage)) return Forbid();
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -29,6 +30,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpGet("shared")]
     public async Task<IActionResult> ListSharedKeys()
     {
+        if (!User.HasPermission(Permissions.ApiKeysManage)) return Forbid();
         if (!User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
 
         var keys = await apiKeyService.ListSharedApiKeysAsync();
@@ -43,6 +45,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpPost]
     public async Task<IActionResult> CreateKey([FromBody] CreateApiKeyRequest request)
     {
+        if (!User.HasPermission(Permissions.ApiKeysManage)) return Forbid();
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         if (request.IsShared && !User.HasPermission(Permissions.ApiKeysShared)) return Forbid();
@@ -63,6 +66,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateKey(Guid id, [FromBody] UpdateApiKeyRequest request)
     {
+        if (!User.HasPermission(Permissions.ApiKeysManage)) return Forbid();
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
@@ -83,6 +87,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
     [HttpDelete("{id}")]
     public async Task<IActionResult> RevokeKey(Guid id)
     {
+        if (!User.HasPermission(Permissions.ApiKeysManage)) return Forbid();
         var userId = GetUserId();
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 

@@ -12,6 +12,7 @@ internal sealed class S3ModuleObjectStore(
     IAmazonS3 s3Client,
     string bucketName,
     int presignedUrlExpiryMinutes,
+    bool useHttp,
     ILogger logger)
 {
     public async Task InitializeStorageAsync(CancellationToken cancellationToken)
@@ -85,6 +86,7 @@ internal sealed class S3ModuleObjectStore(
                 BucketName = bucketName,
                 Key = moduleStorage.FilePath,
                 Verb = HttpVerb.GET,
+                Protocol = useHttp ? Protocol.HTTP : Protocol.HTTPS,
                 Expires = DateTime.UtcNow.AddMinutes(presignedUrlExpiryMinutes)
             });
         }

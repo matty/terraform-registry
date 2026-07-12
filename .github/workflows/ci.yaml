@@ -80,6 +80,8 @@ jobs:
             --logger "trx;LogFileName=test_results.trx" \
             --results-directory "$TEST_RESULTS_DIR" \
             --collect "XPlat Code Coverage" \
+            --blame-hang \
+            --blame-hang-timeout 5m \
             -- \
             DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
         env:
@@ -150,6 +152,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  storage-emulator-contract:
+    name: Storage emulator Terraform contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run Azurite and MinIO Terraform contract smoke
+        run: >-
+          bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh
+          --provider all
+          --home "$RUNNER_TEMP/terraform-registry-storage-test"
+
+      - name: Collect storage emulator logs
+        if: failure()
+        run: |
+          harness="$RUNNER_TEMP/terraform-registry-storage-test"
+          project="tfregstorage$(printf '%s' "$harness" | sha256sum | cut -c1-12)"
+          docker compose --project-name "$project" --project-directory "$harness" -f "$harness/compose.yaml" logs --no-color > storage-emulator-compose.log || true
+
+      - name: Upload storage emulator logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: storage-emulator-compose-logs
+          path: storage-emulator-compose.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Clean storage emulator harness
+        if: always()
+        run: >-
+          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          --home "$RUNNER_TEMP/terraform-registry-storage-test" || true
+
+  phase-1-deployment-gate:
+    name: Phase 1 deployment gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p1-terraform-deployment-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run portable Phase 1 deployment gate
+        run: bash scripts/remediation/gates/phase-1.sh
+
   docker:
     name: Docker build and scan
     needs:
@@ -199,8 +253,16 @@ jobs:
           context: .
           load: true
           tags: ${{ env.SCAN_IMAGE_NAME }}
+          build-args: |
+            FRONTEND_BUILD_MARKER=frontend-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify frontend marker in image
+        run: |
+          expected="frontend-${{ github.sha }}"
+          actual="$(docker run --rm --entrypoint cat "${{ env.SCAN_IMAGE_NAME }}" /app/web/.build-marker)"
+          test "$actual" = "$expected"
 
       - name: Run Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -286,6 +348,8 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FRONTEND_BUILD_MARKER=frontend-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           sbom: true

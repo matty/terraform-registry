@@ -159,11 +159,61 @@ public class LocalModuleServiceTests
             Dependencies = new List<string>()
         };
         _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+        Directory.CreateDirectory(Path.GetDirectoryName(storage.FilePath)!);
+        await File.WriteAllBytesAsync(storage.FilePath, [0x50, 0x4B, 0x03, 0x04]);
+
         // Act
         var result = await service.GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0");
         // Assert
         Assert.NotNull(result);
         Assert.StartsWith("/module/download?token=", result);
+        Assert.Contains("archive=zip", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncReturnsNullWhenArtifactIsMissing()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = Path.Combine(_testModulePath, "ns", "missing.zip"),
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+
+        var result = await service.GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncAddsTarGzHintForTarArtifact()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var storage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = Path.Combine(_testModulePath, "ns", "name-provider-1.0.0.tar.gz"),
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        Directory.CreateDirectory(Path.GetDirectoryName(storage.FilePath)!);
+        await File.WriteAllBytesAsync(storage.FilePath, [0x1F, 0x8B]);
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0")).ReturnsAsync(storage);
+
+        var result = await service.GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.Contains("archive=tar.gz", result, StringComparison.Ordinal);
     }
 
     // Verifies that TryGetFilePathFromToken returns false and an empty file path for an invalid token
