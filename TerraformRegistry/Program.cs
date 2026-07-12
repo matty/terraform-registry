@@ -117,6 +117,14 @@ if (Directory.Exists(webFolderPath))
 
 // Portal authentication middleware (validates JWT sessions for portal routes)
 var jwtService = app.Services.GetRequiredService<JwtService>();
+var apiKeySecurityOptions = app.Services.GetRequiredService<ApiKeySecurityOptions>();
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") &&
+    apiKeySecurityOptions.DigestKey == "configure-a-unique-api-key-digest-key-before-production")
+{
+    throw new InvalidOperationException(
+        "ApiKeySecurity:DigestKey is set to the default placeholder. Configure a unique secret before running outside Development/Test.");
+}
+apiKeySecurityOptions.ValidateDigestKey();
 app.UseMiddleware<PortalAuthenticationMiddleware>(jwtService);
 
 // API key authentication middleware (for /v1/* routes used by Terraform CLI)
