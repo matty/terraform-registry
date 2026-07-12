@@ -69,6 +69,7 @@ public abstract class IntegrationTestBase : IAsyncLifetime
                         ["ProviderStoragePath"] = providerStoragePath,
                         ["PORT"] = "0",
                         ["AuthorizationToken"] = _authToken,
+                        ["ApiKeySecurity:DigestKey"] = "integration-test-api-key-digest-key-32-chars-minimum",
                         ["UserAdmission:Mode"] = "ConstrainedAutoProvision",
                         ["UserAdmission:AllowedDomains:0"] = "example.com",
                         ["Oidc:JwtSecretKey"] = "integration-test-jwt-secret-key-32-chars-minimum"

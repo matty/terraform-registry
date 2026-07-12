@@ -107,6 +107,11 @@ internal static class ServiceRegistrationExtensions
         configuration.GetSection(UserAdmissionOptions.SectionName).Bind(userAdmissionOptions);
         userAdmissionOptions.Validate();
         services.AddSingleton(userAdmissionOptions);
+        var apiKeySecurityOptions = new ApiKeySecurityOptions();
+        configuration.GetSection(ApiKeySecurityOptions.SectionName).Bind(apiKeySecurityOptions);
+        apiKeySecurityOptions.Validate();
+        services.AddSingleton(apiKeySecurityOptions);
+        services.AddSingleton<ApiKeyVerificationGate>();
         services.AddSingleton<JwtService>();
         services.AddSingleton<OAuthService>();
         services.AddSingleton(new TerraformLoginOptions());
