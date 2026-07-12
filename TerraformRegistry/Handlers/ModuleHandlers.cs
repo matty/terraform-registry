@@ -46,6 +46,24 @@ public static class ModuleHandlers
         return error == null ? null : ErrorResponseExtensions.BadRequest(error);
     }
 
+    private static async Task<IResult?> CheckNamespaceMutationAsync(
+        string @namespace,
+        NamespaceAuthorizationService namespaceAuthorization,
+        HttpContext context)
+    {
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isSystemOverride = context.User.Identity?.IsAuthenticated == true &&
+            context.User.HasAnyPermission(Permissions.AdminRoles, Permissions.AdminUsers);
+
+        if (string.IsNullOrWhiteSpace(userId) ||
+            !await namespaceAuthorization.CanMutateAsync(@namespace, userId, isSystemOverride))
+        {
+            return Results.Json(new { error = "Namespace mutation is not authorized" }, statusCode: 403);
+        }
+
+        return null;
+    }
+
     /// <summary>
     ///     Lists or searches modules
     /// </summary>
@@ -247,12 +265,15 @@ public static class ModuleHandlers
         HttpRequest request,
         IModulePublishCoordinator publishCoordinator,
         IOptions<ModuleExtractionOptions> extractionOptions,
+        NamespaceAuthorizationService namespaceAuthorization,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesUpload);
         if (denied != null) return denied;
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
+        var namespaceDenied = await CheckNamespaceMutationAsync(@namespace, namespaceAuthorization, context);
+        if (namespaceDenied != null) return namespaceDenied;
 
         RegistryLog.Information(_logger, "Uploading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -351,12 +372,15 @@ public static class ModuleHandlers
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
         IAuditService auditService,
+        NamespaceAuthorizationService namespaceAuthorization,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesDelete);
         if (denied != null) return denied;
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
+        var namespaceDenied = await CheckNamespaceMutationAsync(@namespace, namespaceAuthorization, context);
+        if (namespaceDenied != null) return namespaceDenied;
 
         RegistryLog.Information(_logger, "Deleting module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -388,12 +412,15 @@ public static class ModuleHandlers
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
         IAuditService auditService,
+        NamespaceAuthorizationService namespaceAuthorization,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRestore);
         if (denied != null) return denied;
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
+        var namespaceDenied = await CheckNamespaceMutationAsync(@namespace, namespaceAuthorization, context);
+        if (namespaceDenied != null) return namespaceDenied;
 
         RegistryLog.Information(_logger, "Restoring module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -425,12 +452,15 @@ public static class ModuleHandlers
         IModuleService moduleService,
         WebhookDispatcher webhookDispatcher,
         IAuditService auditService,
+        NamespaceAuthorizationService namespaceAuthorization,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesPurge);
         if (denied != null) return denied;
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
+        var namespaceDenied = await CheckNamespaceMutationAsync(@namespace, namespaceAuthorization, context);
+        if (namespaceDenied != null) return namespaceDenied;
 
         RegistryLog.Information(_logger, "Purging module version: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
@@ -490,12 +520,15 @@ public static class ModuleHandlers
         string @namespace, string name, string provider,
         HttpRequest request, IModuleService moduleService,
         IAuditService auditService,
+        NamespaceAuthorizationService namespaceAuthorization,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesDescription);
         if (denied != null) return denied;
         var invalid = ValidateCoordinates(@namespace, name, provider);
         if (invalid != null) return invalid;
+        var namespaceDenied = await CheckNamespaceMutationAsync(@namespace, namespaceAuthorization, context);
+        if (namespaceDenied != null) return namespaceDenied;
 
         RegistryLog.Information(_logger, "Updating description for module {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);

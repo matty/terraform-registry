@@ -64,6 +64,21 @@ internal static class ServiceRegistrationExtensions
         });
 
         services.AddDatabaseServices();
+        services.AddSingleton<INamespaceMaintainerStore>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlNamespaceMaintainerStore(
+                    config["PostgreSQL:ConnectionString"] ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing for namespace maintainers.")),
+                "sqlite" => new SqliteNamespaceMaintainerStore(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<NamespaceAuthorizationService>();
         services.AddModuleStorageServices();
         services.AddProviderRegistryServices();
 
