@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -286,14 +287,41 @@ public static class VcsHandlers
 
     public static async Task<IResult> HandleGitHubWebhook(IGitHubVcsService githubService, HttpContext context)
     {
-        context.Request.EnableBuffering();
-        using var reader = new StreamReader(context.Request.Body);
-        var body = await reader.ReadToEndAsync();
+        const int maxBodyBytes = 1024 * 1024;
+        if (context.Request.ContentLength > maxBodyBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+        await using var bodyBuffer = new MemoryStream();
+        var buffer = new byte[81920];
+        var totalBytes = 0;
+        while (true)
+        {
+            var read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted);
+            if (read == 0) break;
+            totalBytes += read;
+            if (totalBytes > maxBodyBytes)
+                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            await bodyBuffer.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
+        }
+
+        var body = Encoding.UTF8.GetString(bodyBuffer.GetBuffer(), 0, (int)bodyBuffer.Length);
 
         var signature = context.Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
         var eventType = context.Request.Headers["X-GitHub-Event"].FirstOrDefault();
 
-        var (status, reason, version) = await githubService.HandleWebhookAsync(signature, eventType, body);
+        var (status, reason, version) = await githubService.HandleWebhookAsync(
+            signature, eventType, body, context.RequestAborted);
+        if (status == "error" && reason is not null &&
+            (reason.StartsWith("Missing ", StringComparison.Ordinal) ||
+             reason.StartsWith("Invalid JSON", StringComparison.Ordinal) ||
+             reason.StartsWith("Signature verification failed", StringComparison.Ordinal)))
+        {
+            return Results.Json(new { status, reason, version }, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (status == "error")
+            return Results.Json(new { status, reason, version }, statusCode: StatusCodes.Status502BadGateway);
+
         return Results.Ok(new { status, reason, version });
     }
 }

@@ -431,7 +431,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
         request.Headers.Add("X-Hub-Signature-256", "sha256=invalidsignature");
 
         var response = await client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Signature verification failed", body, StringComparison.OrdinalIgnoreCase);
@@ -571,7 +571,7 @@ public class VcsSourceTests(ITestOutputHelper output) : IntegrationTestBase(outp
 
     private sealed class FakeGitHubVcsService(Func<SyncRequest, Task<SyncVcsSourceResult>> syncHandler) : IGitHubVcsService
     {
-        public Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(string? signatureHeader, string? eventHeader, string body) =>
+        public Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(string? signatureHeader, string? eventHeader, string body, CancellationToken cancellationToken) =>
             Task.FromResult<(string Status, string? Reason, string? Version)>(("skipped", null, null));
 
         public Task<SyncVcsSourceResult> SyncSourceAsync(Guid sourceId, string? requestedTag, bool replace, string? actorUserId, CancellationToken cancellationToken) =>
