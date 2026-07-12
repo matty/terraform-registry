@@ -4,6 +4,7 @@ using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Publishing;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace TerraformRegistry.Startup;
 
@@ -116,6 +117,7 @@ internal static class ModuleEndpointMappingExtensions
             .WithTags("Modules")
             .WithDescription("Uploads a new module version")
             .Accepts<IFormFile>("multipart/form-data")
+            .RequireRateLimiting(RateLimitPolicyNames.ModuleUpload)
             .ProducesProblem(400)
             .ProducesProblem(409)
             .Produces(201);
