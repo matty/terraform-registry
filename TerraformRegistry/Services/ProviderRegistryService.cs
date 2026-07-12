@@ -2,6 +2,7 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.API.Utilities;
 using TerraformRegistry.Models;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Services;
 
@@ -12,17 +13,21 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     private readonly IProviderRepository _repository;
     private readonly IProviderArtifactStorage _storage;
     private readonly IProviderPackageValidator _validator;
+    private readonly ProviderUploadOptions _uploadOptions;
 
     public ProviderRegistryService(
         IProviderRepository repository,
         IProviderArtifactStorage storage,
         IProviderPackageValidator validator,
-        ILogger<ProviderRegistryService> logger)
+        ILogger<ProviderRegistryService> logger,
+        ProviderUploadOptions? uploadOptions = null)
     {
         _repository = repository;
         _storage = storage;
         _validator = validator;
         _logger = logger;
+        _uploadOptions = uploadOptions ?? new ProviderUploadOptions();
+        _uploadOptions.Validate();
     }
 
     public async Task<ProviderVersionsResponse?> GetVersionsAsync(string providerNamespace, string type)
@@ -311,7 +316,7 @@ public sealed class ProviderRegistryService : IProviderRegistryService
             return false;
         }
 
-        await using var packageBuffer = await CopyToReplayableStreamAsync(package, cancellationToken);
+        await using var packageBuffer = await CopyToReplayableFileAsync(package, cancellationToken);
         await using var shasums = await _storage.OpenReadAsync(providerVersion.ShasumsStoragePath, cancellationToken);
         if (shasums == null)
         {
@@ -347,17 +352,36 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         return DeletePlatformAndArtifactsAsync(providerNamespace, type, version, os, arch);
     }
 
-    private static async Task<MemoryStream> CopyToReplayableStreamAsync(Stream source, CancellationToken cancellationToken)
+    private async Task<FileStream> CopyToReplayableFileAsync(Stream source, CancellationToken cancellationToken)
     {
-        if (source.CanSeek)
+        Directory.CreateDirectory(_uploadOptions.TempRoot);
+        var path = Path.Combine(_uploadOptions.TempRoot, $".{Guid.NewGuid():N}.provider-upload");
+        try
         {
-            source.Position = 0;
+            var output = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1024 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose);
+            var buffer = new byte[1024 * 1024];
+            long copied = 0;
+            while (true)
+            {
+                var read = await source.ReadAsync(buffer, cancellationToken);
+                if (read == 0) break;
+                copied = checked(copied + read);
+                if (copied > _uploadOptions.MaxPackageBytes)
+                {
+                    await output.DisposeAsync();
+                    throw new InvalidOperationException($"Provider package exceeds the configured limit of {_uploadOptions.MaxPackageBytes} bytes.");
+                }
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+            output.Position = 0;
+            return output;
         }
-
-        var buffer = new MemoryStream();
-        await source.CopyToAsync(buffer, cancellationToken);
-        buffer.Position = 0;
-        return buffer;
+        catch
+        {
+            if (File.Exists(path)) File.Delete(path);
+            throw;
+        }
     }
 
     private async Task<bool> DeleteProviderAndArtifactsAsync(string providerNamespace, string type)

@@ -43,6 +43,10 @@ internal static class ServiceRegistrationExtensions
                 }
             }, "Module extraction limits must all be greater than zero.")
             .ValidateOnStart();
+        var providerUploadOptions = new ProviderUploadOptions();
+        configuration.GetSection(ProviderUploadOptions.SectionName).Bind(providerUploadOptions);
+        providerUploadOptions.Validate();
+        services.AddSingleton(providerUploadOptions);
         services.Configure<MirrorOptions>(configuration.GetSection("Mirror"));
         services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
         services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
