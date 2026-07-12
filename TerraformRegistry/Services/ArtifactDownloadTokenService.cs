@@ -38,6 +38,11 @@ public sealed class ArtifactDownloadTokenService
         {
             var bytes = Decode(parts[0]);
             var signature = Decode(parts[1]);
+            if (!string.Equals(parts[0], Encode(bytes), StringComparison.Ordinal) ||
+                !string.Equals(parts[1], Encode(signature), StringComparison.Ordinal))
+            {
+                return false;
+            }
             using var hmac = new HMACSHA256(_key);
             if (!CryptographicOperations.FixedTimeEquals(signature, hmac.ComputeHash(bytes))) return false;
             var values = Encoding.UTF8.GetString(bytes).Split('\n', 3);
