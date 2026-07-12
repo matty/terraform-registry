@@ -52,8 +52,12 @@ public static class ModuleHandlers
         HttpContext context)
     {
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var isSystemOverride = context.User.Identity?.IsAuthenticated == true &&
-            context.User.HasAnyPermission(Permissions.AdminRoles, Permissions.AdminUsers);
+        var isSystemOverride = string.Equals(
+                context.User.Identity?.AuthenticationType,
+                "StaticToken",
+                StringComparison.Ordinal) ||
+            (context.User.Identity?.IsAuthenticated == true &&
+             context.User.HasAnyPermission(Permissions.AdminRoles, Permissions.AdminUsers));
 
         if (string.IsNullOrWhiteSpace(userId) ||
             !await namespaceAuthorization.CanMutateAsync(@namespace, userId, isSystemOverride))
