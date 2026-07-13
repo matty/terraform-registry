@@ -89,6 +89,21 @@ public class AuthenticationMiddleware(
                     var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
                     var result = await apiKeyService.ValidateApiKeyAsync(token);
 
+                    if (result.IsRateLimited)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                        context.Response.ContentType = "application/problem+json";
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            type = "https://tools.ietf.org/html/rfc6585#section-4",
+                            title = "Too Many Requests",
+                            status = StatusCodes.Status429TooManyRequests,
+                            detail = "API key verification is temporarily rate limited.",
+                            policy = "api-key-verification"
+                        });
+                        return;
+                    }
+
                     if (result.IsExpired)
                     {
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;

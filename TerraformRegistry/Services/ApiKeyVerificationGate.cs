@@ -3,18 +3,24 @@ using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Services;
 
-public sealed class ApiKeyVerificationGate(ApiKeySecurityOptions options) : IDisposable
+public sealed class ApiKeyVerificationGate(ApiKeySecurityOptions options, RegistryRateLimitMetrics metrics) : IDisposable
 {
     private readonly ConcurrentDictionary<string, PartitionGate> _prefixes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PartitionGate> _principals = new(StringComparer.Ordinal);
 
-    public IDisposable? TryEnterPrefix(string prefix) => TryEnter(_prefixes, prefix);
+    public IDisposable? TryEnterPrefix(string prefix) => TryEnter(_prefixes, prefix, "prefix");
 
-    public IDisposable? TryEnterPrincipal(string userId) => TryEnter(_principals, userId);
+    public IDisposable? TryEnterPrincipal(string userId) => TryEnter(_principals, userId, "principal");
 
-    private Releaser? TryEnter(ConcurrentDictionary<string, PartitionGate> partitions, string key)
+    private Releaser? TryEnter(ConcurrentDictionary<string, PartitionGate> partitions, string key, string partitionCategory)
     {
-        return partitions.GetOrAdd(key, _ => new PartitionGate(options)).TryEnter();
+        var lease = partitions.GetOrAdd(key, _ => new PartitionGate(options)).TryEnter();
+        if (lease is null)
+        {
+            metrics.RecordRejection(RateLimitPolicyNames.ApiKeyVerification, partitionCategory);
+        }
+
+        return lease;
     }
 
     private sealed class PartitionGate(ApiKeySecurityOptions options) : IDisposable
