@@ -1,9 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace TerraformRegistry.Models;
 
 public sealed class MirrorOptions
 {
     public bool Enabled { get; set; }
     public string UpstreamRegistryBaseUrl { get; set; } = "https://registry.terraform.io";
+    [JsonIgnore]
     public string? PackageUrlSigningKey { get; set; }
     public MirrorProviderRuntimeOptions Providers { get; set; } = new();
     public MirrorModuleRuntimeOptions Modules { get; set; } = new();

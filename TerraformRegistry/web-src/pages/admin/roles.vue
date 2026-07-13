@@ -144,6 +144,9 @@ const permissionCategories = [
       { value: 'admin.roles', label: 'Roles' },
       { value: 'admin.users', label: 'Users' },
       { value: 'admin.audit', label: 'Audit' },
+      { value: 'mirror.read', label: 'Mirror read' },
+      { value: 'mirror.manage', label: 'Mirror manage' },
+      { value: 'mirror.configure', label: 'Mirror configure' },
     ],
   },
 ]

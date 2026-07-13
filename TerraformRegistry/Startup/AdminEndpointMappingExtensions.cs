@@ -1,7 +1,9 @@
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
+using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Startup;
 
@@ -15,6 +17,7 @@ internal static class AdminEndpointMappingExtensions
         app.MapUserEndpoints();
         app.MapNamespaceEndpoints();
         app.MapModuleDocsEndpoints();
+        app.MapMirrorAdminEndpoints();
 
         return app;
     }
@@ -184,6 +187,53 @@ internal static class AdminEndpointMappingExtensions
                         HttpRequest request) =>
                     ModuleDocsHandlers.UpdateConfig(configService, auditService, context, request))
             .WithTags("Module Docs");
+
+        return app;
+    }
+
+    private static WebApplication MapMirrorAdminEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/admin/mirror/providers",
+                (IProviderMirrorRepository providerRepository, HttpContext context, string? q, string? state,
+                        int limit = 50, int offset = 0) =>
+                    MirrorAdminHandlers.ListProviderCache(providerRepository, context, q, state, limit, offset))
+            .WithTags("Mirror");
+
+        app.MapDelete("/api/admin/mirror/providers/{hostname}/{namespace}/{type}/{version}/{os}/{arch}",
+                (string hostname, string @namespace, string type, string version, string os, string arch,
+                        MirrorCacheBudgetService cacheBudget, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.PurgeProvider(cacheBudget, auditService, context, hostname, @namespace, type,
+                        version, os, arch))
+            .WithTags("Mirror");
+
+        app.MapGet("/api/admin/mirror/modules",
+                (IModuleMirrorRepository moduleRepository, HttpContext context, string? q, string? state,
+                        int limit = 50, int offset = 0) =>
+                    MirrorAdminHandlers.ListModuleCache(moduleRepository, context, q, state, limit, offset))
+            .WithTags("Mirror");
+
+        app.MapDelete("/api/admin/mirror/modules/{hostname}/{namespace}/{name}/{provider}/{version}",
+                (string hostname, string @namespace, string name, string provider, string version,
+                        MirrorCacheBudgetService cacheBudget, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.PurgeModule(cacheBudget, auditService, context, hostname, @namespace, name,
+                        provider, version))
+            .WithTags("Mirror");
+
+        app.MapGet("/api/admin/mirror/leases",
+                (IMirrorLeaseRepository leaseRepository, HttpContext context, int limit = 50, int offset = 0) =>
+                    MirrorAdminHandlers.ListLeases(leaseRepository, context, limit, offset))
+            .WithTags("Mirror");
+
+        app.MapGet("/api/admin/mirror/config",
+                (IMirrorConfigService configService, HttpContext context) =>
+                    MirrorAdminHandlers.GetConfig(configService, context))
+            .WithTags("Mirror");
+
+        app.MapPut("/api/admin/mirror/config",
+                (IMirrorConfigService configService, IAuditService auditService, HttpContext context,
+                        MirrorConfigUpdateRequest request) =>
+                    MirrorAdminHandlers.UpdateConfig(configService, auditService, context, request))
+            .WithTags("Mirror");
 
         return app;
     }

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Moq;
+using System.Text.Json;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -9,6 +10,24 @@ namespace TerraformRegistry.Tests.UnitTests;
 
 public class MirrorConfigServiceTests
 {
+    [Fact]
+    public void MirrorConfigurationResponseDoesNotSerializeSigningSecrets()
+    {
+        var response = new MirrorConfigResponse
+        {
+            Effective = new MirrorOptions
+            {
+                PackageUrlSigningKey = "private-signing-key",
+                Providers = new MirrorProviderRuntimeOptions { TrustedSigningKeyIds = ["trusted-key-id"] }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(response);
+
+        Assert.DoesNotContain("private-signing-key", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("trusted-key-id", json, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task GetConfigAsyncUsesStartupDefaultsWhenRuntimeSettingMissing()
     {
@@ -26,7 +45,7 @@ public class MirrorConfigServiceTests
             .Build();
         var settings = new Mock<IRuntimeSettingsService>();
         settings.Setup(x => x.GetAsync("mirror.config", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RuntimeSetting?)null);
+            .ReturnsAsync(() => null);
 
         var service = new MirrorConfigService(configuration, settings.Object);
 
@@ -145,6 +164,27 @@ public class MirrorConfigServiceTests
             It.Is<string>(json => json.Contains("linux_amd64") && json.Contains("codeload.github.com")),
             "admin-user",
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateConfigAsyncPreservesTrustedSigningKeyIdsThatAreNotExposedToOperators()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["Mirror:Providers:TrustedSigningKeyIds:0"] = "trusted-key-id"
+            })
+            .Build();
+        var settings = new Mock<IRuntimeSettingsService>();
+        settings.Setup(x => x.GetAsync("mirror.config", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RuntimeSetting?)null);
+        var service = new MirrorConfigService(configuration, settings.Object);
+
+        await service.UpdateConfigAsync(new MirrorConfigUpdateRequest { Enabled = true }, "operator-1", CancellationToken.None);
+
+        settings.Verify(x => x.SetAsync("mirror.config",
+            It.Is<string>(json => json.Contains("trusted-key-id", StringComparison.Ordinal)),
+            "operator-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

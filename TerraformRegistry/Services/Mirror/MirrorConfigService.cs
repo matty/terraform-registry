@@ -19,7 +19,7 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
         if (stored == null)
         {
             MirrorConfigurationValidator.Validate(startup);
-            return new MirrorConfigResponse { Effective = startup };
+            return ToResponse(startup);
         }
 
         var runtime = JsonSerializer.Deserialize<MirrorConfigUpdateRequest>(stored.ValueJson, JsonOptions) ?? new();
@@ -28,6 +28,7 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
         return new MirrorConfigResponse
         {
             Effective = effective,
+            OperatorEffective = MirrorOperatorOptions.From(effective),
             HasRuntimeOverride = true,
             UpdatedAt = stored.UpdatedAt,
             UpdatedBy = stored.UpdatedBy
@@ -41,6 +42,8 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
     {
         var startup = new MirrorOptions();
         configuration.GetSection("Mirror").Bind(startup);
+        var existing = await GetConfigAsync(cancellationToken);
+        request.Providers.TrustedSigningKeyIds = [.. existing.Effective.Providers.TrustedSigningKeyIds];
         MirrorConfigurationValidator.Validate(Merge(startup, request));
         var json = JsonSerializer.Serialize(request, JsonOptions);
         await runtimeSettings.SetAsync(SettingsKey, json, updatedBy, cancellationToken);
@@ -55,4 +58,10 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
         startup.Limits = runtime.Limits;
         return startup;
     }
+
+    private static MirrorConfigResponse ToResponse(MirrorOptions effective) => new()
+    {
+        Effective = effective,
+        OperatorEffective = MirrorOperatorOptions.From(effective)
+    };
 }

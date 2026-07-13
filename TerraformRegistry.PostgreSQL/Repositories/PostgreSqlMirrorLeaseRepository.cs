@@ -6,6 +6,32 @@ namespace TerraformRegistry.PostgreSQL.Repositories;
 
 public sealed class PostgreSqlMirrorLeaseRepository(string connectionString) : IMirrorLeaseRepository
 {
+    public async Task<IReadOnlyList<MirrorCacheLease>> ListLeasesAsync(
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, lease_key, operation_type, owner_instance_id, expires_at, heartbeat_at, created_at, updated_at
+            FROM mirror_cache_leases
+            ORDER BY expires_at, lease_key
+            LIMIT @limit OFFSET @offset";
+
+        var leases = new List<MirrorCacheLease>();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 100));
+        command.Parameters.AddWithValue("@offset", Math.Max(0, offset));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            leases.Add(MapLease(reader));
+        }
+
+        return leases;
+    }
+
     public async Task<MirrorCacheLease?> GetLeaseAsync(
         string leaseKey,
         CancellationToken cancellationToken = default)
