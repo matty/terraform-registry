@@ -150,7 +150,7 @@ public class ModulePublishCoordinatorTests
             Mock.Of<IModuleExtractionService>(),
             new WebhookDispatcher(
                 webhookService.Object,
-                new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
+                new TestHttpClientFactory(StaticOkClient),
                 new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal))
                     .Build(),
@@ -194,7 +194,7 @@ public class ModulePublishCoordinatorTests
             .ReturnsAsync(Array.Empty<Webhook>());
         return new WebhookDispatcher(
             webhookService.Object,
-            new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
+            new TestHttpClientFactory(StaticOkClient),
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
             new WebhookUrlValidator(
                 Options.Create(new WebhookSecurityOptions { AllowPrivateNetworks = true }),
