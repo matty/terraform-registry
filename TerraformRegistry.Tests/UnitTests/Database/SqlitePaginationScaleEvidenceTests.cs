@@ -20,9 +20,8 @@ public sealed class SqlitePaginationScaleEvidenceTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "TerraformRegistryTests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        _databasePath = Path.Combine(directory, "pagination-scale.db");
+        var directory = Directory.CreateTempSubdirectory("TerraformRegistryTests-").FullName;
+        _databasePath = Path.Join(directory, "pagination-scale.db");
         _connectionString = $"Data Source={_databasePath}";
         return Task.CompletedTask;
     }
