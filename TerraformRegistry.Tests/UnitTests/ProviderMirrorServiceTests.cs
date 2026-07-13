@@ -89,7 +89,7 @@ public sealed class ProviderMirrorServiceTests
     }
 
     [Fact]
-    public async Task ProviderVersionDownloadsCachesAndReturnsSignedArchiveWithTerraformHash()
+    public async Task ProviderVersionCachesVerificationSidecarsWithoutDownloadingThePlatformArchive()
     {
         var packageBytes = new byte[] { 1, 2, 3 };
         var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
@@ -112,16 +112,8 @@ public sealed class ProviderMirrorServiceTests
         http.RespondText("https://releases.example.com/SHA256SUMS", $"{shasum}  {filename}\n");
         http.RespondBytes("https://releases.example.com/SHA256SUMS.sig", [9, 8, 7], "application/octet-stream");
         var storage = new InMemoryProviderArtifactStorage();
-        var repo = new Mock<IProviderMirrorRepository>();
-        repo.Setup(x => x.GetProviderPackageAsync(
-                "registry.terraform.io",
-                "hashicorp",
-                "aws",
-                "5.0.0",
-                "linux",
-                "amd64"))
-            .ReturnsAsync((MirrorProviderPackage?)null);
-        var service = CreateService(http, repo, storage);
+        var repository = new InMemoryProviderMirrorRepository();
+        var service = CreateServiceWithRepository(http, repository, storage);
 
         var version = await service.GetProviderVersionAsync(
             "registry.terraform.io",
@@ -137,15 +129,21 @@ public sealed class ProviderMirrorServiceTests
         var hash = Assert.Single(archive.Value.Hashes);
         Assert.Equal($"zh:{shasum}", hash);
         Assert.DoesNotContain(shasum, archive.Value.Hashes);
-        Assert.Contains(storage.Paths, path => path.EndsWith(filename, StringComparison.Ordinal));
+        Assert.DoesNotContain(storage.Paths, path => path.EndsWith(filename, StringComparison.Ordinal));
         Assert.Contains(storage.Paths, path => path.EndsWith("terraform-provider-aws_5.0.0_SHA256SUMS", StringComparison.Ordinal));
         Assert.Contains(storage.Paths, path => path.EndsWith("terraform-provider-aws_5.0.0_SHA256SUMS.sig", StringComparison.Ordinal));
-        repo.Verify(x => x.UpsertProviderPackageAsync(It.Is<MirrorProviderPackage>(package =>
-            package.State == "ready" &&
-            package.PackageStoragePath != null &&
-            package.HashesJson == JsonSerializer.Serialize(new[] { $"zh:{shasum}" }) &&
-            package.SigningKeysJson != null &&
-            package.SigningKeysJson.Contains("\"signature_verification\":\"not_verified\"", StringComparison.Ordinal))), Times.Once);
+        var download = await service.OpenPackageAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            filename,
+            QueryFromUrl(archive.Value.Url),
+            CancellationToken.None);
+        Assert.NotNull(download);
+        await using var content = download!.Content;
+        using var downloaded = new MemoryStream();
+        await content.CopyToAsync(downloaded);
+        Assert.Equal(packageBytes, downloaded.ToArray());
     }
 
     [Fact]
@@ -273,7 +271,7 @@ public sealed class ProviderMirrorServiceTests
     }
 
     [Fact]
-    public async Task ProviderVersionReleasesLeaseWithUncancelledTokenWhenRequestIsCancelled()
+    public async Task ProviderVersionCancellationDoesNotAcquireAnArchiveLease()
     {
         var http = new RecordingHttpMessageHandler();
         var repo = new Mock<IProviderMirrorRepository>();
@@ -350,8 +348,8 @@ public sealed class ProviderMirrorServiceTests
             "5.0.0",
             cts.Token));
 
-        lease.Verify(x => x.ReleaseAsync(handle, It.IsAny<CancellationToken>()), Times.Once);
-        Assert.False(releaseToken.IsCancellationRequested);
+        lease.Verify(x => x.TryAcquireAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
+        lease.Verify(x => x.ReleaseAsync(handle, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -452,6 +450,11 @@ public sealed class ProviderMirrorServiceTests
 
         Assert.NotNull(result);
         Assert.Contains(http.Requests, uri => uri.Host == "releases.example.com");
+        Assert.DoesNotContain(http.Requests, uri => uri.Host == "cdn.example.com");
+        var archive = Assert.Single(result!.Archives);
+        var download = await service.OpenPackageAsync("registry.terraform.io", "hashicorp", "aws", ExpectedFilename,
+            QueryFromUrl(archive.Value.Url), CancellationToken.None);
+        Assert.NotNull(download);
         Assert.Contains(http.Requests, uri => uri.Host == "cdn.example.com");
     }
 
@@ -484,8 +487,13 @@ public sealed class ProviderMirrorServiceTests
             "5.0.0",
             CancellationToken.None);
 
-        Assert.Null(result);
+        Assert.NotNull(result);
         Assert.Contains(http.Requests, uri => uri.Host == "releases.example.com");
+        Assert.DoesNotContain(http.Requests, uri => uri.Host == "private.example.com");
+        var archive = Assert.Single(result!.Archives);
+        var download = await service.OpenPackageAsync("registry.terraform.io", "hashicorp", "aws", ExpectedFilename,
+            QueryFromUrl(archive.Value.Url), CancellationToken.None);
+        Assert.Null(download);
         Assert.DoesNotContain(http.Requests, uri => uri.Host == "private.example.com");
     }
 
@@ -512,8 +520,11 @@ public sealed class ProviderMirrorServiceTests
             "5.0.0",
             CancellationToken.None);
 
-        Assert.Null(result);
-        repo.Verify(x => x.UpsertProviderPackageAsync(It.IsAny<MirrorProviderPackage>()), Times.Never);
+        Assert.NotNull(result);
+        var archive = Assert.Single(result!.Archives);
+        var download = await service.OpenPackageAsync("registry.terraform.io", "hashicorp", "aws", ExpectedFilename,
+            QueryFromUrl(archive.Value.Url), CancellationToken.None);
+        Assert.Null(download);
     }
 
     [Fact]
@@ -879,7 +890,8 @@ public sealed class ProviderMirrorServiceTests
 
     private static ProviderMirrorService CreateServiceWithRepository(
         RecordingHttpMessageHandler http,
-        IProviderMirrorRepository repository)
+        IProviderMirrorRepository repository,
+        InMemoryProviderArtifactStorage? storage = null)
     {
         var configuration = CreateConfiguration();
         var settings = new Mock<IRuntimeSettingsService>();
@@ -911,7 +923,7 @@ public sealed class ProviderMirrorServiceTests
 
         return new ProviderMirrorService(
             repository,
-            new InMemoryProviderArtifactStorage(),
+            storage ?? new InMemoryProviderArtifactStorage(),
             policy.Object,
             configService,
             lease.Object,

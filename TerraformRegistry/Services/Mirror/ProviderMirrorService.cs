@@ -86,7 +86,7 @@ public sealed class ProviderMirrorService(
                 continue;
             }
 
-            var package = await GetOrFetchPackageAsync(
+            var package = await GetOrFetchPackageMetadataAsync(
                 hostname,
                 providerNamespace,
                 type,
@@ -154,7 +154,27 @@ public sealed class ProviderMirrorService(
             !string.Equals(package.Filename, claims.Filename, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(package.PackageStoragePath))
         {
-            return null;
+            var config = (await configService.GetConfigAsync(cancellationToken)).Effective;
+            if (!config.Enabled || !config.Providers.Enabled ||
+                !await policyService.IsProviderAllowedAsync(claims.Hostname, claims.Namespace, claims.Type, claims.Os, claims.Arch, cancellationToken))
+            {
+                return null;
+            }
+
+            package = await GetOrFetchPackageAsync(
+                claims.Hostname,
+                claims.Namespace,
+                claims.Type,
+                new UpstreamProviderVersion { Version = claims.Version },
+                new UpstreamProviderPlatform { Os = claims.Os, Arch = claims.Arch },
+                config,
+                cancellationToken);
+            if (package is null ||
+                !string.Equals(package.Filename, claims.Filename, StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(package.PackageStoragePath))
+            {
+                return null;
+            }
         }
 
         var content = await storage.OpenReadAsync(package.PackageStoragePath, cancellationToken);
@@ -290,6 +310,78 @@ public sealed class ProviderMirrorService(
         finally
         {
             await ReleaseLeaseAsync(lease);
+        }
+    }
+
+    private async Task<MirrorProviderPackage?> GetOrFetchPackageMetadataAsync(
+        string hostname, string providerNamespace, string type, UpstreamProviderVersion version,
+        UpstreamProviderPlatform platform, MirrorOptions config, CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient();
+        try
+        {
+            var uri = BuildUpstreamUri(MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(),
+                $"/v1/providers/{providerNamespace}/{type}/{version.Version}/download/{platform.Os}/{platform.Arch}");
+            using var timeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(uri, JsonOptions, timeout.Token);
+            if (metadata is null) return null;
+            ValidateUpstreamPackageMetadata(type, version.Version, platform, metadata);
+            await policyService.ValidateProviderArtifactUrlAsync(metadata.DownloadUrl, cancellationToken);
+
+            await using var shasums = await DownloadArtifactToTempFileAsync(metadata.ShasumsUrl, config.Providers.MaxChecksumBytes,
+                config.Providers.MaxRedirects, false, config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            shasums.Content.Position = 0;
+            using var reader = new StreamReader(shasums.Content, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+            var text = await reader.ReadToEndAsync(cancellationToken);
+            if (!string.Equals(FindShasumsEntry(text, metadata.Filename), metadata.Shasum, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Provider package SHA-256 did not match upstream SHA256SUMS entry.");
+            await using var signature = await DownloadArtifactToTempFileAsync(metadata.ShasumsSignatureUrl, config.Providers.MaxChecksumBytes,
+                config.Providers.MaxRedirects, false, config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var sidecarPath = ShasumsStoragePath(hostname, providerNamespace, type, version.Version);
+            shasums.Content.Position = 0;
+            var shasumsSave = await storage.SaveAsync(sidecarPath, shasums.Content, cancellationToken);
+            signature.Content.Position = 0;
+            var signatureSave = await storage.SaveAsync($"{sidecarPath}.sig", signature.Content, cancellationToken);
+            var package = new MirrorProviderPackage
+            {
+                Hostname = hostname,
+                Namespace = providerNamespace,
+                Type = type,
+                Version = version.Version,
+                Os = platform.Os,
+                Arch = platform.Arch,
+                DownloadUrl = metadata.DownloadUrl,
+                Filename = metadata.Filename,
+                CacheSizeBytes = checked(shasums.Length + signature.Length),
+                ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
+                HashesJson = JsonSerializer.Serialize(new[] { $"zh:{metadata.Shasum}" }, JsonOptions),
+                Shasum = metadata.Shasum,
+                SigningKeysJson = JsonSerializer.Serialize(new
+                {
+                    signing_keys = metadata.SigningKeys,
+                    signature_verification = "not_verified",
+                    shasums_storage_path = shasumsSave.StoragePath,
+                    shasums_signature_storage_path = signatureSave.StoragePath
+                }, JsonOptions),
+                State = "pending",
+                LastSyncAt = DateTime.UtcNow
+            };
+            await repository.UpsertProviderPackageAsync(package);
+            return package;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException or IOException)
+        {
+            RegistryLog.Warning(logger, ex, "Provider mirror metadata fetch failed for {Hostname}/{Namespace}/{Type}/{Version}/{Os}/{Arch}", hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch);
+            await repository.MarkProviderPackageFailedAsync(
+                hostname,
+                providerNamespace,
+                type,
+                version.Version,
+                platform.Os,
+                platform.Arch,
+                ex.Message,
+                ex is HttpRequestException httpEx ? (int?)httpEx.StatusCode : null);
+            return null;
         }
     }
 
