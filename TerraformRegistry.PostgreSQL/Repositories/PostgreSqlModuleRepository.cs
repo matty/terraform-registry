@@ -17,67 +17,25 @@ public sealed class PostgreSqlModuleRepository(
 {
     public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
     {
-        var rows = new List<ModuleRow>();
-        var conditions = new List<string>();
-        var parameters = new List<NpgsqlParameter>();
-        var paramCounter = 0;
-
-        var sql = @"
-            SELECT 
-                m.namespace,
-                m.name,
-                m.provider,
-                m.version,
-                m.description,
-                m.published_at
-            FROM 
-                modules m
-            WHERE m.deleted_at IS NULL";
-
-        if (!string.IsNullOrWhiteSpace(request.Namespace))
-        {
-            conditions.Add($" AND m.namespace = @p{paramCounter}");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Namespace));
-            paramCounter++;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Provider))
-        {
-            conditions.Add($" AND m.provider = @p{paramCounter}");
-            parameters.Add(new NpgsqlParameter($"@p{paramCounter}", request.Provider));
-        }
-
-        sql += string.Join(" ", conditions);
-        sql += " ORDER BY m.namespace, m.name, m.provider";
-
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
+        var (whereClause, parameters) = BuildListFilter(request);
+        await using var countCommand = new NpgsqlCommand($"SELECT COUNT(*) FROM (SELECT 1 FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider) coordinates", connection);
+        AddParameters(countCommand, parameters);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
 
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddRange(parameters.ToArray());
-
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        var coordinates = new List<(string Namespace, string Name, string Provider)>();
+        await using (var pageCommand = new NpgsqlCommand($"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider ORDER BY m.namespace, m.name, m.provider LIMIT @limit OFFSET @offset", connection))
         {
-            var namespace_ = reader.GetString(0);
-            var name = reader.GetString(1);
-            var provider = reader.GetString(2);
-            var version = reader.GetString(3);
-            var description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
-            var publishedAt = reader.GetDateTime(5);
-
-            rows.Add(new ModuleRow
-            {
-                Namespace = namespace_,
-                Name = name,
-                Version = version,
-                Provider = provider,
-                Description = description,
-                PublishedAt = publishedAt.ToString("o", CultureInfo.InvariantCulture)
-            });
+            AddParameters(pageCommand, parameters);
+            pageCommand.Parameters.AddWithValue("@limit", request.Limit);
+            pageCommand.Parameters.AddWithValue("@offset", request.Offset);
+            await using var reader = await pageCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) coordinates.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
         }
 
-        var listedRows = rows
+        var rows = await GetPageRowsAsync(connection, coordinates);
+        var modules = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
             {
@@ -89,19 +47,9 @@ public sealed class PostgreSqlModuleRepository(
                 latest.Versions = versions;
                 return latest;
             })
-            .Where(row => string.IsNullOrWhiteSpace(request.Q)
-                || row.Name.Contains(request.Q, StringComparison.OrdinalIgnoreCase)
-                || row.Description.Contains(request.Q, StringComparison.OrdinalIgnoreCase))
             .OrderBy(row => row.Namespace, StringComparer.Ordinal)
             .ThenBy(row => row.Name, StringComparer.Ordinal)
             .ThenBy(row => row.Provider, StringComparer.Ordinal)
-            .ToList();
-
-        var total = listedRows.Count;
-
-        var modules = listedRows
-            .Skip(request.Offset)
-            .Take(request.Limit)
             .Select(row => new ModuleListItem
             {
                 Id = $"{row.Namespace}/{row.Name}/{row.Provider}",
@@ -128,6 +76,41 @@ public sealed class PostgreSqlModuleRepository(
                 { "total", total.ToString(CultureInfo.InvariantCulture) }
             }
         };
+    }
+
+    private static (string WhereClause, IReadOnlyList<NpgsqlParameter> Parameters) BuildListFilter(ModuleSearchRequest request)
+    {
+        var conditions = new List<string> { "m.deleted_at IS NULL" };
+        var parameters = new List<NpgsqlParameter>();
+        if (!string.IsNullOrWhiteSpace(request.Namespace)) { conditions.Add("m.namespace = @ns"); parameters.Add(new NpgsqlParameter("@ns", request.Namespace)); }
+        if (!string.IsNullOrWhiteSpace(request.Provider)) { conditions.Add("m.provider = @provider"); parameters.Add(new NpgsqlParameter("@provider", request.Provider)); }
+        if (!string.IsNullOrWhiteSpace(request.Q)) { conditions.Add("(strpos(lower(m.name), lower(@q)) > 0 OR strpos(lower(COALESCE(m.description, '')), lower(@q)) > 0)"); parameters.Add(new NpgsqlParameter("@q", request.Q)); }
+        return ($"WHERE {string.Join(" AND ", conditions)}", parameters);
+    }
+
+    private static void AddParameters(NpgsqlCommand command, IReadOnlyList<NpgsqlParameter> parameters)
+    {
+        foreach (var parameter in parameters) command.Parameters.Add(new NpgsqlParameter(parameter.ParameterName, parameter.Value));
+    }
+
+    private static async Task<List<ModuleRow>> GetPageRowsAsync(NpgsqlConnection connection, List<(string Namespace, string Name, string Provider)> coordinates)
+    {
+        if (coordinates.Count == 0) return [];
+        await using var command = new NpgsqlCommand();
+        command.Connection = connection;
+        var values = new List<string>();
+        for (var index = 0; index < coordinates.Count; index++)
+        {
+            values.Add($"(@ns{index}, @name{index}, @provider{index})");
+            command.Parameters.AddWithValue($"@ns{index}", coordinates[index].Namespace);
+            command.Parameters.AddWithValue($"@name{index}", coordinates[index].Name);
+            command.Parameters.AddWithValue($"@provider{index}", coordinates[index].Provider);
+        }
+        command.CommandText = $"WITH page(namespace, name, provider) AS (VALUES {string.Join(", ", values)}) SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at FROM modules m JOIN page p ON p.namespace = m.namespace AND p.name = m.name AND p.provider = m.provider WHERE m.deleted_at IS NULL";
+        var rows = new List<ModuleRow>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) rows.Add(new ModuleRow { Namespace = reader.GetString(0), Name = reader.GetString(1), Provider = reader.GetString(2), Version = reader.GetString(3), Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), PublishedAt = reader.GetDateTime(5).ToString("o", CultureInfo.InvariantCulture) });
+        return rows;
     }
 
     /// <summary>
