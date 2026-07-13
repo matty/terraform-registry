@@ -43,6 +43,12 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
     public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job) =>
         _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
 
+    public Task<bool> TryCommitStagedPublicationAsync(
+        ModulePublicationAttempt attempt,
+        ModuleStorage newModule,
+        ModuleStorage? expectedModule) =>
+        _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule);
+
     public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
 
     public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);

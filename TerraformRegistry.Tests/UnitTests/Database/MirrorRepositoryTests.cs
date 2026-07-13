@@ -2,11 +2,14 @@ using DotNet.Testcontainers.Builders;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
+using TerraformRegistry.PostgreSQL;
 using TerraformRegistry.PostgreSQL.Repositories;
+using TerraformRegistry.Services;
 using TerraformRegistry.Services.Sqlite;
 using Testcontainers.PostgreSql;
 
@@ -57,6 +60,18 @@ public sealed class SqliteMirrorRepositoryTests : IDisposable
         var repository = new SqliteModulePublicationRepository(_connectionString);
 
         await PublicationRepositoryContract.RoundTripsAllAttemptFields(repository);
+    }
+
+    [Fact]
+    public async Task PublicationRepositoryCommitsCatalogUsingExpectedSnapshot()
+    {
+        var database = new SqliteDatabaseService(
+            _connectionString,
+            "http://localhost",
+            NullLogger<SqliteDatabaseService>.Instance,
+            new DbUpMigrator(NullLogger<DbUpMigrator>.Instance));
+
+        await PublicationCommitContract.CommitsCatalogUsingExpectedSnapshot(database, database);
     }
 
     public void Dispose()
@@ -124,6 +139,18 @@ public sealed class PostgreSqlMirrorRepositoryTests : IAsyncLifetime
 
         await PublicationRepositoryContract.RoundTripsAllAttemptFields(repository);
     }
+
+    [Fact]
+    public async Task PublicationRepositoryCommitsCatalogUsingExpectedSnapshot()
+    {
+        var database = new PostgreSqlDatabaseService(
+            _connectionString,
+            "http://localhost",
+            NullLogger<PostgreSqlDatabaseService>.Instance,
+            new DbUpMigrator(NullLogger<DbUpMigrator>.Instance));
+
+        await PublicationCommitContract.CommitsCatalogUsingExpectedSnapshot(database, database);
+    }
 }
 
 internal static class PublicationRepositoryContract
@@ -164,6 +191,94 @@ internal static class PublicationRepositoryContract
 
         Assert.Equal(attempt, await repository.GetPublicationAttemptAsync(attempt.Id));
         Assert.Equal(job, await repository.GetExtractionJobAsync(job.Id));
+    }
+
+    private static DateTime TruncateToMicroseconds(DateTime value) =>
+        new(value.Ticks - value.Ticks % 10, DateTimeKind.Utc);
+}
+
+internal static class PublicationCommitContract
+{
+    public static async Task CommitsCatalogUsingExpectedSnapshot(
+        IModulePublicationRepository publications,
+        IModuleRepository modules)
+    {
+        var now = TruncateToMicroseconds(DateTime.UtcNow);
+        var first = CreateModule("artifacts/acme/network/aws/1.0.0/first.zip", now);
+        var firstAttempt = CreateAttempt(first, now);
+        await publications.CreatePublicationAttemptWithExtractionJobAsync(firstAttempt, CreateJob(firstAttempt));
+
+        Assert.True(await publications.TryCommitStagedPublicationAsync(firstAttempt, first, null));
+        AssertModuleEquals(first, await modules.GetModuleStorageAsync("acme", "network", "aws", "1.0.0"));
+        Assert.Equal(ModulePublicationAttemptState.Committed,
+            (await publications.GetPublicationAttemptAsync(firstAttempt.Id))!.State);
+
+        var replacement = CreateModule("artifacts/acme/network/aws/1.0.0/replacement.zip", now.AddMinutes(1));
+        replacement.Description = "replacement artifact";
+        var staleSnapshot = CreateModule("artifacts/acme/network/aws/1.0.0/stale.zip", now);
+        var replacementAttempt = CreateAttempt(replacement, now.AddMinutes(1));
+        await publications.CreatePublicationAttemptWithExtractionJobAsync(
+            replacementAttempt,
+            CreateJob(replacementAttempt));
+
+        Assert.False(await publications.TryCommitStagedPublicationAsync(replacementAttempt, replacement, staleSnapshot));
+        AssertModuleEquals(first, await modules.GetModuleStorageAsync("acme", "network", "aws", "1.0.0"));
+        Assert.Equal(ModulePublicationAttemptState.Staged,
+            (await publications.GetPublicationAttemptAsync(replacementAttempt.Id))!.State);
+    }
+
+    private static ModulePublicationAttempt CreateAttempt(ModuleStorage module, DateTime now) => new()
+    {
+        Id = Guid.NewGuid(),
+        Namespace = module.Namespace,
+        Name = module.Name,
+        Provider = module.Provider,
+        Version = module.Version,
+        State = ModulePublicationAttemptState.Staged,
+        StagingKey = $"staging/{Guid.NewGuid():N}",
+        ExpectedRevision = "catalog-r17",
+        CommittedRevision = "artifact-r17",
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+
+    private static ModuleExtractionJob CreateJob(ModulePublicationAttempt attempt) => new()
+    {
+        Id = Guid.NewGuid(),
+        PublicationAttemptId = attempt.Id,
+        Namespace = attempt.Namespace,
+        Name = attempt.Name,
+        Provider = attempt.Provider,
+        Version = attempt.Version,
+        State = ModuleExtractionJobState.Pending,
+        CreatedAt = attempt.CreatedAt,
+        UpdatedAt = attempt.UpdatedAt
+    };
+
+    private static ModuleStorage CreateModule(string path, DateTime publishedAt) => new()
+    {
+        Namespace = "acme",
+        Name = "network",
+        Provider = "aws",
+        Version = "1.0.0",
+        Description = "network artifact",
+        FilePath = path,
+        PublishedAt = publishedAt,
+        Dependencies = ["hashicorp/aws"],
+        Metadata = new ModuleArtifactMetadata
+        {
+            Source = new ModuleSourceInfo { Kind = "manual", SourceUrl = "https://example.test/network" }
+        }
+    };
+
+    private static void AssertModuleEquals(ModuleStorage expected, ModuleStorage? actual)
+    {
+        Assert.NotNull(actual);
+        Assert.Equal(expected.Description, actual!.Description);
+        Assert.Equal(expected.FilePath, actual.FilePath);
+        Assert.Equal(expected.PublishedAt, actual.PublishedAt);
+        Assert.Equal(expected.Dependencies, actual.Dependencies);
+        Assert.Equal(JsonSerializer.Serialize(expected.Metadata), JsonSerializer.Serialize(actual.Metadata));
     }
 
     private static DateTime TruncateToMicroseconds(DateTime value) =>

@@ -1,4 +1,6 @@
 using Npgsql;
+using NpgsqlTypes;
+using System.Text.Json;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 
@@ -55,6 +57,50 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         return await reader.ReadAsync() ? ReadAttempt(reader) : null;
     }
 
+    public async Task<bool> TryCommitStagedPublicationAsync(
+        ModulePublicationAttempt attempt,
+        ModuleStorage newModule,
+        ModuleStorage? expectedModule)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        var catalogChanged = expectedModule is null
+            ? await TryInsertCatalogAsync(connection, transaction, newModule)
+            : await TryReplaceCatalogAsync(connection, transaction, expectedModule, newModule);
+        if (!catalogChanged)
+            return false;
+
+        await using var attemptCommand = new NpgsqlCommand(
+            """
+            UPDATE module_publication_attempts
+            SET state = @committed, updated_at = @updatedAt, completed_at = @completedAt, error = NULL
+            WHERE id = @id
+              AND namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND state = @staged
+            """,
+            connection,
+            transaction);
+        attemptCommand.Parameters.AddWithValue("@committed", ModulePublicationAttemptState.Committed);
+        attemptCommand.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+        attemptCommand.Parameters.AddWithValue("@completedAt", DateTime.UtcNow);
+        attemptCommand.Parameters.AddWithValue("@id", attempt.Id);
+        attemptCommand.Parameters.AddWithValue("@namespace", newModule.Namespace);
+        attemptCommand.Parameters.AddWithValue("@name", newModule.Name);
+        attemptCommand.Parameters.AddWithValue("@provider", newModule.Provider);
+        attemptCommand.Parameters.AddWithValue("@version", newModule.Version);
+        attemptCommand.Parameters.AddWithValue("@staged", ModulePublicationAttemptState.Staged);
+        if (await attemptCommand.ExecuteNonQueryAsync() != 1)
+            return false;
+
+        await transaction.CommitAsync();
+        return true;
+    }
+
     public async Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -88,6 +134,75 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         command.Parameters.AddWithValue("@updatedAt", attempt.UpdatedAt);
         command.Parameters.AddWithValue("@completedAt", (object?)attempt.CompletedAt ?? DBNull.Value);
     }
+
+    private static async Task<bool> TryInsertCatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ModuleStorage module)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO modules (
+                namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata)
+            VALUES (
+                @namespace, @name, @provider, @version, @description, @storagePath, @publishedAt, @dependencies, @metadata)
+            ON CONFLICT(namespace, name, provider, version) DO NOTHING
+            """,
+            connection,
+            transaction);
+        AddModuleParameters(command, module, string.Empty);
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
+    private static async Task<bool> TryReplaceCatalogAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ModuleStorage expected,
+        ModuleStorage replacement)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            UPDATE modules
+            SET description = @newDescription,
+                storage_path = @newStoragePath,
+                published_at = @newPublishedAt,
+                dependencies = @newDependencies,
+                metadata = @newMetadata
+            WHERE namespace = @namespace
+              AND name = @name
+              AND provider = @provider
+              AND version = @version
+              AND description = @description
+              AND storage_path = @storagePath
+              AND published_at = @publishedAt
+              AND dependencies = @dependencies
+              AND metadata = @metadata
+              AND deleted_at IS NULL
+            """,
+            connection,
+            transaction);
+        AddModuleParameters(command, expected, string.Empty);
+        AddModuleParameters(command, replacement, "new");
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
+    private static void AddModuleParameters(NpgsqlCommand command, ModuleStorage module, string prefix)
+    {
+        command.Parameters.AddWithValue(ParameterName(prefix, "namespace"), module.Namespace);
+        command.Parameters.AddWithValue(ParameterName(prefix, "name"), module.Name);
+        command.Parameters.AddWithValue(ParameterName(prefix, "provider"), module.Provider);
+        command.Parameters.AddWithValue(ParameterName(prefix, "version"), module.Version);
+        command.Parameters.AddWithValue(ParameterName(prefix, "description"), module.Description);
+        command.Parameters.AddWithValue(ParameterName(prefix, "storagePath"), module.FilePath);
+        command.Parameters.AddWithValue(ParameterName(prefix, "publishedAt"), module.PublishedAt);
+        command.Parameters.AddWithValue(ParameterName(prefix, "dependencies"), JsonSerializer.Serialize(module.Dependencies)).NpgsqlDbType =
+            NpgsqlDbType.Jsonb;
+        command.Parameters.AddWithValue(ParameterName(prefix, "metadata"), JsonSerializer.Serialize(module.Metadata)).NpgsqlDbType =
+            NpgsqlDbType.Jsonb;
+    }
+
+    private static string ParameterName(string prefix, string name) =>
+        "@" + (string.IsNullOrEmpty(prefix) ? name : prefix + char.ToUpperInvariant(name[0]) + name[1..]);
 
     private static void AddJobParameters(NpgsqlCommand command, ModuleExtractionJob job)
     {
