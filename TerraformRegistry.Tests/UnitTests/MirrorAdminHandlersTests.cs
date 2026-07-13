@@ -44,6 +44,26 @@ public sealed class MirrorAdminHandlersTests
             null), Times.Once);
     }
 
+    [Fact]
+    public async Task ListLeasesReturnsBoundedPageForMirrorReaders()
+    {
+        var context = CreateContext([Permissions.MirrorRead]);
+        var leases = new Mock<IMirrorLeaseRepository>(MockBehavior.Strict);
+        leases.Setup(x => x.ListLeasesAsync(25, 0, context.RequestAborted))
+            .ReturnsAsync([new MirrorCacheLease
+            {
+                LeaseKey = "provider:registry.terraform.io:hashicorp:aws:5.0.0:linux:amd64",
+                OperationType = "download",
+                OwnerInstanceId = "worker-1",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(1)
+            }]);
+
+        var result = await MirrorAdminHandlers.ListLeases(leases.Object, context, 25, 0);
+
+        Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)result).StatusCode);
+        leases.VerifyAll();
+    }
+
     private static DefaultHttpContext CreateContext(string[] permissions)
     {
         var context = new DefaultHttpContext();

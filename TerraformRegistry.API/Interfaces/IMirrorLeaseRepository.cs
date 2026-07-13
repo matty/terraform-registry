@@ -4,6 +4,11 @@ namespace TerraformRegistry.API.Interfaces;
 
 public interface IMirrorLeaseRepository
 {
+    Task<IReadOnlyList<MirrorCacheLease>> ListLeasesAsync(
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default);
+
     Task<MirrorCacheLease?> GetLeaseAsync(
         string leaseKey,
         CancellationToken cancellationToken = default);

@@ -192,6 +192,11 @@ internal static class AdminEndpointMappingExtensions
 
     private static WebApplication MapMirrorAdminEndpoints(this WebApplication app)
     {
+        app.MapGet("/api/admin/mirror/leases",
+                (IMirrorLeaseRepository leaseRepository, HttpContext context, int limit = 50, int offset = 0) =>
+                    MirrorAdminHandlers.ListLeases(leaseRepository, context, limit, offset))
+            .WithTags("Mirror");
+
         app.MapGet("/api/admin/mirror/config",
                 (IMirrorConfigService configService, HttpContext context) =>
                     MirrorAdminHandlers.GetConfig(configService, context))

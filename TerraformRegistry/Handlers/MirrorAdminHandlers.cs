@@ -7,6 +7,18 @@ namespace TerraformRegistry.Handlers;
 
 public static class MirrorAdminHandlers
 {
+    public static async Task<IResult> ListLeases(
+        IMirrorLeaseRepository leaseRepository,
+        HttpContext context,
+        int limit = 50,
+        int offset = 0)
+    {
+        if (!Has(context, Permissions.MirrorRead)) return Forbidden();
+
+        var leases = await leaseRepository.ListLeasesAsync(limit, offset, context.RequestAborted);
+        return Results.Ok(leases);
+    }
+
     public static async Task<IResult> GetConfig(IMirrorConfigService configService, HttpContext context)
     {
         if (!Has(context, Permissions.MirrorRead)) return Forbidden();

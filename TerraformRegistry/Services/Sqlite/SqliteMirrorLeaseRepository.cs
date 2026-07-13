@@ -7,6 +7,32 @@ namespace TerraformRegistry.Services.Sqlite;
 
 public sealed class SqliteMirrorLeaseRepository(string connectionString) : IMirrorLeaseRepository
 {
+    public async Task<IReadOnlyList<MirrorCacheLease>> ListLeasesAsync(
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default)
+    {
+        var leases = new List<MirrorCacheLease>();
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT id, lease_key, operation_type, owner_instance_id, expires_at, heartbeat_at, created_at, updated_at
+            FROM mirror_cache_leases
+            ORDER BY expires_at, lease_key
+            LIMIT $limit OFFSET $offset";
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 100));
+        command.Parameters.AddWithValue("$offset", Math.Max(0, offset));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            leases.Add(MapLease(reader));
+        }
+
+        return leases;
+    }
+
     public async Task<MirrorCacheLease?> GetLeaseAsync(
         string leaseKey,
         CancellationToken cancellationToken = default)
