@@ -1,0 +1,16 @@
+namespace TerraformRegistry.Models;
+
+public static class ModuleExtractionJobState { public const string Pending = "pending"; }
+
+public sealed record ModuleExtractionJob
+{
+    public required Guid Id { get; init; }
+    public required Guid PublicationAttemptId { get; init; }
+    public required string Namespace { get; init; }
+    public required string Name { get; init; }
+    public required string Provider { get; init; }
+    public required string Version { get; init; }
+    public required string State { get; init; }
+    public required DateTime CreatedAt { get; init; }
+    public required DateTime UpdatedAt { get; init; }
+}
