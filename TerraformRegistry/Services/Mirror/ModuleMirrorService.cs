@@ -146,27 +146,30 @@ public sealed class ModuleMirrorService(
         }
 
         var leaseKey = $"module-package:{hostname}:{moduleNamespace}:{name}:{provider}:{version}";
-        using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
-        if (admission is null)
-        {
-            RegistryLog.Warning(logger, "Module mirror admission limit reached for {LeaseKey}", leaseKey);
-            return null;
-        }
-
         var lease = await leaseService.TryAcquireAsync(leaseKey, "module-package", TimeSpan.FromMinutes(5), cancellationToken);
         if (lease is null)
         {
-            return await GetReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version, cancellationToken);
+            return await WaitForReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version,
+                config.Modules.DownloadTimeoutSeconds, cancellationToken);
         }
 
         try
         {
+            using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
+            if (admission is null)
+            {
+                RegistryLog.Warning(logger, "Module mirror admission limit reached for {LeaseKey}", leaseKey);
+                return await WaitForReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version,
+                    config.Modules.DownloadTimeoutSeconds, cancellationToken);
+            }
+
             cachedLocalPath = await GetReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version, cancellationToken);
             if (!string.IsNullOrWhiteSpace(cachedLocalPath))
             {
                 return cachedLocalPath;
             }
 
+            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1));
             return await FetchCacheAndCreateLocalDownloadPathAsync(
                 hostname,
                 moduleNamespace,
@@ -174,6 +177,7 @@ public sealed class ModuleMirrorService(
                 provider,
                 version,
                 config,
+                heartbeat,
                 cancellationToken);
         }
         finally
@@ -285,6 +289,21 @@ public sealed class ModuleMirrorService(
         return null;
     }
 
+    private async Task<string?> WaitForReadyPackageLocalPathAsync(
+        string hostname, string moduleNamespace, string name, string provider, string version,
+        int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        do
+        {
+            var localPath = await GetReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(localPath)) return localPath;
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        } while (DateTime.UtcNow < deadline);
+
+        return await GetReadyPackageLocalPathAsync(hostname, moduleNamespace, name, provider, version, cancellationToken);
+    }
+
     private async Task<string> ApplyCachedPackageHintsAsync(
         string hostname,
         string moduleNamespace,
@@ -334,6 +353,7 @@ public sealed class ModuleMirrorService(
         string provider,
         string version,
         MirrorOptions config,
+        MirrorLeaseHeartbeat heartbeat,
         CancellationToken cancellationToken)
     {
         ModuleArchiveSource? source = null;
@@ -364,6 +384,7 @@ public sealed class ModuleMirrorService(
                 replaceExistingMirror = true;
             }
 
+            heartbeat.ThrowIfOwnershipLost();
             await repository.UpsertModulePackageAsync(new MirrorModulePackage
             {
                 Hostname = hostname,
@@ -390,6 +411,7 @@ public sealed class ModuleMirrorService(
             {
                 throw new InvalidOperationException("Mirror cache budget cannot accommodate the module package.");
             }
+            heartbeat.ThrowIfOwnershipLost();
             var metadata = CreateMetadata(hostname, source);
             var published = await publishCoordinator.PublishAsync(new ModulePublishRequest
             {
@@ -427,6 +449,7 @@ public sealed class ModuleMirrorService(
                 PreservedSuffix = source.PreservedSuffix,
                 ArchiveFormat = source.ArchiveFormat
             };
+            heartbeat.ThrowIfOwnershipLost();
             await repository.UpsertModulePackageAsync(new MirrorModulePackage
             {
                 Hostname = hostname,
