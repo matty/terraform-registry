@@ -14,6 +14,7 @@ public interface IProviderRepository
     Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string providerNamespace, string type);
     Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string providerNamespace, string type);
     Task<ProviderVersion?> GetProviderVersionAsync(string providerNamespace, string type, string version);
+    Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version, string os, string arch);
     Task<ProviderVersion> CreateProviderVersionAsync(Guid providerId, string version, string[] protocols, string keyId);
     Task<bool> SetVersionShasumsPathAsync(Guid versionId, string storagePath);
     Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath);

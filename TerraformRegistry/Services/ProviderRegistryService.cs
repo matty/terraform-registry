@@ -77,61 +77,40 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     {
         ValidateCoordinate(providerNamespace, type);
 
-        var provider = await _repository.GetProviderAsync(providerNamespace, type);
-        if (provider == null)
-        {
+        var details = await _repository.GetProviderPackageDetailsAsync(providerNamespace, type, version, os, arch);
+        if (details is null)
             return null;
-        }
-
-        var providerVersion = await _repository.GetProviderVersionAsync(providerNamespace, type, version);
-        if (providerVersion == null ||
-            string.IsNullOrWhiteSpace(providerVersion.ShasumsStoragePath) ||
-            string.IsNullOrWhiteSpace(providerVersion.ShasumsSignatureStoragePath))
-        {
-            return null;
-        }
-
-        var platform = await _repository.GetProviderPlatformAsync(providerNamespace, type, version, os, arch);
-        if (platform == null || string.IsNullOrWhiteSpace(platform.PackageStoragePath))
-        {
-            return null;
-        }
-
-        var gpgKey = await _repository.GetGpgKeyAsync(providerNamespace, providerVersion.KeyId);
-        if (gpgKey == null)
-        {
-            return null;
-        }
 
         try
         {
-            var packageUrl = await _storage.CreateDownloadUrlAsync(platform.PackageStoragePath, cancellationToken);
-            var shasumsUrl = await _storage.CreateDownloadUrlAsync(providerVersion.ShasumsStoragePath, cancellationToken);
-            var signatureUrl = await _storage.CreateDownloadUrlAsync(providerVersion.ShasumsSignatureStoragePath, cancellationToken);
+            var packageUrlTask = _storage.CreateDownloadUrlAsync(details.PackageStoragePath, cancellationToken);
+            var shasumsUrlTask = _storage.CreateDownloadUrlAsync(details.ShasumsStoragePath, cancellationToken);
+            var signatureUrlTask = _storage.CreateDownloadUrlAsync(details.ShasumsSignatureStoragePath, cancellationToken);
+            await Task.WhenAll(packageUrlTask, shasumsUrlTask, signatureUrlTask);
 
-            await _repository.RecordProviderDownloadAsync(provider.Id, providerNamespace, type, version, os, arch, clientIp, userAgent);
+            await _repository.RecordProviderDownloadAsync(details.ProviderId, providerNamespace, type, version, os, arch, clientIp, userAgent);
 
             return new ProviderPackageResponse
             {
-                Protocols = providerVersion.Protocols,
-                Os = platform.Os,
-                Arch = platform.Arch,
-                Filename = platform.Filename,
-                DownloadUrl = packageUrl,
-                ShasumsUrl = shasumsUrl,
-                ShasumsSignatureUrl = signatureUrl,
-                Shasum = platform.Shasum,
+                Protocols = details.Protocols,
+                Os = details.Os,
+                Arch = details.Arch,
+                Filename = details.Filename,
+                DownloadUrl = await packageUrlTask,
+                ShasumsUrl = await shasumsUrlTask,
+                ShasumsSignatureUrl = await signatureUrlTask,
+                Shasum = details.Shasum,
                 SigningKeys = new ProviderSigningKeys
                 {
                     GpgPublicKeys =
                     [
                         new ProviderGpgPublicKey
                         {
-                            KeyId = gpgKey.KeyId,
-                            AsciiArmor = gpgKey.AsciiArmor,
-                            TrustSignature = gpgKey.TrustSignature,
-                            Source = gpgKey.Source,
-                            SourceUrl = gpgKey.SourceUrl
+                            KeyId = details.KeyId,
+                            AsciiArmor = details.AsciiArmor,
+                            TrustSignature = details.TrustSignature,
+                            Source = details.Source,
+                            SourceUrl = details.SourceUrl
                         }
                     ]
                 }
