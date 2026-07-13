@@ -29,6 +29,14 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<ArtifactDownloadTokenService>();
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
+        services.AddOptions<DurableOutboxOptions>()
+            .Bind(configuration.GetSection("DurableOutbox"))
+            .Validate(options =>
+            {
+                try { options.Validate(); return true; }
+                catch (InvalidOperationException) { return false; }
+            }, "Durable outbox worker limits must be greater than zero.")
+            .ValidateOnStart();
         services.AddOptions<ModuleExtractionOptions>()
             .Bind(configuration.GetSection("ModuleExtraction"))
             .Validate(options =>
@@ -172,6 +180,7 @@ internal static class ServiceRegistrationExtensions
 
         services.AddAnalyticsService();
         services.AddDurableOutboxServices();
+        services.AddHostedService<DurableOutboxHostedService>();
         services.AddWebhookServices();
         services.AddVcsServices();
         services.AddMirrorServices();
