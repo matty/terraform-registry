@@ -25,7 +25,7 @@ internal sealed class S3ModuleUploadWorkflow(
         {
             existingModule = await databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger,
                 ex,
@@ -100,7 +100,7 @@ internal sealed class S3ModuleUploadWorkflow(
         {
             await databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error creating staged S3 publication for {Namespace}/{Name}/{Provider}/{Version}.",
@@ -140,7 +140,7 @@ internal sealed class S3ModuleUploadWorkflow(
                 version);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger,
                 ex,
@@ -171,7 +171,7 @@ internal sealed class S3ModuleUploadWorkflow(
         {
             committed = await databaseService.TryCommitStagedPublicationAsync(attempt, newModule, existingModule);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error committing staged S3 publication for {Namespace}/{Name}/{Provider}/{Version}.",
