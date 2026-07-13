@@ -29,6 +29,22 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<ArtifactDownloadTokenService>();
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
+        services.AddOptions<DurableOutboxOptions>()
+            .Bind(configuration.GetSection("DurableOutbox"))
+            .Validate(options =>
+            {
+                try { options.Validate(); return true; }
+                catch (InvalidOperationException) { return false; }
+            }, "Durable outbox worker limits must be greater than zero.")
+            .ValidateOnStart();
+        services.AddOptions<DownloadAnalyticsOptions>()
+            .Bind(configuration.GetSection(DownloadAnalyticsOptions.SectionName))
+            .Validate(options =>
+            {
+                try { options.Validate(); return true; }
+                catch (InvalidOperationException) { return false; }
+            }, "Download analytics queue capacity must be greater than zero.")
+            .ValidateOnStart();
         services.AddOptions<ModuleExtractionOptions>()
             .Bind(configuration.GetSection("ModuleExtraction"))
             .Validate(options =>
@@ -171,6 +187,11 @@ internal static class ServiceRegistrationExtensions
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
         services.AddAnalyticsService();
+        services.AddSingleton<ModuleDownloadAnalyticsBuffer>();
+        services.AddHostedService<ModuleDownloadAnalyticsHostedService>();
+        services.AddDurableOutboxServices();
+        services.AddSingleton<DurableOutboxProcessor>();
+        services.AddHostedService<DurableOutboxHostedService>();
         services.AddWebhookServices();
         services.AddVcsServices();
         services.AddMirrorServices();
@@ -351,6 +372,26 @@ internal static class ServiceRegistrationExtensions
         return services;
     }
 
+    private static IServiceCollection AddDurableOutboxServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IOutboxEventRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlOutboxEventRepository(config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for durable outbox.")),
+                "sqlite" => new SqliteOutboxEventRepository(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<IOutboxDeliveryHandler, AuditOutboxDeliveryHandler>();
+        services.AddSingleton<IOutboxDeliveryHandler, WebhookOutboxDeliveryHandler>();
+
+        return services;
+    }
+
     private static IServiceCollection AddWebhookServices(this IServiceCollection services)
     {
         services.AddSingleton<IWebhookService>(provider =>
@@ -526,7 +567,7 @@ internal static class ServiceRegistrationExtensions
             };
         });
 
-        services.AddSingleton<IAuditService>(provider =>
+        services.AddSingleton<IAuditLogStore>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();
             var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
@@ -542,6 +583,7 @@ internal static class ServiceRegistrationExtensions
                 _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
             };
         });
+        services.AddSingleton<IAuditService, DurableAuditService>();
 
         return services;
     }

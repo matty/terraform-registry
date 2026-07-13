@@ -85,7 +85,7 @@ public static class ModuleDocsHandlers
             new ModuleExtractionRequest(@namespace, name, provider, version),
             context.RequestAborted);
 
-        context.FireAuditLog(auditService, "module_docs.requeued", "module",
+        await context.FireAuditLogAsync(auditService, "module_docs.requeued", "module",
             $"{@namespace}/{name}/{provider}/{version}", new
             {
                 Namespace = @namespace,
@@ -135,7 +135,7 @@ public static class ModuleDocsHandlers
             queued = await extractionService.QueueAsync(request, context.RequestAborted);
         }
 
-        context.FireAuditLog(auditService, "module_docs.llm_regenerated", "module",
+        await context.FireAuditLogAsync(auditService, "module_docs.llm_regenerated", "module",
             $"{@namespace}/{name}/{provider}/{version}", new
             {
                 Namespace = @namespace,
@@ -170,7 +170,7 @@ public static class ModuleDocsHandlers
         var limit = Math.Clamp(body?.Limit ?? 25, 1, 100);
         var queued = await extractionService.QueueBackfillAsync(limit, context.RequestAborted);
 
-        context.FireAuditLog(auditService, "module_docs.backfill_queued", "module_docs",
+        await context.FireAuditLogAsync(auditService, "module_docs.backfill_queued", "module_docs",
             null, new
             {
                 RequestedLimit = limit,
@@ -203,7 +203,7 @@ public static class ModuleDocsHandlers
 
         var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var config = await configService.SetEnabledAsync(body.Enabled, actor, context.RequestAborted);
-        context.FireAuditLog(auditService, "module_docs.config_updated", "module_docs",
+        await context.FireAuditLogAsync(auditService, "module_docs.config_updated", "module_docs",
             "module_extraction", new
             {
                 RequestedEnabled = body.Enabled,

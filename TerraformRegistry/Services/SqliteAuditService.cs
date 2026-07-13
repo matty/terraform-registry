@@ -7,7 +7,7 @@ using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.Services;
 
-public class SqliteAuditService : IAuditService
+public class SqliteAuditService : IAuditLogStore
 {
     private readonly string _connectionString;
     private readonly ILogger<SqliteAuditService> _logger;
@@ -45,6 +45,7 @@ public class SqliteAuditService : IAuditService
         catch (Exception ex)
         {
             RegistryLog.Error(_logger, ex, "Failed to write audit log entry for action {Action}", action);
+            throw;
         }
     }
 

@@ -177,7 +177,7 @@ public static class ModuleHandlers
         string version,
         IModuleService moduleService,
         IModuleMirrorService moduleMirrorService,
-        IDatabaseService dbService,
+        ModuleDownloadAnalyticsBuffer downloadAnalytics,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
@@ -203,18 +203,7 @@ public static class ModuleHandlers
         var clientIp = context.Connection.RemoteIpAddress?.ToString();
         var userAgent = context.Request.Headers["User-Agent"].ToString();
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await dbService.RecordDownloadAsync(@namespace, name, provider, version, clientIp, userAgent);
-            }
-            catch (Exception ex)
-            {
-                RegistryLog.Error(_logger, ex, "Failed to record download for {Namespace}/{Name}/{Provider}/{Version}",
-                    @namespace, name, provider, version);
-            }
-        });
+        downloadAnalytics.TryEnqueue(new ModuleDownloadRecord(@namespace, name, provider, version, clientIp, userAgent));
 
         // The module registry protocol always uses 204 with X-Terraform-Get.  The
         // result must not vary with User-Agent because Terraform-compatible clients
@@ -231,7 +220,7 @@ public static class ModuleHandlers
         string provider,
         IModuleService moduleService,
         IModuleMirrorService moduleMirrorService,
-        IDatabaseService dbService,
+        ModuleDownloadAnalyticsBuffer downloadAnalytics,
         HttpContext context)
     {
         var denied = CheckPermission(context, Permissions.ModulesRead);
@@ -255,7 +244,7 @@ public static class ModuleHandlers
             SemVerValidator.Compare(a, b) ?? 0)).FirstOrDefault()?.Version;
         if (string.IsNullOrEmpty(latest)) return ErrorResponseExtensions.NotFound("Module not found");
 
-        return await DownloadModule(@namespace, name, provider, latest, moduleService, moduleMirrorService, dbService, context);
+        return await DownloadModule(@namespace, name, provider, latest, moduleService, moduleMirrorService, downloadAnalytics, context);
     }
 
     /// <summary>
@@ -399,8 +388,8 @@ public static class ModuleHandlers
         var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
-        webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version, null);
-        context.FireAuditLog(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await webhookDispatcher.FireEventAsync("module.deleted", @namespace, name, provider, version, null, context.RequestAborted);
+        await context.FireAuditLogAsync(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -439,8 +428,8 @@ public static class ModuleHandlers
         var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version, null);
-        context.FireAuditLog(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await webhookDispatcher.FireEventAsync("module.restored", @namespace, name, provider, version, null, context.RequestAborted);
+        await context.FireAuditLogAsync(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -479,8 +468,8 @@ public static class ModuleHandlers
         var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version, null);
-        context.FireAuditLog(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await webhookDispatcher.FireEventAsync("module.purged", @namespace, name, provider, version, null, context.RequestAborted);
+        await context.FireAuditLogAsync(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -547,7 +536,7 @@ public static class ModuleHandlers
             var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
             if (!result) return ErrorResponseExtensions.NotFound("Module not found");
 
-            context.FireAuditLog(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
+            await context.FireAuditLogAsync(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
 
             return Ok(new { description });
         }

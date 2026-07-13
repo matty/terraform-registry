@@ -169,7 +169,7 @@ public static class AuthHandlers
             MaxAge = TimeSpan.FromHours(24)
         });
 
-        context.FireAuditLog(auditService, "user.login", "user", user.Id, new { email = userInfo.Email, provider });
+        await context.FireAuditLogAsync(auditService, "user.login", "user", user.Id, new { email = userInfo.Email, provider });
 
         var returnTo = context.Request.Cookies[ReturnToCookieName];
         if (!string.IsNullOrWhiteSpace(returnTo) && IsSafeReturnPath(returnTo))
@@ -181,7 +181,7 @@ public static class AuthHandlers
         return Results.Redirect("/");
     }
 
-    public static IResult BeginTerraformAuthorization(HttpContext context)
+    public static async Task<IResult> BeginTerraformAuthorization(HttpContext context)
     {
         if (context.User.Identity?.IsAuthenticated != true)
         {
@@ -217,7 +217,7 @@ public static class AuthHandlers
             codeChallenge,
             codeChallengeMethod));
         var auditService = context.RequestServices.GetRequiredService<IAuditService>();
-        context.FireAuditLog(auditService, "terraform_cli.login.started", "user", userId, new
+        await context.FireAuditLogAsync(auditService, "terraform_cli.login.started", "user", userId, new
         {
             clientId,
             redirectUri
@@ -278,7 +278,7 @@ public static class AuthHandlers
             issued.UserId,
             description,
             DateTime.UtcNow.AddDays(90));
-        context.FireAuditLog(auditService, "terraform_cli.key.created", "user", issued.UserId, new
+        await context.FireAuditLogAsync(auditService, "terraform_cli.key.created", "user", issued.UserId, new
         {
             clientId,
             redirectUri
@@ -329,10 +329,10 @@ public static class AuthHandlers
     /// <summary>
     /// Logs out the current user by clearing the session cookie.
     /// </summary>
-    public static IResult Logout(HttpContext context, IAuditService auditService)
+    public static async Task<IResult> Logout(HttpContext context, IAuditService auditService)
     {
         context.Response.Cookies.Delete(SessionCookieName);
-        context.FireAuditLog(auditService, "user.logout", "user", context.User.FindFirstValue(ClaimTypes.NameIdentifier));
+        await context.FireAuditLogAsync(auditService, "user.logout", "user", context.User.FindFirstValue(ClaimTypes.NameIdentifier));
 
         return Results.Ok(new { message = "Logged out successfully" });
     }
@@ -384,7 +384,7 @@ public static class AuthHandlers
 
         // Clear session
         context.Response.Cookies.Delete(SessionCookieName);
-        context.FireAuditLog(auditService, "user.deleted", "user", userId);
+        await context.FireAuditLogAsync(auditService, "user.deleted", "user", userId);
 
         return Results.Ok();
     }
@@ -471,7 +471,7 @@ public static class AuthHandlers
             MaxAge = TimeSpan.FromHours(24)
         });
 
-        context.FireAuditLog(auditService, "user.login", "user", devUserId, new { email = devEmail, provider = "DevBypass" });
+        await context.FireAuditLogAsync(auditService, "user.login", "user", devUserId, new { email = devEmail, provider = "DevBypass" });
 
         return Results.Ok(new
         {

@@ -39,13 +39,14 @@ public sealed class ModulePublishCoordinator(
         if (!uploaded)
             return false;
 
-        webhookDispatcher.FireEvent(
+        await webhookDispatcher.FireEventAsync(
             "module.published",
             request.Namespace,
             request.Name,
             request.Provider,
             request.Version,
-            request.Description);
+            request.Description,
+            cancellationToken);
 
         try
         {
@@ -67,7 +68,7 @@ public sealed class ModulePublishCoordinator(
                 request.Version);
         }
 
-        _ = auditService.LogAsync(
+        await auditService.LogAsync(
             request.ActorUserId,
             request.AuditAction,
             "module",

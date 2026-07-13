@@ -52,7 +52,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
 
         var (rawToken, key) = await apiKeyService.CreateApiKeyAsync(userId, request.Description, request.IsShared);
 
-        HttpContext.FireAuditLog(auditService, "api_key.created", "api_key", key.Id.ToString(), new { description = request.Description, isShared = request.IsShared });
+        await HttpContext.FireAuditLogAsync(auditService, "api_key.created", "api_key", key.Id.ToString(), new { description = request.Description, isShared = request.IsShared });
 
         var owner = await apiKeyService.GetUserByIdAsync(userId);
 
@@ -94,7 +94,7 @@ public class ApiKeyController(IApiKeyService apiKeyService, IAuditService auditS
         var success = await apiKeyService.RevokeApiKeyAsync(id, userId);
         if (!success) return NotFound();
 
-        HttpContext.FireAuditLog(auditService, "api_key.revoked", "api_key", id.ToString());
+        await HttpContext.FireAuditLogAsync(auditService, "api_key.revoked", "api_key", id.ToString());
 
         return NoContent();
     }

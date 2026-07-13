@@ -575,6 +575,25 @@ public class DbUpIncrementalMigrationTests : IDisposable
         Assert.Equal("never", syncStateReader.GetString(1));
     }
 
+    [Fact]
+    public void Migration022CreatesDurableOutboxEventsTable()
+    {
+        MigrateUpTo(22, _connectionString);
+
+        Assert.Contains("durable_outbox_events", GetTables(_connection));
+        var columns = GetColumns(_connection, "durable_outbox_events");
+        foreach (var column in new[]
+                 {
+                     "id", "kind", "idempotency_key", "payload_json", "state", "owner_id", "lease_expires_at",
+                     "attempt_count", "last_error", "created_at", "updated_at", "delivered_at"
+                 })
+        {
+            Assert.Contains(column, columns);
+        }
+
+        Assert.Contains("idx_durable_outbox_events_claim", GetIndexes(_connection));
+    }
+
     private static void MigrateUpTo(int scriptNumber, string connectionString)
     {
         var maxPrefix = scriptNumber.ToString("D3", CultureInfo.InvariantCulture);

@@ -34,7 +34,7 @@ public static class AdminHandlers
             return Results.BadRequest(new { error = $"Invalid permissions: {string.Join(", ", invalidPermissions)}" });
 
         var role = await roleService.CreateRoleAsync(body.Name, body.Description, body.Permissions);
-        context.FireAuditLog(auditService, "role.created", "role", role.Id.ToString(), new { name = body.Name, permissions = body.Permissions });
+        await context.FireAuditLogAsync(auditService, "role.created", "role", role.Id.ToString(), new { name = body.Name, permissions = body.Permissions });
 
         return Results.Created($"/api/admin/roles/{role.Id}", role);
     }
@@ -65,7 +65,7 @@ public static class AdminHandlers
         if (role == null)
             return Results.NotFound(new { error = "Role not found" });
 
-        context.FireAuditLog(auditService, "role.updated", "role", id.ToString(), new { name = body.Name, permissions = body.Permissions });
+        await context.FireAuditLogAsync(auditService, "role.updated", "role", id.ToString(), new { name = body.Name, permissions = body.Permissions });
 
         return Results.Ok(role);
     }
@@ -79,7 +79,7 @@ public static class AdminHandlers
         if (!deleted)
             return Results.BadRequest(new { error = "Role not found or is a system role that cannot be deleted" });
 
-        context.FireAuditLog(auditService, "role.deleted", "role", id.ToString());
+        await context.FireAuditLogAsync(auditService, "role.deleted", "role", id.ToString());
 
         return Results.NoContent();
     }
@@ -115,7 +115,7 @@ public static class AdminHandlers
 
         var assignedBy = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var result = await permService.AssignRoleAsync(userId, body.RoleId, assignedBy);
-        context.FireAuditLog(auditService, "role.assigned", "user_role", userId, new { roleId = body.RoleId });
+        await context.FireAuditLogAsync(auditService, "role.assigned", "user_role", userId, new { roleId = body.RoleId });
 
         return Results.Ok(new { success = result });
     }
@@ -158,7 +158,7 @@ public static class AdminHandlers
         if (!result)
             return Results.NotFound(new { error = "Role assignment not found" });
 
-        context.FireAuditLog(auditService, "role.removed", "user_role", userId, new { roleId });
+        await context.FireAuditLogAsync(auditService, "role.removed", "user_role", userId, new { roleId });
 
         return Results.NoContent();
     }
@@ -185,7 +185,7 @@ public static class AdminHandlers
             return Results.BadRequest(new { error = "Cannot assign an inactive user as namespace maintainer" });
 
         await maintainerStore.AssignMaintainerAsync(@namespace, user.Id);
-        context.FireAuditLog(auditService, "namespace.maintainer_assigned", "namespace", @namespace,
+        await context.FireAuditLogAsync(auditService, "namespace.maintainer_assigned", "namespace", @namespace,
             new { namespaceName = @namespace, userId = user.Id });
 
         return Results.Ok(new { @namespace, userId = user.Id });
