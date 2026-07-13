@@ -399,7 +399,7 @@ public static class ModuleHandlers
         var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
-        webhookDispatcher.FireEvent("module.deleted", @namespace, name, provider, version, null);
+        await webhookDispatcher.FireEventAsync("module.deleted", @namespace, name, provider, version, null, context.RequestAborted);
         context.FireAuditLog(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
@@ -439,7 +439,7 @@ public static class ModuleHandlers
         var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.restored", @namespace, name, provider, version, null);
+        await webhookDispatcher.FireEventAsync("module.restored", @namespace, name, provider, version, null, context.RequestAborted);
         context.FireAuditLog(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
@@ -479,7 +479,7 @@ public static class ModuleHandlers
         var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
-        webhookDispatcher.FireEvent("module.purged", @namespace, name, provider, version, null);
+        await webhookDispatcher.FireEventAsync("module.purged", @namespace, name, provider, version, null, context.RequestAborted);
         context.FireAuditLog(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();

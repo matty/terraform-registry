@@ -376,6 +376,7 @@ internal static class ServiceRegistrationExtensions
             };
         });
         services.AddSingleton<IOutboxDeliveryHandler, AuditOutboxDeliveryHandler>();
+        services.AddSingleton<IOutboxDeliveryHandler, WebhookOutboxDeliveryHandler>();
 
         return services;
     }

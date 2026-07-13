@@ -76,6 +76,7 @@ public class ModulePublishCoordinatorTests
 
         var webhookDispatcher = new WebhookDispatcher(
             webhookService.Object,
+            Mock.Of<IOutboxEventRepository>(),
             new TestHttpClientFactory(StaticOkClient),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["BaseUrl"] = "https://registry.example.com" })
@@ -150,6 +151,7 @@ public class ModulePublishCoordinatorTests
             Mock.Of<IModuleExtractionService>(),
             new WebhookDispatcher(
                 webhookService.Object,
+                Mock.Of<IOutboxEventRepository>(),
                 new TestHttpClientFactory(StaticOkClient),
                 new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal))
@@ -194,6 +196,7 @@ public class ModulePublishCoordinatorTests
             .ReturnsAsync(Array.Empty<Webhook>());
         return new WebhookDispatcher(
             webhookService.Object,
+            Mock.Of<IOutboxEventRepository>(),
             new TestHttpClientFactory(StaticOkClient),
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
             new WebhookUrlValidator(

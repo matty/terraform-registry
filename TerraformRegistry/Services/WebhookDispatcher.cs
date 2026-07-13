@@ -8,58 +8,48 @@ namespace TerraformRegistry.Services;
 
 public class WebhookDispatcher(
     IWebhookService webhookService,
+    IOutboxEventRepository outboxRepository,
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
     WebhookUrlValidator webhookUrlValidator,
     ILogger<WebhookDispatcher> logger)
 {
-    public void FireEvent(string eventType, string @namespace, string name, string provider, string version, string? description)
+    public Task FireEventAsync(string eventType, string @namespace, string name, string provider, string version, string? description,
+        CancellationToken cancellationToken = default)
     {
-        _ = Task.Run(async () =>
+        var payload = new WebhookOutboxPayload("wh_" + Guid.NewGuid().ToString("N"), eventType, @namespace, name, provider, version, description);
+        var now = DateTime.UtcNow;
+        return outboxRepository.EnqueueAsync(new OutboxEvent
         {
-            try
-            {
-                var webhooks = await webhookService.GetActiveWebhooksForEventAsync(eventType);
+            Id = Guid.NewGuid(),
+            Kind = WebhookOutboxDeliveryHandler.Kind,
+            IdempotencyKey = $"webhook:{payload.Id}",
+            PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
+            State = OutboxEventState.Pending,
+            CreatedAt = now,
+            UpdatedAt = now
+        }, cancellationToken);
+    }
 
-                var baseUrl = configuration["BaseUrl"]?.TrimEnd('/') ?? string.Empty;
-                var action = eventType.Contains('.', StringComparison.Ordinal) ? eventType[(eventType.LastIndexOf('.') + 1)..] : eventType;
+    public async Task DeliverAsync(WebhookOutboxPayload payload, CancellationToken cancellationToken)
+    {
+        var webhooks = await webhookService.GetActiveWebhooksForEventAsync(payload.EventType);
 
-                var eventData = new WebhookEventData(
-                    Id: "wh_" + Guid.NewGuid().ToString("N"),
-                    Event: eventType,
-                    Action: action,
-                    Timestamp: DateTime.UtcNow.ToString("o"),
-                    Module: new WebhookModuleData(
-                        Namespace: @namespace,
-                        Name: name,
-                        Provider: provider,
-                        Version: version,
-                        Description: description,
-                        Source: $"{baseUrl}/{@namespace}/{name}/{provider}",
-                        DownloadUrl: $"/v1/modules/{@namespace}/{name}/{provider}/{version}/download"));
+        var baseUrl = configuration["BaseUrl"]?.TrimEnd('/') ?? string.Empty;
+        var action = payload.EventType.Contains('.', StringComparison.Ordinal) ? payload.EventType[(payload.EventType.LastIndexOf('.') + 1)..] : payload.EventType;
 
-                var client = httpClientFactory.CreateClient("WebhookDelivery");
+        var eventData = new WebhookEventData(payload.Id, payload.EventType, action, DateTime.UtcNow.ToString("o"),
+            new WebhookModuleData(payload.Namespace, payload.Name, payload.Provider, payload.Version, payload.Description,
+                $"{baseUrl}/{payload.Namespace}/{payload.Name}/{payload.Provider}",
+                $"/v1/modules/{payload.Namespace}/{payload.Name}/{payload.Provider}/{payload.Version}/download"));
 
-                var deliveryTasks = webhooks.Select(async webhook =>
-                {
-                    try
-                    {
-                        var formatter = GetFormatter(webhook.Format);
-                        var payload = formatter.FormatPayload(eventData, webhook.Template);
-                        await DeliverAsync(client, webhook.Url, webhook.Secret, payload, eventData.Id, eventType);
-                    }
-                    catch (Exception ex)
-                    {
-                        RegistryLog.Error(logger, ex, "Failed to deliver webhook {WebhookId} to {Url}", webhook.Id, webhook.Url);
-                    }
-                });
-                await Task.WhenAll(deliveryTasks);
-            }
-            catch (Exception ex)
-            {
-                RegistryLog.Error(logger, ex, "Failed to fire webhook event {EventType}", eventType);
-            }
-        });
+        var client = httpClientFactory.CreateClient("WebhookDelivery");
+        foreach (var webhook in webhooks)
+        {
+            var formatter = GetFormatter(webhook.Format);
+            var body = formatter.FormatPayload(eventData, webhook.Template);
+            await DeliverAsync(client, webhook.Url, webhook.Secret, body, eventData.Id, payload.EventType, cancellationToken);
+        }
     }
 
     public async Task<(bool Success, string? Error)> SendTestAsync(Webhook webhook)
@@ -107,9 +97,9 @@ public class WebhookDispatcher(
     private static IWebhookFormatter GetFormatter(string format) =>
         Formatters.GetValueOrDefault(format, Formatters["generic"]);
 
-    private async Task DeliverAsync(HttpClient client, string url, string? secret, string payload, string webhookId, string eventType)
+    private async Task DeliverAsync(HttpClient client, string url, string? secret, string payload, string webhookId, string eventType, CancellationToken cancellationToken = default)
     {
-        var validatedEndpoint = await webhookUrlValidator.ValidateOutboundWebhookUrlAsync(url, CancellationToken.None);
+        var validatedEndpoint = await webhookUrlValidator.ValidateOutboundWebhookUrlAsync(url, cancellationToken);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, validatedEndpoint.Uri)
         {
@@ -126,7 +116,7 @@ public class WebhookDispatcher(
             request.Headers.Add("X-Signature-256", $"sha256={signature}");
         }
 
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -138,3 +128,5 @@ public class WebhookDispatcher(
         return Convert.ToHexStringLower(hash);
     }
 }
+
+public sealed record WebhookOutboxPayload(string Id, string EventType, string Namespace, string Name, string Provider, string Version, string? Description);

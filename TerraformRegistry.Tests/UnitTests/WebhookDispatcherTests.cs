@@ -92,6 +92,7 @@ public class WebhookDispatcherTests
 
         return new WebhookDispatcher(
             webhookService.Object,
+            Mock.Of<IOutboxEventRepository>(),
             factory,
             configuration,
             validator,
