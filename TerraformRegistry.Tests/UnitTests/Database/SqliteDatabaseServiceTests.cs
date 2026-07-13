@@ -173,6 +173,40 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListModulesPagesCoordinatesWhileReturningAllVersionsForThePage()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(name: "alpha", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "alpha", version: "2.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "bravo", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "charlie", version: "1.0.0"));
+
+        var page = await svc.ListModulesAsync(new ModuleSearchRequest { Limit = 1, Offset = 1 });
+
+        var item = Assert.Single(page.Modules);
+        Assert.Equal("bravo", item.Name);
+        Assert.Equal("3", page.Meta["total"]);
+        Assert.Equal("1", page.Meta["current_offset"]);
+        Assert.Equal("1.0.0", item.Version);
+    }
+
+    [Fact]
+    public async Task ListModulesTreatsSearchWildcardsAsLiteralText()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+        await svc.AddModuleAsync(MakeModule(name: "literal%module", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "ordinary-module", version: "1.0.0"));
+
+        var result = await svc.ListModulesAsync(new ModuleSearchRequest { Q = "%", Limit = 50 });
+
+        var item = Assert.Single(result.Modules);
+        Assert.Equal("literal%module", item.Name);
+    }
+
+    [Fact]
     public async Task GetModuleVersionsReturnsSemVerDescendingVersionList()
     {
         var svc = CreateService(_connectionString);

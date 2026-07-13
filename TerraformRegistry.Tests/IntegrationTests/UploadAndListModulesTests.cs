@@ -64,4 +64,29 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
 
         Assert.Equal("1.10.0", module.GetProperty("version").GetString());
     }
+
+    [Fact]
+    public async Task ListModulesPagesCoordinatesAndKeepsVersionsForTheSelectedCoordinate()
+    {
+        var client = Factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        foreach (var (name, version) in new[]
+                 {
+                     ("alpha", "1.0.0"), ("alpha", "2.0.0"), ("bravo", "1.0.0"), ("charlie", "1.0.0")
+                 })
+        {
+            using var content = CreateModuleUploadContent();
+            var response = await client.PostAsync($"/v1/modules/test-ns/{name}/test-provider/{version}", content);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+
+        var responsePage = await client.GetAsync("/v1/modules?namespace=test-ns&provider=test-provider&offset=1&limit=1");
+        Assert.Equal(HttpStatusCode.OK, responsePage.StatusCode);
+        using var json = JsonDocument.Parse(await responsePage.Content.ReadAsStringAsync());
+        var module = Assert.Single(json.RootElement.GetProperty("modules").EnumerateArray());
+
+        Assert.Equal("bravo", module.GetProperty("name").GetString());
+        Assert.Equal("3", json.RootElement.GetProperty("meta").GetProperty("total").GetString());
+    }
 }
