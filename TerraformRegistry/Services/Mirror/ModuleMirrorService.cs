@@ -19,7 +19,8 @@ public sealed class ModuleMirrorService(
     MirrorHttpClient mirrorHttpClient,
     IModulePublishCoordinator publishCoordinator,
     ILogger<ModuleMirrorService> logger,
-    MirrorDownloadAdmission? downloadAdmission = null) : IModuleMirrorService
+    MirrorDownloadAdmission? downloadAdmission = null,
+    MirrorCacheBudgetService? cacheBudget = null) : IModuleMirrorService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan LeaseReleaseTimeout = TimeSpan.FromSeconds(5);
@@ -372,6 +373,11 @@ public sealed class ModuleMirrorService(
                 cancellationToken)).Content;
 
             var sizeBytes = archive.CanSeek ? archive.Length : (long?)null;
+            if (cacheBudget is not null && sizeBytes is { } cacheBytes &&
+                !await cacheBudget.EnsureCapacityAsync(cacheBytes, config.Limits.MaxTotalCachedBytes, cancellationToken))
+            {
+                throw new InvalidOperationException("Mirror cache budget cannot accommodate the module package.");
+            }
             var metadata = CreateMetadata(hostname, source);
             var published = await publishCoordinator.PublishAsync(new ModulePublishRequest
             {

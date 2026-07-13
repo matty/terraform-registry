@@ -19,7 +19,8 @@ public sealed class ProviderMirrorService(
     IHttpClientFactory httpClientFactory,
     MirrorPackageUrlSigner signer,
     ILogger<ProviderMirrorService> logger,
-    MirrorDownloadAdmission? downloadAdmission = null) : IProviderMirrorService
+    MirrorDownloadAdmission? downloadAdmission = null,
+    MirrorCacheBudgetService? cacheBudget = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -399,6 +400,12 @@ public sealed class ProviderMirrorService(
             var packagePath = PackageStoragePath(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, metadata.Filename);
             var shasumsPath = ShasumsStoragePath(hostname, providerNamespace, type, version.Version);
             var signaturePath = $"{shasumsPath}.sig";
+            var cacheBytes = checked(packageArtifact.Length + shasumsArtifact.Length + signatureArtifact.Length);
+            if (cacheBudget is not null &&
+                !await cacheBudget.EnsureCapacityAsync(cacheBytes, config.Limits.MaxTotalCachedBytes, cancellationToken))
+            {
+                throw new InvalidOperationException("Mirror cache budget cannot accommodate the provider package.");
+            }
 
             packageArtifact.Content.Position = 0;
             var packageSave = await storage.SaveAsync(packagePath, packageArtifact.Content, cancellationToken);
@@ -420,7 +427,7 @@ public sealed class ProviderMirrorService(
                 Filename = metadata.Filename,
                 PackageStoragePath = packageSave.StoragePath,
                 SizeBytes = packageSave.SizeBytes,
-                CacheSizeBytes = checked(packageSave.SizeBytes + shasumsSave.SizeBytes + signatureSave.SizeBytes),
+                CacheSizeBytes = cacheBytes,
                 ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
                 HashesJson = JsonSerializer.Serialize(hashes, JsonOptions),
                 Shasum = packageSha,
