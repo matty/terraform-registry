@@ -1,5 +1,6 @@
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace TerraformRegistry.Startup;
 
@@ -87,7 +88,8 @@ internal static class VcsEndpointMappingExtensions
     {
         app.MapPost("/api/vcs/github/webhook", (IGitHubVcsService githubService, HttpContext context) =>
                 VcsHandlers.HandleGitHubWebhook(githubService, context))
-            .WithTags("VCS");
+            .WithTags("VCS")
+            .RequireRateLimiting(RateLimitPolicyNames.WebhookIngress);
 
         return app;
     }
