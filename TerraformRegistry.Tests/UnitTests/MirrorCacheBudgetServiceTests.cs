@@ -61,6 +61,27 @@ public sealed class MirrorCacheBudgetServiceTests
         storage.Verify(x => x.DeleteAsync("idle", It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task PurgeProviderRefusesAnActivePackage()
+    {
+        var package = ProviderPackage("active", 6, DateTime.UtcNow);
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.GetProviderPackageAsync(
+                package.Hostname, package.Namespace, package.Type, package.Version, package.Os, package.Arch))
+            .ReturnsAsync(package);
+        var storage = new Mock<IProviderArtifactStorage>();
+        var usage = new MirrorCacheUsage();
+        using var lease = usage.Acquire("provider:registry.example.com:hashicorp:aws:1.0.0:linux:amd64");
+        var service = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(), storage.Object,
+            Mock.Of<IModuleService>(), usage);
+
+        var result = await service.PurgeProviderAsync(package.Hostname, package.Namespace, package.Type, package.Version,
+            package.Os, package.Arch, CancellationToken.None);
+
+        Assert.Equal(MirrorCachePurgeResult.InUse, result);
+        storage.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static MirrorProviderPackage ProviderPackage(string path, long size, DateTime updatedAt) => new()
     {
         Hostname = "registry.example.com",
