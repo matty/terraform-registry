@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TerraformRegistry.API.Interfaces;
@@ -64,5 +65,38 @@ public class StorageInitializationHostedServiceTests
         await hostedService.StopAsync(CancellationToken.None);
 
         moduleService.Verify(service => service.ReconcileStorageAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReconciliationDoesNotRetryOrLogCancellationExceptions()
+    {
+        var moduleService = new Mock<IModuleService>();
+        var reconciliationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var throwCancellation = new TaskCompletionSource();
+        moduleService
+            .Setup(service => service.ReconcileStorageAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                reconciliationStarted.SetResult();
+                await throwCancellation.Task;
+            });
+        var logger = new Mock<ILogger<StorageReconciliationHostedService>>();
+        logger.Setup(entry => entry.IsEnabled(LogLevel.Error)).Returns(true);
+        var hostedService = new StorageReconciliationHostedService(moduleService.Object, logger.Object);
+
+        await hostedService.StartAsync(CancellationToken.None);
+        await reconciliationStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        throwCancellation.SetException(new OperationCanceledException());
+        await hostedService.StopAsync(CancellationToken.None);
+
+        moduleService.Verify(service => service.ReconcileStorageAsync(It.IsAny<CancellationToken>()), Times.Once);
+        logger.Verify(
+            entry => entry.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Never);
     }
 }
