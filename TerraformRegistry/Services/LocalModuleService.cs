@@ -258,7 +258,7 @@ public class LocalModuleService : ModuleService
         filePath = string.Empty;
         if (!_tokens.TryValidate(token, "module", out var path)) return false;
         if (Path.IsPathRooted(path)) return false;
-        var candidate = Path.GetFullPath(Path.Combine(_moduleStorageRoot, path));
+        var candidate = Path.GetFullPath(Path.Join(_moduleStorageRoot, path));
         if (!IsInsideStorageRoot(candidate)) return false;
         filePath = candidate;
         return true;

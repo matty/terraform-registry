@@ -10,7 +10,7 @@ public sealed class ArchiveIngestionValidator(
     {
         options.Validate();
         Directory.CreateDirectory(options.TempRoot);
-        var path = Path.Combine(options.TempRoot, $".{Guid.NewGuid():N}.upload");
+        var path = Path.Join(options.TempRoot, $".{Guid.NewGuid():N}.upload");
 
         try
         {
@@ -41,6 +41,10 @@ public sealed class ArchiveIngestionValidator(
                              BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan))
             await using (var workspace = await workspaceFactory.CreateAsync(validationInput, cancellationToken))
             {
+                if (!Directory.Exists(workspace.RootPath))
+                {
+                    throw new InvalidOperationException("Archive validation workspace was not created.");
+                }
             }
 
             return new ValidatedArchive(path);

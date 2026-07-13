@@ -23,7 +23,7 @@ public sealed class NamespaceAuthorizationServiceTests
     [Fact]
     public async Task SqliteMaintainerAssignmentSurvivesAStoreRestart()
     {
-        var database = Path.Combine(Path.GetTempPath(), $"namespace-maintainer-{Guid.NewGuid():N}.db");
+        var database = Path.Join(Path.GetTempPath(), $"namespace-maintainer-{Guid.NewGuid():N}.db");
         try
         {
             using (var connection = new SqliteConnection($"Data Source={database}"))
