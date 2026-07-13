@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics.Metrics;
 using Konscious.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -75,13 +76,41 @@ public sealed class ApiKeyServiceSecurityTests
             VerificationPermitLimit = 1,
             MaxConcurrentVerificationsPerPartition = 1
         };
-        using var gate = new ApiKeyVerificationGate(options);
+        var measurements = new List<(string Policy, string Partition)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == "TerraformRegistry.RateLimiting" &&
+                instrument.Name == "terraform_registry.rate_limit.rejections")
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            string? policy = null;
+            string? partition = null;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "policy") policy = tag.Value as string;
+                if (tag.Key == "partition") partition = tag.Value as string;
+            }
+
+            if (policy is not null && partition is not null)
+            {
+                measurements.Add((policy, partition));
+            }
+        });
+        listener.Start();
+        using var metrics = new RegistryRateLimitMetrics();
+        using var gate = new ApiKeyVerificationGate(options, metrics);
 
         using var first = gate.TryEnterPrefix("prefix-1");
         var second = gate.TryEnterPrefix("prefix-1");
 
         Assert.NotNull(first);
         Assert.Null(second);
+        Assert.Contains((RateLimitPolicyNames.ApiKeyVerification, "prefix"), measurements);
     }
 
     [Fact]
@@ -96,7 +125,7 @@ public sealed class ApiKeyServiceSecurityTests
         var database = new Mock<IDatabaseService>();
         database.Setup(x => x.AddApiKeyAsync(It.IsAny<ApiKey>())).Returns(Task.CompletedTask);
         var service = new ApiKeyService(database.Object, Mock.Of<ILogger<ApiKeyService>>(), new UserAdmissionOptions(),
-            security, new ApiKeyVerificationGate(security));
+            security, new ApiKeyVerificationGate(security, new RegistryRateLimitMetrics()));
         var (token, key) = await service.CreateApiKeyAsync("user-1", "test");
         database.Setup(x => x.GetApiKeysByPrefixAsync(key.Prefix)).ReturnsAsync([key]);
         database.Setup(x => x.GetUserByIdAsync(key.UserId)).ReturnsAsync(new User { Id = key.UserId, IsActive = true });
@@ -113,7 +142,7 @@ public sealed class ApiKeyServiceSecurityTests
     {
         var security = new ApiKeySecurityOptions { DigestKey = "test-api-key-digest-key-at-least-thirty-two-characters" };
         return new ApiKeyService(database.Object, Mock.Of<ILogger<ApiKeyService>>(), new UserAdmissionOptions(), security,
-            new ApiKeyVerificationGate(security));
+            new ApiKeyVerificationGate(security, new RegistryRateLimitMetrics()));
     }
 
     private static string CreateLegacyHash(string token)
