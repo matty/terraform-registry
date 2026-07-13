@@ -375,6 +375,7 @@ internal static class ServiceRegistrationExtensions
                 _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
             };
         });
+        services.AddSingleton<IOutboxDeliveryHandler, AuditOutboxDeliveryHandler>();
 
         return services;
     }

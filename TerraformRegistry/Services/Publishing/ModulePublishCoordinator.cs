@@ -67,7 +67,7 @@ public sealed class ModulePublishCoordinator(
                 request.Version);
         }
 
-        _ = auditService.LogAsync(
+        await auditService.LogAsync(
             request.ActorUserId,
             request.AuditAction,
             "module",

@@ -10,6 +10,6 @@ public static class AuditExtensions
     {
         var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var ip = context.Connection.RemoteIpAddress?.ToString();
-        _ = auditService.LogAsync(userId, action, resourceType, resourceId, details, ip);
+        auditService.LogAsync(userId, action, resourceType, resourceId, details, ip).GetAwaiter().GetResult();
     }
 }
