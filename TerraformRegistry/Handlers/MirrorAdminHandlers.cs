@@ -41,6 +41,38 @@ public static class MirrorAdminHandlers
         return Results.NoContent();
     }
 
+    public static async Task<IResult> PurgeModule(
+        MirrorCacheBudgetService cacheBudget,
+        IAuditService auditService,
+        HttpContext context,
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version)
+    {
+        if (!Has(context, Permissions.MirrorManage)) return Forbidden();
+
+        var result = await cacheBudget.PurgeModuleAsync(
+            hostname, moduleNamespace, name, provider, version, context.RequestAborted);
+        if (result == MirrorCachePurgeResult.InUse)
+        {
+            return Results.Conflict(new { error = "The mirror cache entry is currently in use." });
+        }
+        if (result == MirrorCachePurgeResult.NotFound)
+        {
+            return Results.NotFound(new { error = "Mirror cache entry not found." });
+        }
+        if (result == MirrorCachePurgeResult.Failed)
+        {
+            return Results.Problem("The mirror cache entry could not be purged.", statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        context.FireAuditLog(auditService, "mirror.module_purged", "mirror_module",
+            $"{hostname}/{moduleNamespace}/{name}/{provider}/{version}");
+        return Results.NoContent();
+    }
+
     public static async Task<IResult> ListProviderCache(
         IProviderMirrorRepository providerRepository,
         HttpContext context,

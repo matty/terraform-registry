@@ -77,6 +77,31 @@ public sealed class MirrorCacheBudgetService(
             : MirrorCachePurgeResult.Failed;
     }
 
+    public async Task<MirrorCachePurgeResult> PurgeModuleAsync(
+        string hostname,
+        string moduleNamespace,
+        string name,
+        string provider,
+        string version,
+        CancellationToken cancellationToken)
+    {
+        var package = await moduleRepository.GetModulePackageAsync(
+            hostname, moduleNamespace, name, provider, version);
+        if (package is null || string.IsNullOrWhiteSpace(package.PackageStoragePath))
+        {
+            return MirrorCachePurgeResult.NotFound;
+        }
+
+        if (cacheUsage.IsInUse(ModuleKey(package)))
+        {
+            return MirrorCachePurgeResult.InUse;
+        }
+
+        return await EvictAsync(new EvictionCandidate(null, package), cancellationToken)
+            ? MirrorCachePurgeResult.Purged
+            : MirrorCachePurgeResult.Failed;
+    }
+
     private async Task<bool> EvictAsync(EvictionCandidate candidate, CancellationToken cancellationToken)
     {
         if (candidate.Provider is { } provider)

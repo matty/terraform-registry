@@ -212,6 +212,13 @@ internal static class AdminEndpointMappingExtensions
                     MirrorAdminHandlers.ListModuleCache(moduleRepository, context, q, state, limit, offset))
             .WithTags("Mirror");
 
+        app.MapDelete("/api/admin/mirror/modules/{hostname}/{namespace}/{name}/{provider}/{version}",
+                (string hostname, string @namespace, string name, string provider, string version,
+                        MirrorCacheBudgetService cacheBudget, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.PurgeModule(cacheBudget, auditService, context, hostname, @namespace, name,
+                        provider, version))
+            .WithTags("Mirror");
+
         app.MapGet("/api/admin/mirror/leases",
                 (IMirrorLeaseRepository leaseRepository, HttpContext context, int limit = 50, int offset = 0) =>
                     MirrorAdminHandlers.ListLeases(leaseRepository, context, limit, offset))

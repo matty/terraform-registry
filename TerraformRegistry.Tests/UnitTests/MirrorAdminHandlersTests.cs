@@ -147,6 +147,32 @@ public sealed class MirrorAdminHandlersTests
             "registry.example.com/hashicorp/aws/1.0.0/linux/amd64", null, null), Times.Once);
     }
 
+    [Fact]
+    public async Task PurgeModuleReturnsConflictForAnInUseEntry()
+    {
+        var context = CreateContext([Permissions.MirrorManage]);
+        var package = new MirrorModulePackage
+        {
+            Hostname = "registry.example.com", Namespace = "terraform-aws-modules", Name = "vpc", Provider = "aws",
+            Version = "1.0.0", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/vpc"
+        };
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.GetModulePackageAsync(package.Hostname, package.Namespace, package.Name, package.Provider,
+                package.Version))
+            .ReturnsAsync(package);
+        var usage = new MirrorCacheUsage();
+        using var lease = usage.Acquire("module:registry.example.com:terraform-aws-modules:vpc:aws:1.0.0");
+        var budget = new MirrorCacheBudgetService(Mock.Of<IProviderMirrorRepository>(), modules.Object,
+            Mock.Of<IProviderArtifactStorage>(), Mock.Of<IModuleService>(), usage);
+        var audit = new Mock<IAuditService>();
+
+        var result = await MirrorAdminHandlers.PurgeModule(budget, audit.Object, context,
+            package.Hostname, package.Namespace, package.Name, package.Provider, package.Version);
+
+        Assert.Equal(StatusCodes.Status409Conflict, ((IStatusCodeHttpResult)result).StatusCode);
+        audit.VerifyNoOtherCalls();
+    }
+
     private static DefaultHttpContext CreateContext(string[] permissions)
     {
         var context = new DefaultHttpContext();
