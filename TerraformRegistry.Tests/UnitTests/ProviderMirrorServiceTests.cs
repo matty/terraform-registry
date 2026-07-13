@@ -68,7 +68,7 @@ public sealed class ProviderMirrorServiceTests
         var http = new RecordingHttpMessageHandler();
         var repo = new Mock<IProviderMirrorRepository>();
         repo.SetupSequence(x => x.GetProviderIndexAsync("registry.terraform.io", "hashicorp", "missing"))
-            .ReturnsAsync((MirrorProviderIndex?)null)
+            .ReturnsAsync(default(MirrorProviderIndex))
             .ReturnsAsync(new MirrorProviderIndex
             {
                 Hostname = "registry.terraform.io",

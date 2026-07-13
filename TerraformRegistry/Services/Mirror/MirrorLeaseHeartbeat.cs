@@ -64,7 +64,17 @@ public sealed class MirrorLeaseHeartbeat : IAsyncDisposable
                 {
                     return;
                 }
-                catch
+                catch (TimeoutException)
+                {
+                    Interlocked.Exchange(ref _ownershipLost, 1);
+                    return;
+                }
+                catch (System.Data.Common.DbException)
+                {
+                    Interlocked.Exchange(ref _ownershipLost, 1);
+                    return;
+                }
+                catch (IOException)
                 {
                     Interlocked.Exchange(ref _ownershipLost, 1);
                     return;
