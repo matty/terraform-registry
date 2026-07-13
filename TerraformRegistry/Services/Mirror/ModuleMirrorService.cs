@@ -266,9 +266,13 @@ public sealed class ModuleMirrorService(
         var localPath = await moduleService.GetModuleDownloadPathAsync(moduleNamespace, name, provider, version);
         if (!string.IsNullOrWhiteSpace(localPath))
         {
-            return await IsLocalMirrorArtifactAsync(hostname, moduleNamespace, name, provider, version, cancellationToken)
-                ? AppendPackageMetadataHints(localPath, DeserializePackageMetadata(cached.MetadataJson))
-                : localPath;
+            if (await IsLocalMirrorArtifactAsync(hostname, moduleNamespace, name, provider, version, cancellationToken))
+            {
+                RegisterModuleTokenPath(localPath, hostname, moduleNamespace, name, provider, version);
+                return AppendPackageMetadataHints(localPath, DeserializePackageMetadata(cached.MetadataJson));
+            }
+
+            return localPath;
         }
 
         await repository.MarkModulePackageFailedAsync(
@@ -291,11 +295,15 @@ public sealed class ModuleMirrorService(
         CancellationToken cancellationToken)
     {
         var cached = await repository.GetModulePackageAsync(hostname, moduleNamespace, name, provider, version);
-        return cached is not null &&
-               string.Equals(cached.State, "ready", StringComparison.OrdinalIgnoreCase) &&
-               await IsLocalMirrorArtifactAsync(hostname, moduleNamespace, name, provider, version, cancellationToken)
-            ? AppendPackageMetadataHints(localDownloadPath, DeserializePackageMetadata(cached.MetadataJson))
-            : localDownloadPath;
+        if (cached is not null &&
+            string.Equals(cached.State, "ready", StringComparison.OrdinalIgnoreCase) &&
+            await IsLocalMirrorArtifactAsync(hostname, moduleNamespace, name, provider, version, cancellationToken))
+        {
+            RegisterModuleTokenPath(localDownloadPath, hostname, moduleNamespace, name, provider, version);
+            return AppendPackageMetadataHints(localDownloadPath, DeserializePackageMetadata(cached.MetadataJson));
+        }
+
+        return localDownloadPath;
     }
 
     private async Task<bool> IsLocalMirrorArtifactAsync(
