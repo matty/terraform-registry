@@ -121,6 +121,21 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         if (await attemptCommand.ExecuteNonQueryAsync() != 1)
             return false;
 
+        await using var jobCommand = new NpgsqlCommand(
+            """
+            UPDATE module_extraction_jobs
+            SET state = @pending, updated_at = @updatedAt
+            WHERE publication_attempt_id = @attemptId AND state = @staged
+            """,
+            connection,
+            transaction);
+        jobCommand.Parameters.AddWithValue("@pending", ModuleExtractionJobState.Pending);
+        jobCommand.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
+        jobCommand.Parameters.AddWithValue("@attemptId", attempt.Id);
+        jobCommand.Parameters.AddWithValue("@staged", ModuleExtractionJobState.Staged);
+        if (await jobCommand.ExecuteNonQueryAsync() != 1)
+            return false;
+
         await transaction.CommitAsync();
         return true;
     }

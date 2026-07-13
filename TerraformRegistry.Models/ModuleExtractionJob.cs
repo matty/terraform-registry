@@ -2,6 +2,7 @@ namespace TerraformRegistry.Models;
 
 public static class ModuleExtractionJobState
 {
+    public const string Staged = "staged";
     public const string Pending = "pending";
     public const string Processing = "processing";
     public const string Retry = "retry";
