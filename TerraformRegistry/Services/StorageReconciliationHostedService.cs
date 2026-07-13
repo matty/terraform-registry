@@ -34,7 +34,7 @@ public sealed class StorageReconciliationHostedService : BackgroundService
             {
                 return;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 RegistryLog.Error(_logger, ex, "Storage reconciliation failed; retrying after {RetryDelay}.", RetryDelay);
                 await Task.Delay(RetryDelay, stoppingToken);
