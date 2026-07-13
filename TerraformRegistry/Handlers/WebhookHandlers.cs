@@ -45,7 +45,7 @@ public static class WebhookHandlers
             return Results.BadRequest(new { error = validationError });
 
         var webhook = await webhookService.CreateWebhookAsync(userId, body.Url, body.Events, body.Secret, format, body.Template);
-        context.FireAuditLog(auditService, "webhook.created", "webhook", webhook.Id.ToString(), new { url = body.Url, events = body.Events });
+        await context.FireAuditLogAsync(auditService, "webhook.created", "webhook", webhook.Id.ToString(), new { url = body.Url, events = body.Events });
 
         return Results.Created($"/api/webhooks/{webhook.Id}", webhook);
     }
@@ -86,7 +86,7 @@ public static class WebhookHandlers
         var updated = await webhookService.UpdateWebhookAsync(id, userId, body?.Url, body?.Events, body?.Secret, body?.IsActive, body?.Format, body?.Template);
         if (updated == null) return Results.NotFound(new { error = "Webhook not found or access denied" });
 
-        context.FireAuditLog(auditService, "webhook.updated", "webhook", id.ToString());
+        await context.FireAuditLogAsync(auditService, "webhook.updated", "webhook", id.ToString());
 
         return Results.Ok(updated);
     }
@@ -101,7 +101,7 @@ public static class WebhookHandlers
         var result = await webhookService.DeleteWebhookAsync(id, userId);
         if (!result) return Results.NotFound(new { error = "Webhook not found or access denied" });
 
-        context.FireAuditLog(auditService, "webhook.deleted", "webhook", id.ToString());
+        await context.FireAuditLogAsync(auditService, "webhook.deleted", "webhook", id.ToString());
 
         return Results.NoContent();
     }

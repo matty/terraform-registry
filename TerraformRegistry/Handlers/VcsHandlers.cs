@@ -70,7 +70,7 @@ public static class VcsHandlers
 
         source = await vcsService.GetAsync(source.Id) ?? source;
 
-        context.FireAuditLog(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName, connectionId = body.ConnectionId, body.SyncExistingTags });
+        await context.FireAuditLogAsync(auditService, "vcs.created", "vcs_source", source.Id.ToString(), new { @namespace = body.Namespace, name = body.Name, provider = body.Provider, repoOwner = body.RepoOwner, repoName = body.RepoName, connectionId = body.ConnectionId, body.SyncExistingTags });
 
         return Results.Created($"/api/vcs/sources/{source.Id}", new
         {
@@ -119,7 +119,7 @@ public static class VcsHandlers
         var updated = await vcsService.UpdateVcsSourceAsync(id, userId, body?.RepoOwner, body?.RepoName, body?.ConnectionId, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS source not found or access denied" });
 
-        context.FireAuditLog(auditService, "vcs.updated", "vcs_source", id.ToString());
+        await context.FireAuditLogAsync(auditService, "vcs.updated", "vcs_source", id.ToString());
 
         return Results.Ok(updated);
     }
@@ -134,7 +134,7 @@ public static class VcsHandlers
         var result = await vcsService.DeleteVcsSourceAsync(id, userId);
         if (!result) return Results.NotFound(new { error = "VCS source not found or access denied" });
 
-        context.FireAuditLog(auditService, "vcs.deleted", "vcs_source", id.ToString());
+        await context.FireAuditLogAsync(auditService, "vcs.deleted", "vcs_source", id.ToString());
 
         return Results.NoContent();
     }
@@ -225,7 +225,7 @@ public static class VcsHandlers
         var connection = await connectionService.CreateConnectionAsync(
             userId, body.Label, body.Provider ?? "github", patEncrypted, body.DefaultOrg, webhookSecret);
 
-        context.FireAuditLog(auditService, "vcs_connection.created", "vcs_connection", connection.Id.ToString(), new { label = body.Label });
+        await context.FireAuditLogAsync(auditService, "vcs_connection.created", "vcs_connection", connection.Id.ToString(), new { label = body.Label });
 
         return Results.Created($"/api/admin/vcs-connections/{connection.Id}", new
         {
@@ -257,7 +257,7 @@ public static class VcsHandlers
         var updated = await connectionService.UpdateConnectionAsync(id, body?.Label, patEncrypted, body?.DefaultOrg, body?.IsActive);
         if (updated == null) return Results.NotFound(new { error = "VCS connection not found" });
 
-        context.FireAuditLog(auditService, "vcs_connection.updated", "vcs_connection", id.ToString());
+        await context.FireAuditLogAsync(auditService, "vcs_connection.updated", "vcs_connection", id.ToString());
         return Results.Ok(updated);
     }
 
@@ -269,7 +269,7 @@ public static class VcsHandlers
         var result = await connectionService.DeleteConnectionAsync(id);
         if (!result) return Results.BadRequest(new { error = "Cannot delete — connection is referenced by active VCS sources, or not found" });
 
-        context.FireAuditLog(auditService, "vcs_connection.deleted", "vcs_connection", id.ToString());
+        await context.FireAuditLogAsync(auditService, "vcs_connection.deleted", "vcs_connection", id.ToString());
         return Results.NoContent();
     }
 

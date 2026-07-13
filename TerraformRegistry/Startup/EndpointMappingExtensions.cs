@@ -100,8 +100,8 @@ internal static class EndpointMappingExtensions
             .WithTags("Authentication")
             .WithDescription("Checks if user has a valid session");
 
-        app.MapGet("/api/auth/terraform/authorize", (HttpContext context) =>
-                AuthHandlers.BeginTerraformAuthorization(context))
+        app.MapGet("/api/auth/terraform/authorize",
+                (Func<HttpContext, Task<IResult>>)AuthHandlers.BeginTerraformAuthorization)
             .WithTags("Authentication")
             .WithDescription("Begins Terraform CLI OAuth authorization flow");
 

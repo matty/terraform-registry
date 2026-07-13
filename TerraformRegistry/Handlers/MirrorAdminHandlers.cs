@@ -36,7 +36,7 @@ public static class MirrorAdminHandlers
             return Results.Problem("The mirror cache entry could not be purged.", statusCode: StatusCodes.Status502BadGateway);
         }
 
-        context.FireAuditLog(auditService, "mirror.provider_purged", "mirror_provider",
+        await context.FireAuditLogAsync(auditService, "mirror.provider_purged", "mirror_provider",
             $"{hostname}/{providerNamespace}/{type}/{version}/{os}/{arch}");
         return Results.NoContent();
     }
@@ -68,7 +68,7 @@ public static class MirrorAdminHandlers
             return Results.Problem("The mirror cache entry could not be purged.", statusCode: StatusCodes.Status502BadGateway);
         }
 
-        context.FireAuditLog(auditService, "mirror.module_purged", "mirror_module",
+        await context.FireAuditLogAsync(auditService, "mirror.module_purged", "mirror_module",
             $"{hostname}/{moduleNamespace}/{name}/{provider}/{version}");
         return Results.NoContent();
     }
@@ -132,7 +132,7 @@ public static class MirrorAdminHandlers
 
         var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var response = await configService.UpdateConfigAsync(request, actor, context.RequestAborted);
-        context.FireAuditLog(auditService, "mirror.config_updated", "mirror", "config", new
+        await context.FireAuditLogAsync(auditService, "mirror.config_updated", "mirror", "config", new
         {
             request.Enabled,
             ProvidersEnabled = request.Providers.Enabled,

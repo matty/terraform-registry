@@ -389,7 +389,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
         await webhookDispatcher.FireEventAsync("module.deleted", @namespace, name, provider, version, null, context.RequestAborted);
-        context.FireAuditLog(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await context.FireAuditLogAsync(auditService, "module.deleted", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -429,7 +429,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         await webhookDispatcher.FireEventAsync("module.restored", @namespace, name, provider, version, null, context.RequestAborted);
-        context.FireAuditLog(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await context.FireAuditLogAsync(auditService, "module.restored", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -469,7 +469,7 @@ public static class ModuleHandlers
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         await webhookDispatcher.FireEventAsync("module.purged", @namespace, name, provider, version, null, context.RequestAborted);
-        context.FireAuditLog(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
+        await context.FireAuditLogAsync(auditService, "module.purged", "module", $"{@namespace}/{name}/{provider}/{version}", new { @namespace, name, provider, version });
 
         return NoContent();
     }
@@ -536,7 +536,7 @@ public static class ModuleHandlers
             var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
             if (!result) return ErrorResponseExtensions.NotFound("Module not found");
 
-            context.FireAuditLog(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
+            await context.FireAuditLogAsync(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
 
             return Ok(new { description });
         }
