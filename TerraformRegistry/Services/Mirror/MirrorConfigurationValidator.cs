@@ -70,13 +70,10 @@ public static class MirrorConfigurationValidator
 
     private static bool TryGetMapping(IReadOnlyDictionary<string, string> mappings, string hostname, out string upstream)
     {
-        foreach (var mapping in mappings)
+        foreach (var mapping in mappings.Where(mapping => string.Equals(mapping.Key, hostname, StringComparison.OrdinalIgnoreCase)))
         {
-            if (string.Equals(mapping.Key, hostname, StringComparison.OrdinalIgnoreCase))
-            {
-                upstream = mapping.Value;
-                return true;
-            }
+            upstream = mapping.Value;
+            return true;
         }
 
         upstream = string.Empty;
