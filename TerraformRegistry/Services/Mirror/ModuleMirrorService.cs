@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
+using TerraformRegistry.Services;
 using TerraformRegistry.Services.Publishing;
 
 namespace TerraformRegistry.Services.Mirror;
@@ -20,12 +21,15 @@ public sealed class ModuleMirrorService(
     IModulePublishCoordinator publishCoordinator,
     ILogger<ModuleMirrorService> logger,
     MirrorDownloadAdmission? downloadAdmission = null,
-    MirrorCacheBudgetService? cacheBudget = null) : IModuleMirrorService
+    MirrorCacheBudgetService? cacheBudget = null,
+    MirrorCacheUsage? cacheUsage = null,
+    ArtifactDownloadTokenService? downloadTokens = null) : IModuleMirrorService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan LeaseReleaseTimeout = TimeSpan.FromSeconds(5);
     private const string MirrorDiscoveryHttpClientName = "TerraformRegistryMirrorDiscovery";
     private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
+    private readonly MirrorCacheUsage _cacheUsage = cacheUsage ?? new MirrorCacheUsage();
 
     public async Task<ModuleVersions> GetModuleVersionsAsync(
         string moduleNamespace,
@@ -432,6 +436,7 @@ public sealed class ModuleMirrorService(
                 LastSyncAt = DateTime.UtcNow
             });
 
+            RegisterModuleTokenPath(localPath, hostname, moduleNamespace, name, provider, version);
             return AppendPreservedHints(localPath, source);
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException or IOException)
@@ -659,6 +664,16 @@ public sealed class ModuleMirrorService(
         var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         return timeout;
+    }
+
+    private void RegisterModuleTokenPath(string localPath, string hostname, string moduleNamespace, string name, string provider, string version)
+    {
+        if (downloadTokens is null || !Uri.TryCreate(new Uri("http://localhost"), localPath, out var uri)) return;
+        var token = QueryHelpers.ParseQuery(uri.Query).TryGetValue("token", out var values) ? values.FirstOrDefault() : null;
+        if (token is not null && downloadTokens.TryValidate(token, "module", out var tokenPath))
+        {
+            _cacheUsage.RegisterModuleTokenPath(tokenPath, $"module:{hostname}:{moduleNamespace}:{name}:{provider}:{version}");
+        }
     }
 
     private static string AppendPreservedHints(string localPath, ModuleArchiveSource source)

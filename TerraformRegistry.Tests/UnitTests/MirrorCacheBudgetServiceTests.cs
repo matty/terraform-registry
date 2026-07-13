@@ -24,7 +24,7 @@ public sealed class MirrorCacheBudgetServiceTests
         var storage = new Mock<IProviderArtifactStorage>();
         storage.Setup(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var modules = new Mock<IModuleService>();
-        var service = new MirrorCacheBudgetService(providerRepository.Object, moduleRepository.Object, storage.Object, modules.Object);
+        var service = new MirrorCacheBudgetService(providerRepository.Object, moduleRepository.Object, storage.Object, modules.Object, new MirrorCacheUsage());
 
         var result = await service.EnsureCapacityAsync(5, 10, CancellationToken.None);
 

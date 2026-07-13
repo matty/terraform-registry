@@ -432,6 +432,7 @@ internal static class ServiceRegistrationExtensions
     {
         services.AddSingleton<IMirrorConfigService, MirrorConfigService>();
         services.AddSingleton<MirrorDownloadAdmission>();
+        services.AddSingleton<MirrorCacheUsage>();
         services.AddSingleton<MirrorCacheBudgetService>();
         services.AddSingleton<IMirrorPolicyService, MirrorPolicyService>();
         services.AddSingleton<MirrorPinnedConnectionHelper>();

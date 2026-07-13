@@ -20,7 +20,8 @@ public sealed class ProviderMirrorService(
     MirrorPackageUrlSigner signer,
     ILogger<ProviderMirrorService> logger,
     MirrorDownloadAdmission? downloadAdmission = null,
-    MirrorCacheBudgetService? cacheBudget = null) : IProviderMirrorService
+    MirrorCacheBudgetService? cacheBudget = null,
+    MirrorCacheUsage? cacheUsage = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -29,6 +30,7 @@ public sealed class ProviderMirrorService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly object EmptyVersion = new();
     private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
+    private readonly MirrorCacheUsage _cacheUsage = cacheUsage ?? new MirrorCacheUsage();
 
     public async Task<ProviderMirrorIndexResponse?> GetProviderIndexAsync(
         string hostname,
@@ -169,11 +171,14 @@ public sealed class ProviderMirrorService(
             return null;
         }
 
+        var cacheLease = _cacheUsage.Acquire(MirrorCacheBudgetService.ProviderKey(package));
+
         return new ProviderMirrorPackageDownload(
             content,
             package.Filename ?? filename,
             "application/zip",
-            package.SizeBytes);
+            package.SizeBytes,
+            cacheLease);
     }
 
     private async Task<UpstreamProviderVersions?> GetProviderVersionsAsync(

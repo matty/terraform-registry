@@ -8,7 +8,8 @@ public sealed class MirrorCacheBudgetService(
     IProviderMirrorRepository providerRepository,
     IModuleMirrorRepository moduleRepository,
     IProviderArtifactStorage providerStorage,
-    IModuleService moduleService)
+    IModuleService moduleService,
+    MirrorCacheUsage cacheUsage)
 {
     private const int PageSize = 1000;
 
@@ -54,6 +55,10 @@ public sealed class MirrorCacheBudgetService(
     {
         if (candidate.Provider is { } provider)
         {
+            if (cacheUsage.IsInUse(ProviderKey(provider)))
+            {
+                return false;
+            }
             if (string.IsNullOrWhiteSpace(provider.PackageStoragePath) ||
                 !await providerStorage.DeleteAsync(provider.PackageStoragePath, cancellationToken))
             {
@@ -73,6 +78,10 @@ public sealed class MirrorCacheBudgetService(
         }
 
         var module = candidate.Module!;
+        if (cacheUsage.IsInUse(ModuleKey(module)))
+        {
+            return false;
+        }
         if (!await moduleService.PurgeModuleVersionAsync(module.Namespace, module.Name, module.Provider, module.Version))
         {
             return false;
@@ -116,6 +125,10 @@ public sealed class MirrorCacheBudgetService(
 
     private static long CacheBytes(MirrorProviderPackage package) => package.CacheSizeBytes ?? package.SizeBytes ?? 0;
     private static long CacheBytes(MirrorModulePackage package) => package.CacheSizeBytes ?? package.SizeBytes ?? 0;
+    internal static string ProviderKey(MirrorProviderPackage package) =>
+        $"provider:{package.Hostname}:{package.Namespace}:{package.Type}:{package.Version}:{package.Os}:{package.Arch}";
+    internal static string ModuleKey(MirrorModulePackage package) =>
+        $"module:{package.Hostname}:{package.Namespace}:{package.Name}:{package.Provider}:{package.Version}";
 
     private sealed class EvictionCandidate(MirrorProviderPackage? provider, MirrorModulePackage? module)
     {
