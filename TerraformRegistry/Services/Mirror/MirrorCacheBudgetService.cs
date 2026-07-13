@@ -9,7 +9,8 @@ public sealed class MirrorCacheBudgetService(
     IModuleMirrorRepository moduleRepository,
     IProviderArtifactStorage providerStorage,
     IModuleService moduleService,
-    MirrorCacheUsage cacheUsage)
+    MirrorCacheUsage cacheUsage,
+    IMirrorLeaseRepository? leaseRepository = null)
 {
     private const int PageSize = 1000;
 
@@ -67,7 +68,7 @@ public sealed class MirrorCacheBudgetService(
             return MirrorCachePurgeResult.NotFound;
         }
 
-        if (cacheUsage.IsInUse(ProviderKey(package)))
+        if (await IsInUseAsync(package, cancellationToken))
         {
             return MirrorCachePurgeResult.InUse;
         }
@@ -92,7 +93,7 @@ public sealed class MirrorCacheBudgetService(
             return MirrorCachePurgeResult.NotFound;
         }
 
-        if (cacheUsage.IsInUse(ModuleKey(package)))
+        if (await IsInUseAsync(package, cancellationToken))
         {
             return MirrorCachePurgeResult.InUse;
         }
@@ -106,7 +107,7 @@ public sealed class MirrorCacheBudgetService(
     {
         if (candidate.Provider is { } provider)
         {
-            if (cacheUsage.IsInUse(ProviderKey(provider)))
+            if (await IsInUseAsync(provider, cancellationToken))
             {
                 return false;
             }
@@ -129,7 +130,7 @@ public sealed class MirrorCacheBudgetService(
         }
 
         var module = candidate.Module!;
-        if (cacheUsage.IsInUse(ModuleKey(module)))
+        if (await IsInUseAsync(module, cancellationToken))
         {
             return false;
         }
@@ -176,10 +177,23 @@ public sealed class MirrorCacheBudgetService(
 
     private static long CacheBytes(MirrorProviderPackage package) => package.CacheSizeBytes ?? package.SizeBytes ?? 0;
     private static long CacheBytes(MirrorModulePackage package) => package.CacheSizeBytes ?? package.SizeBytes ?? 0;
+    private async Task<bool> IsInUseAsync(MirrorProviderPackage package, CancellationToken cancellationToken) =>
+        cacheUsage.IsInUse(ProviderKey(package)) || await HasActiveLeaseAsync(ProviderLeaseKey(package), cancellationToken);
+    private async Task<bool> IsInUseAsync(MirrorModulePackage package, CancellationToken cancellationToken) =>
+        cacheUsage.IsInUse(ModuleKey(package)) || await HasActiveLeaseAsync(ModuleLeaseKey(package), cancellationToken);
+    private async Task<bool> HasActiveLeaseAsync(string leaseKey, CancellationToken cancellationToken)
+    {
+        var lease = leaseRepository is null ? null : await leaseRepository.GetLeaseAsync(leaseKey, cancellationToken);
+        return lease?.ExpiresAt > DateTime.UtcNow;
+    }
     internal static string ProviderKey(MirrorProviderPackage package) =>
         $"provider:{package.Hostname}:{package.Namespace}:{package.Type}:{package.Version}:{package.Os}:{package.Arch}";
     internal static string ModuleKey(MirrorModulePackage package) =>
         $"module:{package.Hostname}:{package.Namespace}:{package.Name}:{package.Provider}:{package.Version}";
+    private static string ProviderLeaseKey(MirrorProviderPackage package) =>
+        $"provider-package:{package.Hostname}:{package.Namespace}:{package.Type}:{package.Version}:{package.Os}:{package.Arch}";
+    private static string ModuleLeaseKey(MirrorModulePackage package) =>
+        $"module-package:{package.Hostname}:{package.Namespace}:{package.Name}:{package.Provider}:{package.Version}";
 
     private sealed class EvictionCandidate(MirrorProviderPackage? provider, MirrorModulePackage? module)
     {

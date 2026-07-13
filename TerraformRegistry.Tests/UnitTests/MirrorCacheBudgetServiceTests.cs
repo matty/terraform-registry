@@ -83,12 +83,46 @@ public sealed class MirrorCacheBudgetServiceTests
     }
 
     [Fact]
+    public async Task PurgeProviderRefusesAPackageWithAnActiveDistributedLease()
+    {
+        var package = ProviderPackage("active", 6, DateTime.UtcNow);
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.GetProviderPackageAsync(
+                package.Hostname, package.Namespace, package.Type, package.Version, package.Os, package.Arch))
+            .ReturnsAsync(package);
+        var leases = new Mock<IMirrorLeaseRepository>();
+        leases.Setup(x => x.GetLeaseAsync(
+                "provider-package:registry.example.com:hashicorp:aws:1.0.0:linux:amd64", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MirrorCacheLease
+            {
+                LeaseKey = "provider-package:registry.example.com:hashicorp:aws:1.0.0:linux:amd64",
+                OperationType = "provider-package",
+                OwnerInstanceId = "other-instance",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(1)
+            });
+        var storage = new Mock<IProviderArtifactStorage>();
+        var service = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(), storage.Object,
+            Mock.Of<IModuleService>(), new MirrorCacheUsage(), leases.Object);
+
+        var result = await service.PurgeProviderAsync(package.Hostname, package.Namespace, package.Type, package.Version,
+            package.Os, package.Arch, CancellationToken.None);
+
+        Assert.Equal(MirrorCachePurgeResult.InUse, result);
+        storage.Verify(x => x.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task PurgeModuleRefusesAnActivePackage()
     {
         var package = new MirrorModulePackage
         {
-            Hostname = "registry.example.com", Namespace = "terraform-aws-modules", Name = "vpc", Provider = "aws",
-            Version = "1.0.0", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/vpc"
+            Hostname = "registry.example.com",
+            Namespace = "terraform-aws-modules",
+            Name = "vpc",
+            Provider = "aws",
+            Version = "1.0.0",
+            DownloadUrl = "https://registry.example.com/package",
+            PackageStoragePath = "cache/vpc"
         };
         var modules = new Mock<IModuleMirrorRepository>();
         modules.Setup(x => x.GetModulePackageAsync(package.Hostname, package.Namespace, package.Name, package.Provider,

@@ -101,8 +101,14 @@ public sealed class MirrorAdminHandlersTests
         providers.Setup(x => x.GetProviderPackageAsync("registry.example.com", "hashicorp", "aws", "1.0.0", "linux", "amd64"))
             .ReturnsAsync(new MirrorProviderPackage
             {
-                Hostname = "registry.example.com", Namespace = "hashicorp", Type = "aws", Version = "1.0.0",
-                Os = "linux", Arch = "amd64", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/aws"
+                Hostname = "registry.example.com",
+                Namespace = "hashicorp",
+                Type = "aws",
+                Version = "1.0.0",
+                Os = "linux",
+                Arch = "amd64",
+                DownloadUrl = "https://registry.example.com/package",
+                PackageStoragePath = "cache/aws"
             });
         var usage = new MirrorCacheUsage();
         using var lease = usage.Acquire("provider:registry.example.com:hashicorp:aws:1.0.0:linux:amd64");
@@ -123,8 +129,14 @@ public sealed class MirrorAdminHandlersTests
         var context = CreateContext([Permissions.MirrorManage]);
         var package = new MirrorProviderPackage
         {
-            Hostname = "registry.example.com", Namespace = "hashicorp", Type = "aws", Version = "1.0.0",
-            Os = "linux", Arch = "amd64", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/aws"
+            Hostname = "registry.example.com",
+            Namespace = "hashicorp",
+            Type = "aws",
+            Version = "1.0.0",
+            Os = "linux",
+            Arch = "amd64",
+            DownloadUrl = "https://registry.example.com/package",
+            PackageStoragePath = "cache/aws"
         };
         var providers = new Mock<IProviderMirrorRepository>();
         providers.Setup(x => x.GetProviderPackageAsync(package.Hostname, package.Namespace, package.Type, package.Version,
@@ -153,8 +165,13 @@ public sealed class MirrorAdminHandlersTests
         var context = CreateContext([Permissions.MirrorManage]);
         var package = new MirrorModulePackage
         {
-            Hostname = "registry.example.com", Namespace = "terraform-aws-modules", Name = "vpc", Provider = "aws",
-            Version = "1.0.0", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/vpc"
+            Hostname = "registry.example.com",
+            Namespace = "terraform-aws-modules",
+            Name = "vpc",
+            Provider = "aws",
+            Version = "1.0.0",
+            DownloadUrl = "https://registry.example.com/package",
+            PackageStoragePath = "cache/vpc"
         };
         var modules = new Mock<IModuleMirrorRepository>();
         modules.Setup(x => x.GetModulePackageAsync(package.Hostname, package.Namespace, package.Name, package.Provider,
