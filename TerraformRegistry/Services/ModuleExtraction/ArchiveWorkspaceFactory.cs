@@ -21,8 +21,8 @@ public sealed class ArchiveWorkspaceFactory : IArchiveWorkspaceFactory
 
     public async Task<ArchiveWorkspace> CreateAsync(Stream archiveStream, CancellationToken cancellationToken)
     {
-        var workRoot = Path.Combine(_options.TempRoot, Guid.NewGuid().ToString("N"));
-        var spoolPath = Path.Combine(_options.TempRoot, $".{Guid.NewGuid():N}.archive");
+        var workRoot = Path.Join(_options.TempRoot, Guid.NewGuid().ToString("N"));
+        var spoolPath = Path.Join(_options.TempRoot, $".{Guid.NewGuid():N}.archive");
         Directory.CreateDirectory(workRoot);
 
         try
@@ -209,7 +209,7 @@ public sealed class ArchiveWorkspaceFactory : IArchiveWorkspaceFactory
         }
 
         var root = Path.GetFullPath(workRoot);
-        var destination = Path.GetFullPath(Path.Combine(root, entryName));
+        var destination = Path.GetFullPath(Path.Join(root, entryName));
         if (!destination.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Archive entry path escapes the extraction root.");

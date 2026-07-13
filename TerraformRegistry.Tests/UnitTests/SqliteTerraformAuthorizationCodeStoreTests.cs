@@ -9,7 +9,7 @@ public sealed class SqliteTerraformAuthorizationCodeStoreTests
     [Fact]
     public void CodeCreatedByOneStoreInstanceIsConsumedOnceByAnother()
     {
-        var database = Path.Combine(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
+        var database = Path.Join(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
         try
         {
             CreateSchema(database);
@@ -36,7 +36,7 @@ public sealed class SqliteTerraformAuthorizationCodeStoreTests
     [Fact]
     public void IncorrectClientOrRedirectDoesNotConsumeTheCode()
     {
-        var database = Path.Combine(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
+        var database = Path.Join(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
         try
         {
             CreateSchema(database);
@@ -57,7 +57,7 @@ public sealed class SqliteTerraformAuthorizationCodeStoreTests
     [Fact]
     public void ExpiredCodeCannotBeConsumed()
     {
-        var database = Path.Combine(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
+        var database = Path.Join(Path.GetTempPath(), $"terraform-auth-code-{Guid.NewGuid():N}.db");
         try
         {
             CreateSchema(database);

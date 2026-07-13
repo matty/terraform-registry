@@ -14,6 +14,8 @@ namespace TerraformRegistry.Tests.UnitTests;
 
 public class ModulePublishCoordinatorTests
 {
+    private static readonly HttpClient StaticOkClient = new(new StaticOkHandler());
+
     [Fact]
     public async Task PublishAsyncDoesNotCreateSideEffectsWhenArchiveValidationFails()
     {
@@ -74,7 +76,7 @@ public class ModulePublishCoordinatorTests
 
         var webhookDispatcher = new WebhookDispatcher(
             webhookService.Object,
-            new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
+            new TestHttpClientFactory(StaticOkClient),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["BaseUrl"] = "https://registry.example.com" })
                 .Build(),
