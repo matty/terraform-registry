@@ -83,6 +83,17 @@ public sealed class ProviderMirrorEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RateLimitedApiKeyReturnsTooManyRequests()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/mirror/providers/registry.terraform.io/hashicorp/aws/index.json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "rate-limited-token");
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ProviderVersionReturnsSignedArchiveUrlAndTerraformHashes()
     {
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
@@ -282,6 +293,7 @@ public sealed class ProviderMirrorEndpointTests : IAsyncLifetime
                     TokenHash = "hash",
                     Prefix = "mirror"
                 }, false)),
+                "rate-limited-token" => Task.FromResult(new ApiKeyValidationResult(null, false, true)),
                 _ => Task.FromResult(new ApiKeyValidationResult(null, false))
             };
         }

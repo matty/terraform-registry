@@ -77,7 +77,7 @@ public class ApiKeyService(
             if (prefixLease is null)
             {
                 RegistryLog.Warning(logger, "Rejected API key verification because the prefix limit was reached.");
-                return new ApiKeyValidationResult(null, false);
+                return new ApiKeyValidationResult(null, false, true);
             }
 
             var isLegacy = !key.TokenHash.StartsWith("v1:", StringComparison.Ordinal);
@@ -87,7 +87,7 @@ public class ApiKeyService(
                 if (principalLease is null)
                 {
                     RegistryLog.Warning(logger, "Rejected API key verification because the principal limit was reached.");
-                    return new ApiKeyValidationResult(null, false);
+                    return new ApiKeyValidationResult(null, false, true);
                 }
 
                 if (key.ExpiresAt.HasValue && key.ExpiresAt.Value < DateTime.UtcNow)
@@ -314,4 +314,4 @@ public enum ApiKeyUpdateStatus
 
 public record ApiKeyUpdateResult(ApiKeyUpdateStatus Status, ApiKey? Key);
 
-public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired);
+public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired, bool IsRateLimited = false);

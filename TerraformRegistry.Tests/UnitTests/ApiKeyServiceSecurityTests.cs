@@ -84,6 +84,31 @@ public sealed class ApiKeyServiceSecurityTests
         Assert.Null(second);
     }
 
+    [Fact]
+    public async Task ValidateApiKeyAsyncMarksVerificationPermitExhaustionAsRateLimited()
+    {
+        var security = new ApiKeySecurityOptions
+        {
+            DigestKey = "test-api-key-digest-key-at-least-thirty-two-characters",
+            VerificationPermitLimit = 1,
+            VerificationWindowSeconds = 60
+        };
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.AddApiKeyAsync(It.IsAny<ApiKey>())).Returns(Task.CompletedTask);
+        var service = new ApiKeyService(database.Object, Mock.Of<ILogger<ApiKeyService>>(), new UserAdmissionOptions(),
+            security, new ApiKeyVerificationGate(security));
+        var (token, key) = await service.CreateApiKeyAsync("user-1", "test");
+        database.Setup(x => x.GetApiKeysByPrefixAsync(key.Prefix)).ReturnsAsync([key]);
+        database.Setup(x => x.GetUserByIdAsync(key.UserId)).ReturnsAsync(new User { Id = key.UserId, IsActive = true });
+        database.Setup(x => x.UpdateApiKeyAsync(key)).Returns(Task.CompletedTask);
+
+        var first = await service.ValidateApiKeyAsync(token);
+        var second = await service.ValidateApiKeyAsync(token);
+
+        Assert.False(first.IsRateLimited);
+        Assert.True(second.IsRateLimited);
+    }
+
     private static ApiKeyService CreateService(Mock<IDatabaseService> database)
     {
         var security = new ApiKeySecurityOptions { DigestKey = "test-api-key-digest-key-at-least-thirty-two-characters" };
