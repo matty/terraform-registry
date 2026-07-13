@@ -41,6 +41,12 @@ public class LocalModuleService : ModuleService
     {
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(_moduleStorageRoot);
+        return Task.CompletedTask;
+    }
+
+    public override Task ReconcileStorageAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         LoadExistingModules();
         return Task.CompletedTask;
     }

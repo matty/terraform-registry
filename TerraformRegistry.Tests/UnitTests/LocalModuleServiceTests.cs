@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -43,6 +44,27 @@ public class LocalModuleServiceTests
 
         // Assert
         Assert.True(Directory.Exists(_testModulePath));
+    }
+
+    [Fact]
+    public async Task InitializationDefersLocalArtifactRecoveryUntilReconciliation()
+    {
+        var namespaceDirectory = Path.Join(_testModulePath, "acme");
+        Directory.CreateDirectory(namespaceDirectory);
+        var archivePath = Path.Join(namespaceDirectory, "network-aws-1.0.0.zip");
+        using (ZipFile.Open(archivePath, ZipArchiveMode.Create))
+        {
+        }
+        _mockDbService.Setup(service => service.AddModuleAsync(It.IsAny<ModuleStorage>())).ReturnsAsync(true);
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
+        _mockDbService.Verify(database => database.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+        await service.ReconcileStorageAsync(CancellationToken.None);
+        _mockDbService.Verify(database => database.AddModuleAsync(It.Is<ModuleStorage>(module =>
+            module.Namespace == "acme" && module.Name == "network" && module.Provider == "aws" &&
+            module.Version == "1.0.0")), Times.Once);
     }
 
     // Verifies that the constructor logs the storage path being used

@@ -98,6 +98,7 @@ internal static class ServiceRegistrationExtensions
 
         services.AddHostedService<DatabaseInitializerHostedService>();
         services.AddHostedService<StorageInitializationHostedService>();
+        services.AddHostedService<StorageReconciliationHostedService>();
         services.AddHttpClient();
         services.AddHttpClient("TerraformRegistryMirrorDiscovery", client =>
             {

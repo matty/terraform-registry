@@ -55,8 +55,9 @@ require_initialized() {
 case "$COMMAND" in
   start)
     initialize
-    compose up -d --build --force-recreate azurite minio postgres app caddy
+    compose up -d --build --force-recreate azurite minio postgres
     compose run --rm minio-init
+    compose up -d --build --force-recreate app caddy
     ;;
   status)
     require_initialized

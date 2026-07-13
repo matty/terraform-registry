@@ -195,7 +195,7 @@ public class AzureBlobModuleServiceConstructorTests
     }
 
     [Fact]
-    public async Task InitializationSynchronizesExistingBlobsIntoDatabase()
+    public async Task ReconciliationSynchronizesExistingBlobsIntoDatabase()
     {
         var settings = new Dictionary<string, string?>
 (StringComparer.Ordinal)
@@ -231,6 +231,7 @@ public class AzureBlobModuleServiceConstructorTests
 
         _mockDatabaseService.Verify(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()), Times.Never);
         await service.InitializeStorageAsync(CancellationToken.None);
+        await service.ReconcileStorageAsync(CancellationToken.None);
 
         Assert.NotNull(service);
         _mockDatabaseService.Verify(db => db.AddModuleAsync(It.Is<TerraformRegistry.Models.ModuleStorage>(m =>
@@ -243,7 +244,7 @@ public class AzureBlobModuleServiceConstructorTests
     }
 
     [Fact]
-    public async Task InitializationDoesNotImportStagedPublicationBlobs()
+    public async Task ReconciliationDoesNotImportStagedPublicationBlobs()
     {
         var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -261,8 +262,26 @@ public class AzureBlobModuleServiceConstructorTests
             _mockBlobServiceClient.Object);
 
         await service.InitializeStorageAsync(CancellationToken.None);
+        await service.ReconcileStorageAsync(CancellationToken.None);
 
         _mockBlobContainerClient.Verify(c => c.GetBlobClient(stagedBlobName), Times.Never);
         _mockDatabaseService.Verify(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InitializationDoesNotScanExistingBlobsBeforeReadiness()
+    {
+        var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            { "ContainerName", _containerName },
+            { "SasTokenExpiryMinutes", "5" }
+        };
+        var service = new AzureBlobModuleService(CreateConfiguration(settings), _mockDatabaseService.Object,
+            _mockLogger.Object, _mockBlobServiceClient.Object);
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
+        _mockBlobContainerClient.Verify(c => c.GetBlobsAsync(
+            BlobTraits.None, BlobStates.None, null, CancellationToken.None), Times.Never);
     }
 }
