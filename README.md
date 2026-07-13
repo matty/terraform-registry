@@ -251,6 +251,18 @@ or disable extraction while developing:
 TF_REG_MODULEEXTRACTION__ENABLED=false
 ```
 
+### Provider Mirror Signature Trust
+
+When provider mirroring is enabled, configure every trusted upstream GPG key ID.
+Only a checksum signature made by one of these keys is allowed to make a mirrored
+package ready; an omitted or unknown key causes that package download to fail
+closed.
+
+```bash
+TF_REG_MIRROR__PROVIDERS__TRUSTEDSIGNINGKEYIDS__0=51852D87348FFC4C
+# Add further trusted key IDs with __1, __2, and so on.
+```
+
 ## Docker Deployment
 
 ### Docker Compose Example

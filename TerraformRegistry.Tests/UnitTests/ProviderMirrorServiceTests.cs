@@ -106,7 +106,7 @@ public sealed class ProviderMirrorServiceTests
             shasums_url = "https://releases.example.com/SHA256SUMS",
             shasums_signature_url = "https://releases.example.com/SHA256SUMS.sig",
             shasum,
-            signing_keys = new { gpg_public_keys = Array.Empty<object>() }
+            signing_keys = new { gpg_public_keys = new[] { new { key_id = "test-key", ascii_armor = "test-key" } } }
         }));
         http.RespondBytes("https://releases.example.com/pkg.zip", packageBytes, "application/zip");
         http.RespondText("https://releases.example.com/SHA256SUMS", $"{shasum}  {filename}\n");
@@ -144,6 +144,79 @@ public sealed class ProviderMirrorServiceTests
         using var downloaded = new MemoryStream();
         await content.CopyToAsync(downloaded);
         Assert.Equal(packageBytes, downloaded.ToArray());
+    }
+
+    [Fact]
+    public async Task OpenPackageFailsClosedWhenMetadataSigningKeyIsNotTrusted()
+    {
+        var packageBytes = new byte[] { 1, 2, 3 };
+        var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+        var http = new RecordingHttpMessageHandler();
+        ArrangeProviderVersionResponses(http, packageBytes, shasum, signingKeyId: "unknown-key");
+        var storage = new InMemoryProviderArtifactStorage();
+        var repository = new InMemoryProviderMirrorRepository();
+        var validator = CreateSuccessfulValidator();
+        var service = CreateServiceWithRepository(http, repository, storage, validator: validator);
+
+        var version = await service.GetProviderVersionAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            "5.0.0",
+            CancellationToken.None);
+
+        Assert.NotNull(version);
+        var archive = Assert.Single(version!.Archives);
+        var download = await service.OpenPackageAsync(
+            "registry.terraform.io",
+            "hashicorp",
+            "aws",
+            ExpectedFilename,
+            QueryFromUrl(archive.Value.Url),
+            CancellationToken.None);
+
+        Assert.Null(download);
+        var package = await repository.GetProviderPackageAsync(
+            "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux", "amd64");
+        Assert.NotNull(package);
+        Assert.Equal("failed", package!.State);
+        validator.Verify(x => x.ValidatePackageAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<Stream>(),
+            It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OpenPackageFailsClosedWhenSignatureValidationFails()
+    {
+        var packageBytes = new byte[] { 1, 2, 3 };
+        var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+        var http = new RecordingHttpMessageHandler();
+        ArrangeProviderVersionResponses(http, packageBytes, shasum);
+        var storage = new InMemoryProviderArtifactStorage();
+        var repository = new InMemoryProviderMirrorRepository();
+        var validator = CreateSuccessfulValidator();
+        validator.Setup(x => x.ValidatePackageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<Stream>(),
+                It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProviderPackageValidationResult(false, "Signature is invalid."));
+        var service = CreateServiceWithRepository(http, repository, storage, validator: validator);
+
+        var version = await service.GetProviderVersionAsync(
+            "registry.terraform.io", "hashicorp", "aws", "5.0.0", CancellationToken.None);
+
+        Assert.NotNull(version);
+        var archive = Assert.Single(version!.Archives);
+        var download = await service.OpenPackageAsync(
+            "registry.terraform.io", "hashicorp", "aws", ExpectedFilename,
+            QueryFromUrl(archive.Value.Url), CancellationToken.None);
+
+        Assert.Null(download);
+        var package = await repository.GetProviderPackageAsync(
+            "registry.terraform.io", "hashicorp", "aws", "5.0.0", "linux", "amd64");
+        Assert.NotNull(package);
+        Assert.Equal("failed", package!.State);
     }
 
     [Fact]
@@ -638,7 +711,7 @@ public sealed class ProviderMirrorServiceTests
             shasums_url = "https://releases.example.com/SHA256SUMS",
             shasums_signature_url = "https://releases.example.com/SHA256SUMS.sig",
             shasum,
-            signing_keys = new { gpg_public_keys = Array.Empty<object>() }
+            signing_keys = new { gpg_public_keys = new[] { new { key_id = "test-key", ascii_armor = "test-key" } } }
         }));
         http.RespondBytes("https://releases.example.com/pkg.zip", packageBytes, "application/zip");
         http.RespondText("https://releases.example.com/SHA256SUMS", $"{shasum}  {filename}\n");
@@ -833,7 +906,8 @@ public sealed class ProviderMirrorServiceTests
         Mock<IMirrorPolicyService>? policy = null,
         IMirrorPolicyService? policyService = null,
         Mock<IMirrorLeaseService>? lease = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        Mock<IProviderPackageValidator>? validator = null)
     {
         configuration ??= CreateConfiguration();
         var settings = new Mock<IRuntimeSettingsService>();
@@ -877,6 +951,7 @@ public sealed class ProviderMirrorServiceTests
                 });
         }
 
+        validator ??= CreateSuccessfulValidator();
         return new ProviderMirrorService(
             repo?.Object ?? Mock.Of<IProviderMirrorRepository>(),
             storage ?? new InMemoryProviderArtifactStorage(),
@@ -885,15 +960,18 @@ public sealed class ProviderMirrorServiceTests
             lease.Object,
             new SingleClientFactory(new HttpClient(http)),
             new MirrorPackageUrlSigner(configuration, new TestHostEnvironment()),
-            NullLogger<ProviderMirrorService>.Instance);
+            NullLogger<ProviderMirrorService>.Instance,
+            packageValidator: validator.Object);
     }
 
     private static ProviderMirrorService CreateServiceWithRepository(
         RecordingHttpMessageHandler http,
         IProviderMirrorRepository repository,
-        InMemoryProviderArtifactStorage? storage = null)
+        InMemoryProviderArtifactStorage? storage = null,
+        IConfiguration? configuration = null,
+        Mock<IProviderPackageValidator>? validator = null)
     {
-        var configuration = CreateConfiguration();
+        configuration ??= CreateConfiguration();
         var settings = new Mock<IRuntimeSettingsService>();
         var configService = new MirrorConfigService(configuration, settings.Object);
         var policy = new Mock<IMirrorPolicyService>();
@@ -921,6 +999,7 @@ public sealed class ProviderMirrorServiceTests
                 ExpiresAt = DateTime.UtcNow.AddMinutes(1)
             });
 
+        validator ??= CreateSuccessfulValidator();
         return new ProviderMirrorService(
             repository,
             storage ?? new InMemoryProviderArtifactStorage(),
@@ -929,7 +1008,19 @@ public sealed class ProviderMirrorServiceTests
             lease.Object,
             new SingleClientFactory(new HttpClient(http)),
             new MirrorPackageUrlSigner(configuration, new TestHostEnvironment()),
-            NullLogger<ProviderMirrorService>.Instance);
+            NullLogger<ProviderMirrorService>.Instance,
+            packageValidator: validator.Object);
+    }
+
+    private static Mock<IProviderPackageValidator> CreateSuccessfulValidator()
+    {
+        var validator = new Mock<IProviderPackageValidator>();
+        validator.Setup(x => x.ValidatePackageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<Stream>(),
+                It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProviderPackageValidationResult(true, null));
+        return validator;
     }
 
     private static IConfiguration CreateConfiguration(IReadOnlyDictionary<string, string?>? overrides = null)
@@ -941,6 +1032,7 @@ public sealed class ProviderMirrorServiceTests
             ["Mirror:Providers:Enabled"] = "true",
             ["Mirror:Providers:AllowedHostnames:0"] = "registry.terraform.io",
             ["Mirror:Providers:UpstreamRegistryUrls:registry.terraform.io"] = "https://registry.example.com",
+            ["Mirror:Providers:TrustedSigningKeyIds:0"] = "test-key",
             ["Mirror:PackageUrlSigningKey"] = "provider-mirror-service-signing-key",
             ["Oidc:JwtSecretKey"] = "provider-mirror-service-jwt-secret-key"
         };
@@ -982,7 +1074,8 @@ public sealed class ProviderMirrorServiceTests
         string metadataOs = "linux",
         string metadataArch = "amd64",
         string? filename = null,
-        bool registerPackage = true)
+        bool registerPackage = true,
+        string signingKeyId = "test-key")
     {
         filename ??= ExpectedFilename;
         downloadUrl ??= "https://releases.example.com/pkg.zip";
@@ -1002,7 +1095,7 @@ public sealed class ProviderMirrorServiceTests
             shasums_url = shasumsUrl,
             shasums_signature_url = signatureUrl,
             shasum,
-            signing_keys = new { gpg_public_keys = Array.Empty<object>() }
+            signing_keys = new { gpg_public_keys = new[] { new { key_id = signingKeyId, ascii_armor = "test-key" } } }
         }));
 
         if (registerPackage)
