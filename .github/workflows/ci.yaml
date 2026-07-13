@@ -225,6 +225,20 @@ jobs:
       - name: Run bounded ingestion security gate
         run: bash scripts/remediation/gates/bounded-ingestion-security.sh
 
+  mirror-containment-gate:
+    name: Mirror containment gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/mirror-containment-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run mirror containment gate
+        run: bash scripts/remediation/gates/mirror-containment-gate.sh
+
   docker:
     name: Docker build and scan
     needs:
