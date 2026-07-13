@@ -74,6 +74,14 @@ public sealed class SqliteMirrorRepositoryTests : IDisposable
         await PublicationCommitContract.CommitsCatalogUsingExpectedSnapshot(database, database);
     }
 
+    [Fact]
+    public async Task ExtractionJobsLeaseClaimRetryAndDeadLetter()
+    {
+        var repository = new SqliteModulePublicationRepository(_connectionString);
+
+        await ExtractionJobRepositoryContract.LeasesClaimsRetriesAndDeadLetters(repository, repository);
+    }
+
     public void Dispose()
     {
         _connection.Dispose();
@@ -150,6 +158,14 @@ public sealed class PostgreSqlMirrorRepositoryTests : IAsyncLifetime
             new DbUpMigrator(NullLogger<DbUpMigrator>.Instance));
 
         await PublicationCommitContract.CommitsCatalogUsingExpectedSnapshot(database, database);
+    }
+
+    [Fact]
+    public async Task ExtractionJobsLeaseClaimRetryAndDeadLetter()
+    {
+        var repository = new PostgreSqlModulePublicationRepository(_connectionString);
+
+        await ExtractionJobRepositoryContract.LeasesClaimsRetriesAndDeadLetters(repository, repository);
     }
 }
 

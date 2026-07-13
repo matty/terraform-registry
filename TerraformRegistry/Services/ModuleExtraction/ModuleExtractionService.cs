@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
@@ -7,13 +6,6 @@ namespace TerraformRegistry.Services.ModuleExtraction;
 
 public sealed class ModuleExtractionService : IModuleExtractionService
 {
-    private readonly Channel<ModuleExtractionRequest> _queue =
-        Channel.CreateUnbounded<ModuleExtractionRequest>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
-
     private readonly IDatabaseService _databaseService;
     private readonly IModuleExtractionConfigService _configService;
     private readonly ITerraformModuleInspector _inspector;
@@ -21,6 +13,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
     private readonly ILogger<ModuleExtractionService> _logger;
     private readonly IModuleService _moduleService;
     private readonly IArchiveWorkspaceFactory _workspaceFactory;
+    private readonly ModuleExtractionOptions _options;
 
     public ModuleExtractionService(
         IModuleService moduleService,
@@ -29,7 +22,8 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         ITerraformModuleInspector inspector,
         IModuleLlmContextGenerator llmContextGenerator,
         IModuleExtractionConfigService configService,
-        ILogger<ModuleExtractionService> logger)
+        ILogger<ModuleExtractionService> logger,
+        ModuleExtractionOptions? options = null)
     {
         _moduleService = moduleService;
         _databaseService = databaseService;
@@ -38,6 +32,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         _llmContextGenerator = llmContextGenerator;
         _configService = configService;
         _logger = logger;
+        _options = options ?? new ModuleExtractionOptions();
     }
 
     public async Task<bool> QueueAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
@@ -45,10 +40,10 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         if (!await _configService.IsEnabledAsync(cancellationToken))
             return false;
 
-        if (!_queue.Writer.TryWrite(request))
+        if (await _databaseService.CountPendingExtractionJobsAsync(cancellationToken) >= _options.MaxPendingJobs)
         {
             RegistryLog.Warning(_logger,
-                "Unable to queue extraction for module {Namespace}/{Name}/{Provider}/{Version}",
+                "Extraction backlog is full; rejecting module {Namespace}/{Name}/{Provider}/{Version}",
                 request.Namespace,
                 request.Name,
                 request.Provider,
@@ -56,6 +51,33 @@ public sealed class ModuleExtractionService : IModuleExtractionService
             return false;
         }
 
+        var now = DateTime.UtcNow;
+        var attempt = new ModulePublicationAttempt
+        {
+            Id = Guid.NewGuid(),
+            Namespace = request.Namespace,
+            Name = request.Name,
+            Provider = request.Provider,
+            Version = request.Version,
+            State = ModulePublicationAttemptState.Committed,
+            StagingKey = $"extraction-jobs/{Guid.NewGuid():N}",
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attempt.Id,
+            Namespace = request.Namespace,
+            Name = request.Name,
+            Provider = request.Provider,
+            Version = request.Version,
+            State = ModuleExtractionJobState.Pending,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
         await MarkPendingAsync(request);
         return true;
     }
@@ -79,19 +101,69 @@ public sealed class ModuleExtractionService : IModuleExtractionService
                 module.Provider,
                 module.Version);
 
-            if (_queue.Writer.TryWrite(request))
-            {
-                await MarkPendingAsync(request);
+            if (await QueueAsync(request, cancellationToken))
                 queued.Add(request);
-            }
         }
 
         return queued;
     }
 
-    public IAsyncEnumerable<ModuleExtractionRequest> ReadQueuedAsync(CancellationToken cancellationToken)
+    public async Task<bool> ProcessNextAsync(string ownerId, CancellationToken cancellationToken)
     {
-        return _queue.Reader.ReadAllAsync(cancellationToken);
+        var leaseDuration = TimeSpan.FromSeconds(_options.JobLeaseSeconds);
+        var job = await _databaseService.TryClaimNextExtractionJobAsync(ownerId, leaseDuration, cancellationToken);
+        if (job is null)
+            return false;
+
+        var request = new ModuleExtractionRequest(job.Namespace, job.Name, job.Provider, job.Version);
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var heartbeat = MaintainLeaseAsync(job.Id, ownerId, leaseDuration, linkedCancellation);
+        try
+        {
+            await ExtractAsync(request, linkedCancellation.Token);
+            if (!await _databaseService.TryCompleteExtractionJobAsync(job.Id, ownerId, cancellationToken))
+                RegistryLog.Warning(_logger, "Extraction lease was lost before completion for job {JobId}", job.Id);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _databaseService.TryFailExtractionJobAsync(job.Id, ownerId, Truncate(ex.Message, 2048),
+                _options.JobRetryLimit, cancellationToken);
+            RegistryLog.Error(_logger, ex, "Module extraction job {JobId} failed", job.Id);
+        }
+        finally
+        {
+            await linkedCancellation.CancelAsync();
+            await heartbeat;
+        }
+
+        return true;
+    }
+
+    private async Task MaintainLeaseAsync(Guid jobId, string ownerId, TimeSpan leaseDuration,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            while (!cancellation.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromTicks(Math.Max(leaseDuration.Ticks / 2, TimeSpan.FromSeconds(1).Ticks)),
+                    cancellation.Token);
+                if (!await _databaseService.TryHeartbeatExtractionJobAsync(jobId, ownerId, leaseDuration,
+                        cancellation.Token))
+                {
+                    cancellation.Cancel();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            RegistryLog.Debug(_logger, "Extraction job lease maintenance stopped because the worker is shutting down.");
+        }
     }
 
     public async Task ExtractAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)

@@ -10,7 +10,7 @@ namespace TerraformRegistry.PostgreSQL;
 /// <summary>
 ///     PostgreSQL compatibility facade for registry database storage.
 /// </summary>
-public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRepository, IInitializableDb
+public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRepository, IModuleExtractionJobRepository, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly DbUpMigrator _dbUpMigrator;
@@ -47,6 +47,21 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         _publications.TryFailStagedPublicationAsync(attemptId, failureReason);
     public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
     public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
+
+    public Task<ModuleExtractionJob?> TryClaimNextExtractionJobAsync(string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryClaimNextExtractionJobAsync(ownerId, leaseDuration, cancellationToken);
+    public Task<bool> TryHeartbeatExtractionJobAsync(Guid jobId, string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryHeartbeatExtractionJobAsync(jobId, ownerId, leaseDuration, cancellationToken);
+    public Task<bool> TryCompleteExtractionJobAsync(Guid jobId, string ownerId,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryCompleteExtractionJobAsync(jobId, ownerId, cancellationToken);
+    public Task<bool> TryFailExtractionJobAsync(Guid jobId, string ownerId, string failureReason, int maximumAttempts,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryFailExtractionJobAsync(jobId, ownerId, failureReason, maximumAttempts, cancellationToken);
+    public Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default) =>
+        _publications.CountPendingExtractionJobsAsync(cancellationToken);
 
     public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version) =>
         _modules.GetModuleAsync(moduleNamespace, name, provider, version);

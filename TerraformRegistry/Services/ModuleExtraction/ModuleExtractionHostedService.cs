@@ -26,28 +26,9 @@ public sealed class ModuleExtractionHostedService : BackgroundService
     {
         await QueueBackfillAsync(stoppingToken);
 
-        await foreach (var request in _extractionService.ReadQueuedAsync(stoppingToken))
-        {
-            try
-            {
-                await WaitUntilEnabledAsync(stoppingToken);
-                await _extractionService.ExtractAsync(request, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                RegistryLog.Error(_logger,
-                    ex,
-                    "Module extraction failed for {Namespace}/{Name}/{Provider}/{Version}",
-                    request.Namespace,
-                    request.Name,
-                    request.Provider,
-                    request.Version);
-            }
-        }
+        var workers = Enumerable.Range(0, _options.WorkerConcurrency)
+            .Select(index => RunWorkerAsync($"{Environment.MachineName}-{Environment.ProcessId}-{index}", stoppingToken));
+        await Task.WhenAll(workers);
     }
 
     private async Task QueueBackfillAsync(CancellationToken stoppingToken)
@@ -79,6 +60,28 @@ public sealed class ModuleExtractionHostedService : BackgroundService
         {
             RegistryLog.Information(_logger, "Module extraction is disabled. Waiting before processing queued work.");
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
+    }
+
+    private async Task RunWorkerAsync(string ownerId, CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await WaitUntilEnabledAsync(stoppingToken);
+                if (!await _extractionService.ProcessNextAsync(ownerId, stoppingToken))
+                    await Task.Delay(_options.JobPollIntervalMilliseconds, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                RegistryLog.Error(_logger, ex, "Durable module extraction worker {OwnerId} failed.", ownerId);
+                await Task.Delay(_options.JobPollIntervalMilliseconds, stoppingToken);
+            }
         }
     }
 }

@@ -6,7 +6,9 @@ using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services.Sqlite;
 
-public sealed class SqliteModulePublicationRepository(string connectionString) : IModulePublicationRepository
+public sealed class SqliteModulePublicationRepository(string connectionString) :
+    IModulePublicationRepository,
+    IModuleExtractionJobRepository
 {
     public async Task CreatePublicationAttemptWithExtractionJobAsync(
         ModulePublicationAttempt attempt,
@@ -36,8 +38,10 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT INTO module_extraction_jobs (
-                    id, publication_attempt_id, namespace, name, provider, version, state, created_at, updated_at)
-                VALUES ($id, $attemptId, $namespace, $name, $provider, $version, $state, $createdAt, $updatedAt)
+                    id, publication_attempt_id, namespace, name, provider, version, state, owner_id,
+                    lease_expires_at, attempt_count, last_error, created_at, updated_at, completed_at)
+                VALUES ($id, $attemptId, $namespace, $name, $provider, $version, $state, $ownerId,
+                    $leaseExpiresAt, $attemptCount, $lastError, $createdAt, $updatedAt, $completedAt)
                 """;
             AddJobParameters(command, job);
             await command.ExecuteNonQueryAsync();
@@ -131,7 +135,8 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, publication_attempt_id, namespace, name, provider, version, state, created_at, updated_at
+            SELECT id, publication_attempt_id, namespace, name, provider, version, state, owner_id,
+                   lease_expires_at, attempt_count, last_error, created_at, updated_at, completed_at
             FROM module_extraction_jobs
             WHERE id = $id
             """;
@@ -139,6 +144,88 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         await using var reader = await command.ExecuteReaderAsync();
 
         return await reader.ReadAsync() ? ReadJob(reader) : null;
+    }
+
+    public async Task<ModuleExtractionJob?> TryClaimNextExtractionJobAsync(
+        string ownerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE module_extraction_jobs
+            SET state = $processing, owner_id = $ownerId, lease_expires_at = $leaseExpiresAt,
+                attempt_count = attempt_count + 1, updated_at = $updatedAt,
+                last_error = CASE WHEN state = $processing THEN last_error ELSE NULL END
+            WHERE id = (
+                SELECT id FROM module_extraction_jobs
+                WHERE state IN ($pending, $retry)
+                   OR (state = $processing AND lease_expires_at <= $now)
+                ORDER BY created_at, id LIMIT 1)
+            RETURNING id, publication_attempt_id, namespace, name, provider, version, state, owner_id,
+                      lease_expires_at, attempt_count, last_error, created_at, updated_at, completed_at
+            """;
+        AddClaimParameters(command, ownerId, leaseDuration, now);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadJob(reader) : null;
+    }
+
+    public Task<bool> TryHeartbeatExtractionJobAsync(Guid jobId, string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        UpdateLeasedJobAsync(jobId, ownerId, """
+            UPDATE module_extraction_jobs
+            SET lease_expires_at = $leaseExpiresAt, updated_at = $updatedAt
+            WHERE id = $id AND state = $processing AND owner_id = $ownerId
+            """, leaseDuration, cancellationToken);
+
+    public Task<bool> TryCompleteExtractionJobAsync(Guid jobId, string ownerId,
+        CancellationToken cancellationToken = default) =>
+        UpdateLeasedJobAsync(jobId, ownerId, """
+            UPDATE module_extraction_jobs
+            SET state = $succeeded, owner_id = NULL, lease_expires_at = NULL,
+                updated_at = $updatedAt, completed_at = $completedAt, last_error = NULL
+            WHERE id = $id AND state = $processing AND owner_id = $ownerId
+            """, TimeSpan.Zero, cancellationToken);
+
+    public async Task<bool> TryFailExtractionJobAsync(Guid jobId, string ownerId, string failureReason,
+        int maximumAttempts, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE module_extraction_jobs
+            SET state = CASE WHEN attempt_count >= $maximumAttempts THEN $deadLetter ELSE $retry END,
+                owner_id = NULL, lease_expires_at = NULL, last_error = $failureReason,
+                updated_at = $updatedAt,
+                completed_at = CASE WHEN attempt_count >= $maximumAttempts THEN $completedAt ELSE NULL END
+            WHERE id = $id AND state = $processing AND owner_id = $ownerId
+            """;
+        command.Parameters.AddWithValue("$maximumAttempts", maximumAttempts);
+        command.Parameters.AddWithValue("$deadLetter", ModuleExtractionJobState.DeadLetter);
+        command.Parameters.AddWithValue("$retry", ModuleExtractionJobState.Retry);
+        command.Parameters.AddWithValue("$failureReason", failureReason);
+        command.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("$completedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("$id", jobId.ToString());
+        command.Parameters.AddWithValue("$processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM module_extraction_jobs WHERE state IN ($pending, $retry)";
+        command.Parameters.AddWithValue("$pending", ModuleExtractionJobState.Pending);
+        command.Parameters.AddWithValue("$retry", ModuleExtractionJobState.Retry);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void AddAttemptParameters(SqliteCommand command, ModulePublicationAttempt attempt)
@@ -223,6 +310,35 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
     private static string ParameterName(string prefix, string name) =>
         "$" + (string.IsNullOrEmpty(prefix) ? name : prefix + char.ToUpperInvariant(name[0]) + name[1..]);
 
+    private static void AddClaimParameters(SqliteCommand command, string ownerId, TimeSpan leaseDuration, DateTime now)
+    {
+        command.Parameters.AddWithValue("$processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        command.Parameters.AddWithValue("$leaseExpiresAt", now.Add(leaseDuration).ToString("O"));
+        command.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("$pending", ModuleExtractionJobState.Pending);
+        command.Parameters.AddWithValue("$retry", ModuleExtractionJobState.Retry);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+    }
+
+    private async Task<bool> UpdateLeasedJobAsync(Guid jobId, string ownerId, string sql, TimeSpan leaseDuration,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$id", jobId.ToString());
+        command.Parameters.AddWithValue("$ownerId", ownerId);
+        command.Parameters.AddWithValue("$processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("$succeeded", ModuleExtractionJobState.Succeeded);
+        command.Parameters.AddWithValue("$leaseExpiresAt", now.Add(leaseDuration).ToString("O"));
+        command.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
+        command.Parameters.AddWithValue("$completedAt", now.ToString("O"));
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
     private static void AddJobParameters(SqliteCommand command, ModuleExtractionJob job)
     {
         command.Parameters.AddWithValue("$id", job.Id.ToString());
@@ -232,8 +348,13 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         command.Parameters.AddWithValue("$provider", job.Provider);
         command.Parameters.AddWithValue("$version", job.Version);
         command.Parameters.AddWithValue("$state", job.State);
+        command.Parameters.AddWithValue("$ownerId", (object?)job.OwnerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$leaseExpiresAt", job.LeaseExpiresAt?.ToString("O") ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$attemptCount", job.AttemptCount);
+        command.Parameters.AddWithValue("$lastError", (object?)job.LastError ?? DBNull.Value);
         command.Parameters.AddWithValue("$createdAt", job.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("$updatedAt", job.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("$completedAt", job.CompletedAt?.ToString("O") ?? (object)DBNull.Value);
     }
 
     private static ModulePublicationAttempt ReadAttempt(SqliteDataReader reader) => new()
@@ -264,7 +385,12 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         Provider = reader.GetString(4),
         Version = reader.GetString(5),
         State = reader.GetString(6),
-        CreatedAt = DateTime.Parse(reader.GetString(7), null, DateTimeStyles.RoundtripKind),
-        UpdatedAt = DateTime.Parse(reader.GetString(8), null, DateTimeStyles.RoundtripKind)
+        OwnerId = reader.IsDBNull(7) ? null : reader.GetString(7),
+        LeaseExpiresAt = reader.IsDBNull(8) ? null : DateTime.Parse(reader.GetString(8), null, DateTimeStyles.RoundtripKind),
+        AttemptCount = reader.GetInt32(9),
+        LastError = reader.IsDBNull(10) ? null : reader.GetString(10),
+        CreatedAt = DateTime.Parse(reader.GetString(11), null, DateTimeStyles.RoundtripKind),
+        UpdatedAt = DateTime.Parse(reader.GetString(12), null, DateTimeStyles.RoundtripKind),
+        CompletedAt = reader.IsDBNull(13) ? null : DateTime.Parse(reader.GetString(13), null, DateTimeStyles.RoundtripKind)
     };
 }
