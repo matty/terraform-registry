@@ -13,6 +13,11 @@ public interface IModuleService
     Task InitializeStorageAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    ///     Reconciles persisted storage state after startup readiness has been established.
+    /// </summary>
+    Task ReconcileStorageAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     ///     Lists all modules
     /// </summary>
     Task<ModuleList> ListModulesAsync(ModuleSearchRequest request);

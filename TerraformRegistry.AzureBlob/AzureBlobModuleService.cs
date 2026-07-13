@@ -99,9 +99,11 @@ public class AzureBlobModuleService : ModuleService
     {
         RegistryLog.Information(_logger, "Ensuring blob container '{ContainerName}' exists...", _containerName);
         await _containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
-        await LoadExistingModulesAsync(cancellationToken);
         RegistryLog.Information(_logger, "Blob container '{ContainerName}' is ready.", _containerName);
     }
+
+    public override Task ReconcileStorageAsync(CancellationToken cancellationToken) =>
+        LoadExistingModulesAsync(cancellationToken);
 
     /// <summary>
     ///     Lists all modules based on search criteria

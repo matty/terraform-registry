@@ -40,4 +40,29 @@ public class StorageInitializationHostedServiceTests
         Assert.True(readiness.IsStorageInitialized);
         moduleService.Verify(service => service.InitializeStorageAsync(CancellationToken.None), Times.Once);
     }
+
+    [Fact]
+    public async Task ReconciliationRunsInBackgroundWithoutBlockingStartup()
+    {
+        var moduleService = new Mock<IModuleService>();
+        var reconciliationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowReconciliationToComplete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        moduleService
+            .Setup(service => service.ReconcileStorageAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                reconciliationStarted.SetResult();
+                await allowReconciliationToComplete.Task;
+            });
+
+        var hostedService = new StorageReconciliationHostedService(moduleService.Object,
+            NullLogger<StorageReconciliationHostedService>.Instance);
+
+        await hostedService.StartAsync(CancellationToken.None);
+        await reconciliationStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        allowReconciliationToComplete.SetResult();
+        await hostedService.StopAsync(CancellationToken.None);
+
+        moduleService.Verify(service => service.ReconcileStorageAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

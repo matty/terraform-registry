@@ -16,6 +16,11 @@ public abstract class ModuleService : IModuleService
     public virtual Task InitializeStorageAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>
+    ///     Reconciles storage-backed records after initialization without delaying readiness.
+    /// </summary>
+    public virtual Task ReconcileStorageAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
     ///     Lists all modules
     /// </summary>
     public abstract Task<ModuleList> ListModulesAsync(ModuleSearchRequest request);
