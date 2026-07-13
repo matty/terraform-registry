@@ -10,7 +10,7 @@ public class ArchiveWorkspaceFactoryTests
     public async Task ArchiveWorkspaceFactoryExtractsGitHubTarballDespiteZipStorageName()
     {
         var tempDir = Directory.CreateTempSubdirectory();
-        var tarGzPath = Path.Combine(tempDir.FullName, "artifact.zip");
+        var tarGzPath = Path.Join(tempDir.FullName, "artifact.zip");
 
         await TestArchiveBuilder.CreateTarGzAsync(
             tarGzPath,
@@ -20,31 +20,31 @@ public class ArchiveWorkspaceFactoryTests
         await using var stream = File.OpenRead(tarGzPath);
         var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
         {
-            TempRoot = Path.Combine(tempDir.FullName, "workspaces")
+            TempRoot = Path.Join(tempDir.FullName, "workspaces")
         });
 
         await using var workspace = await factory.CreateAsync(stream, CancellationToken.None);
 
-        Assert.True(File.Exists(Path.Combine(workspace.RootPath, "README.md")));
-        Assert.True(File.Exists(Path.Combine(workspace.RootPath, "variables.tf")));
+        Assert.True(File.Exists(Path.Join(workspace.RootPath, "README.md")));
+        Assert.True(File.Exists(Path.Join(workspace.RootPath, "variables.tf")));
     }
 
     [Fact]
     public async Task ArchiveWorkspaceFactoryExtractsEmptyRegularFileFromTarGz()
     {
         var tempDir = Directory.CreateTempSubdirectory();
-        var tarGzPath = Path.Combine(tempDir.FullName, "module.tar.gz");
+        var tarGzPath = Path.Join(tempDir.FullName, "module.tar.gz");
         await TestArchiveBuilder.CreateTarGzAsync(tarGzPath, ("module/main.tf", string.Empty));
 
         await using var stream = File.OpenRead(tarGzPath);
         var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
         {
-            TempRoot = Path.Combine(tempDir.FullName, "workspaces")
+            TempRoot = Path.Join(tempDir.FullName, "workspaces")
         });
 
         await using var workspace = await factory.CreateAsync(stream, CancellationToken.None);
 
-        var file = Path.Combine(workspace.RootPath, "main.tf");
+        var file = Path.Join(workspace.RootPath, "main.tf");
         Assert.True(File.Exists(file));
         Assert.Equal(0, new FileInfo(file).Length);
     }
@@ -56,7 +56,7 @@ public class ArchiveWorkspaceFactoryTests
         await using var stream = new MemoryStream([1, 2, 3, 4, 5]);
         var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
         {
-            TempRoot = Path.Combine(tempDir.FullName, "workspaces"),
+            TempRoot = Path.Join(tempDir.FullName, "workspaces"),
             MaxArchiveBytes = 4
         });
 
@@ -64,7 +64,7 @@ public class ArchiveWorkspaceFactoryTests
             factory.CreateAsync(stream, CancellationToken.None));
 
         Assert.Contains("exceeds", ex.Message, StringComparison.OrdinalIgnoreCase);
-        var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
+        var workspacesRoot = Path.Join(tempDir.FullName, "workspaces");
         Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
     }
 
@@ -94,15 +94,15 @@ public class ArchiveWorkspaceFactoryTests
         await using var stream = new MemoryStream(TestArchiveBuilder.CreateZipBytes(("../outside.tf", "resource {}")));
         var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
         {
-            TempRoot = Path.Combine(tempDir.FullName, "workspaces")
+            TempRoot = Path.Join(tempDir.FullName, "workspaces")
         });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             factory.CreateAsync(stream, CancellationToken.None));
 
         Assert.Contains("escapes", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.False(File.Exists(Path.Combine(tempDir.FullName, "outside.tf")));
-        var workspacesRoot = Path.Combine(tempDir.FullName, "workspaces");
+        Assert.False(File.Exists(Path.Join(tempDir.FullName, "outside.tf")));
+        var workspacesRoot = Path.Join(tempDir.FullName, "workspaces");
         Assert.True(!Directory.Exists(workspacesRoot) || !Directory.EnumerateDirectories(workspacesRoot).Any());
     }
 
@@ -115,7 +115,7 @@ public class ArchiveWorkspaceFactoryTests
             ("module/two.tf", "two")));
         var factory = new ArchiveWorkspaceFactory(new ModuleExtractionOptions
         {
-            TempRoot = Path.Combine(tempDir.FullName, "workspaces"),
+            TempRoot = Path.Join(tempDir.FullName, "workspaces"),
             MaxArchiveEntries = 1
         });
 

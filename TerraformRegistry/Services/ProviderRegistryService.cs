@@ -355,7 +355,7 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     private async Task<FileStream> CopyToReplayableFileAsync(Stream source, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_uploadOptions.TempRoot);
-        var path = Path.Combine(_uploadOptions.TempRoot, $".{Guid.NewGuid():N}.provider-upload");
+        var path = Path.Join(_uploadOptions.TempRoot, $".{Guid.NewGuid():N}.provider-upload");
         try
         {
             var output = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 1024 * 1024,
