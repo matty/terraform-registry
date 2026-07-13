@@ -21,7 +21,8 @@ public sealed class ProviderMirrorService(
     ILogger<ProviderMirrorService> logger,
     MirrorDownloadAdmission? downloadAdmission = null,
     MirrorCacheBudgetService? cacheBudget = null,
-    MirrorCacheUsage? cacheUsage = null) : IProviderMirrorService
+    MirrorCacheUsage? cacheUsage = null,
+    IProviderPackageValidator? packageValidator = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -31,6 +32,7 @@ public sealed class ProviderMirrorService(
     private static readonly object EmptyVersion = new();
     private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
     private readonly MirrorCacheUsage _cacheUsage = cacheUsage ?? new MirrorCacheUsage();
+    private readonly IProviderPackageValidator _packageValidator = packageValidator ?? new ProviderPackageValidator();
 
     public async Task<ProviderMirrorIndexResponse?> GetProviderIndexAsync(
         string hostname,
@@ -523,6 +525,30 @@ public sealed class ProviderMirrorService(
                 throw new InvalidOperationException("Mirror cache budget cannot accommodate the provider package.");
             }
 
+            var signingKey = metadata.SigningKeys.GpgPublicKeys.FirstOrDefault(key =>
+                !string.IsNullOrWhiteSpace(key.AsciiArmor) &&
+                config.Providers.TrustedSigningKeyIds.Contains(key.KeyId, StringComparer.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Provider mirror metadata did not include a trusted signing key.");
+            packageArtifact.Content.Position = 0;
+            shasumsArtifact.Content.Position = 0;
+            signatureArtifact.Content.Position = 0;
+            var verification = await _packageValidator.ValidatePackageAsync(
+                type,
+                version.Version,
+                platform.Os,
+                platform.Arch,
+                metadata.Filename,
+                metadata.Shasum,
+                packageArtifact.Content,
+                shasumsArtifact.Content,
+                signatureArtifact.Content,
+                signingKey.AsciiArmor,
+                cancellationToken);
+            if (!verification.Valid)
+            {
+                throw new InvalidOperationException(verification.Error ?? "Provider package signature verification failed.");
+            }
+
             heartbeat.ThrowIfOwnershipLost();
 
             packageArtifact.Content.Position = 0;
@@ -552,7 +578,8 @@ public sealed class ProviderMirrorService(
                 SigningKeysJson = JsonSerializer.Serialize(new
                 {
                     signing_keys = metadata.SigningKeys,
-                    signature_verification = "not_verified",
+                    signature_verification = "verified",
+                    verified_key_id = signingKey.KeyId,
                     shasums_storage_path = shasumsSave.StoragePath,
                     shasums_signature_storage_path = signatureSave.StoragePath
                 }, JsonOptions),

@@ -20,6 +20,11 @@ public sealed class MirrorProviderRuntimeOptions
     /// A multi-host configuration must provide one explicit entry for every allowed hostname.
     /// </summary>
     public Dictionary<string, string> UpstreamRegistryUrls { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// GPG key IDs that are trusted to sign mirrored provider SHA256SUMS files.
+    /// Packages signed by any other key fail closed.
+    /// </summary>
+    public List<string> TrustedSigningKeyIds { get; set; } = [];
     public List<string> AllowedArtifactHosts { get; set; } = [];
     public List<string> Allowlist { get; set; } = [];
     public List<string> Denylist { get; set; } = [];
