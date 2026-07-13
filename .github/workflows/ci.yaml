@@ -239,6 +239,25 @@ jobs:
       - name: Run mirror containment gate
         run: bash scripts/remediation/gates/mirror-containment-gate.sh
 
+  publication-fault-gate:
+    name: Transactional publication fault gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/publication-fault-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Run transactional publication fault gate
+        run: bash scripts/remediation/gates/publication-fault-gate.sh
+
   docker:
     name: Docker build and scan
     needs:
