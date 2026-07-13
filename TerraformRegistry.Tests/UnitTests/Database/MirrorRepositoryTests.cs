@@ -145,6 +145,7 @@ internal static class ProviderRepositoryContract
             Filename = "terraform-provider-aws_5.0.0_linux_amd64.zip",
             PackageStoragePath = "mirror/providers/hashicorp/aws/5.0.0/linux_amd64.zip",
             SizeBytes = 123456789,
+            CacheSizeBytes = 123456999,
             ProtocolsJson = """["5.0"]""",
             HashesJson = """["h1:test","zh:test"]""",
             Shasum = new string('a', 64),
@@ -167,6 +168,7 @@ internal static class ProviderRepositoryContract
         MirrorJsonAssert.Equal(package.HashesJson, loadedPackage!.HashesJson);
         MirrorJsonAssert.Equal(package.ProtocolsJson, loadedPackage.ProtocolsJson);
         Assert.Equal(package.SizeBytes, loadedPackage.SizeBytes);
+        Assert.Equal(package.CacheSizeBytes, loadedPackage.CacheSizeBytes);
         Assert.Equal(package.PackageStoragePath, loadedPackage.PackageStoragePath);
 
         var listed = await repository.ListProviderPackagesAsync("aws", "ready", 10, 0);
@@ -261,6 +263,7 @@ internal static class ModuleRepositoryContract
             Source = "github.com/terraform-aws-modules/terraform-aws-vpc",
             PackageStoragePath = "mirror/modules/terraform-aws-modules/vpc/aws/1.0.0.tgz",
             SizeBytes = 4567,
+            CacheSizeBytes = 4567,
             MetadataJson = """{"root":{"readme":"README.md"}}""",
             State = "ready",
             LastSyncAt = DateTime.UtcNow
@@ -278,6 +281,7 @@ internal static class ModuleRepositoryContract
         Assert.NotNull(loadedPackage);
         MirrorJsonAssert.Equal(package.MetadataJson, loadedPackage!.MetadataJson);
         Assert.Equal(package.SizeBytes, loadedPackage.SizeBytes);
+        Assert.Equal(package.CacheSizeBytes, loadedPackage.CacheSizeBytes);
         Assert.Equal(package.PackageStoragePath, loadedPackage.PackageStoragePath);
 
         var listed = await repository.ListModulePackagesAsync("vpc", "ready", 10, 0);

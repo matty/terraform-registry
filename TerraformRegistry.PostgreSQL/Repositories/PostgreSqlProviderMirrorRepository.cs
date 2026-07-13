@@ -71,7 +71,7 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
         var parameters = new List<NpgsqlParameter>();
         var sql = @"
             SELECT id, hostname, namespace, type, version, os, arch, download_url, filename, package_storage_path,
-                   size_bytes, protocols_json::text, hashes_json::text, shasum, signing_keys_json::text, state,
+                   size_bytes, cache_size_bytes, protocols_json::text, hashes_json::text, shasum, signing_keys_json::text, state,
                    last_error, http_status_code, last_sync_at, created_at, updated_at
             FROM mirror_provider_packages
             WHERE TRUE";
@@ -117,7 +117,7 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
     {
         const string sql = @"
             SELECT id, hostname, namespace, type, version, os, arch, download_url, filename, package_storage_path,
-                   size_bytes, protocols_json::text, hashes_json::text, shasum, signing_keys_json::text, state,
+                   size_bytes, cache_size_bytes, protocols_json::text, hashes_json::text, shasum, signing_keys_json::text, state,
                    last_error, http_status_code, last_sync_at, created_at, updated_at
             FROM mirror_provider_packages
             WHERE hostname = @hostname AND namespace = @namespace AND type = @type
@@ -142,17 +142,18 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
         const string sql = @"
             INSERT INTO mirror_provider_packages (
                 id, hostname, namespace, type, version, os, arch, download_url, filename, package_storage_path,
-                size_bytes, protocols_json, hashes_json, shasum, signing_keys_json, state, last_error,
+                size_bytes, cache_size_bytes, protocols_json, hashes_json, shasum, signing_keys_json, state, last_error,
                 http_status_code, last_sync_at, created_at, updated_at)
             VALUES (
                 @id, @hostname, @namespace, @type, @version, @os, @arch, @downloadUrl, @filename, @packageStoragePath,
-                @sizeBytes, @protocolsJson, @hashesJson, @shasum, @signingKeysJson, @state, @lastError,
+                @sizeBytes, @cacheSizeBytes, @protocolsJson, @hashesJson, @shasum, @signingKeysJson, @state, @lastError,
                 @httpStatusCode, @lastSyncAt, @createdAt, @updatedAt)
             ON CONFLICT(hostname, namespace, type, version, os, arch) DO UPDATE SET
                 download_url = EXCLUDED.download_url,
                 filename = EXCLUDED.filename,
                 package_storage_path = EXCLUDED.package_storage_path,
                 size_bytes = EXCLUDED.size_bytes,
+                cache_size_bytes = EXCLUDED.cache_size_bytes,
                 protocols_json = EXCLUDED.protocols_json,
                 hashes_json = EXCLUDED.hashes_json,
                 shasum = EXCLUDED.shasum,
@@ -227,6 +228,7 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
         command.Parameters.AddWithValue("@filename", DbValue(package.Filename));
         command.Parameters.AddWithValue("@packageStoragePath", DbValue(package.PackageStoragePath));
         command.Parameters.AddWithValue("@sizeBytes", DbValue(package.SizeBytes));
+        command.Parameters.AddWithValue("@cacheSizeBytes", DbValue(package.CacheSizeBytes));
         AddJsonb(command, "protocolsJson", package.ProtocolsJson);
         AddJsonb(command, "hashesJson", package.HashesJson);
         command.Parameters.AddWithValue("@shasum", DbValue(package.Shasum));
@@ -272,16 +274,17 @@ public sealed class PostgreSqlProviderMirrorRepository(string connectionString) 
             Filename = ReadString(reader, 8),
             PackageStoragePath = ReadString(reader, 9),
             SizeBytes = reader.IsDBNull(10) ? null : reader.GetInt64(10),
-            ProtocolsJson = reader.GetString(11),
-            HashesJson = reader.GetString(12),
-            Shasum = ReadString(reader, 13),
-            SigningKeysJson = ReadString(reader, 14),
-            State = reader.GetString(15),
-            LastError = ReadString(reader, 16),
-            HttpStatusCode = reader.IsDBNull(17) ? null : reader.GetInt32(17),
-            LastSyncAt = ReadDateTime(reader, 18),
-            CreatedAt = reader.GetDateTime(19),
-            UpdatedAt = reader.GetDateTime(20)
+            CacheSizeBytes = reader.IsDBNull(11) ? null : reader.GetInt64(11),
+            ProtocolsJson = reader.GetString(12),
+            HashesJson = reader.GetString(13),
+            Shasum = ReadString(reader, 14),
+            SigningKeysJson = ReadString(reader, 15),
+            State = reader.GetString(16),
+            LastError = ReadString(reader, 17),
+            HttpStatusCode = reader.IsDBNull(18) ? null : reader.GetInt32(18),
+            LastSyncAt = ReadDateTime(reader, 19),
+            CreatedAt = reader.GetDateTime(20),
+            UpdatedAt = reader.GetDateTime(21)
         };
     }
 

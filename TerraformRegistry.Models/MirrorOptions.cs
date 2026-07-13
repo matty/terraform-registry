@@ -15,6 +15,11 @@ public sealed class MirrorProviderRuntimeOptions
     public bool Enabled { get; set; } = true;
     public bool RequireAuthentication { get; set; } = true;
     public List<string> AllowedHostnames { get; set; } = ["registry.terraform.io"];
+    /// <summary>
+    /// Maps each advertised provider mirror hostname to the HTTPS registry used to retrieve it.
+    /// A multi-host configuration must provide one explicit entry for every allowed hostname.
+    /// </summary>
+    public Dictionary<string, string> UpstreamRegistryUrls { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> AllowedArtifactHosts { get; set; } = [];
     public List<string> Allowlist { get; set; } = [];
     public List<string> Denylist { get; set; } = [];

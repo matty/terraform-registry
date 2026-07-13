@@ -18,7 +18,10 @@ public sealed class ProviderMirrorService(
     IMirrorLeaseService leaseService,
     IHttpClientFactory httpClientFactory,
     MirrorPackageUrlSigner signer,
-    ILogger<ProviderMirrorService> logger) : IProviderMirrorService
+    ILogger<ProviderMirrorService> logger,
+    MirrorDownloadAdmission? downloadAdmission = null,
+    MirrorCacheBudgetService? cacheBudget = null,
+    MirrorCacheUsage? cacheUsage = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -26,6 +29,8 @@ public sealed class ProviderMirrorService(
     private const int SignedPackageUrlLifetimeMinutes = 10;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly object EmptyVersion = new();
+    private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
+    private readonly MirrorCacheUsage _cacheUsage = cacheUsage ?? new MirrorCacheUsage();
 
     public async Task<ProviderMirrorIndexResponse?> GetProviderIndexAsync(
         string hostname,
@@ -166,11 +171,14 @@ public sealed class ProviderMirrorService(
             return null;
         }
 
+        var cacheLease = _cacheUsage.Acquire(MirrorCacheBudgetService.ProviderKey(package));
+
         return new ProviderMirrorPackageDownload(
             content,
             package.Filename ?? filename,
             "application/zip",
-            package.SizeBytes);
+            package.SizeBytes,
+            cacheLease);
     }
 
     private async Task<UpstreamProviderVersions?> GetProviderVersionsAsync(
@@ -182,6 +190,14 @@ public sealed class ProviderMirrorService(
     {
         var cached = await repository.GetProviderIndexAsync(hostname, providerNamespace, type);
         if (cached is not null &&
+            string.Equals(cached.State, "not_found", StringComparison.OrdinalIgnoreCase) &&
+            cached.LastSyncAt is { } negativeSync &&
+            negativeSync.AddSeconds(config.Limits.NegativeCacheTtlSeconds) > DateTime.UtcNow)
+        {
+            return null;
+        }
+
+        if (cached is not null &&
             string.Equals(cached.State, "ready", StringComparison.OrdinalIgnoreCase) &&
             cached.LastSyncAt is { } lastSync &&
             lastSync.AddMinutes(Math.Max(1, config.Providers.MetadataTtlMinutes)) > DateTime.UtcNow)
@@ -190,10 +206,20 @@ public sealed class ProviderMirrorService(
         }
 
         var client = httpClientFactory.CreateClient();
-        var uri = BuildUpstreamUri(config.UpstreamRegistryBaseUrl, $"/v1/providers/{providerNamespace}/{type}/versions");
-        using var response = await client.GetAsync(uri, cancellationToken);
+        var uri = BuildUpstreamUri(MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(), $"/v1/providers/{providerNamespace}/{type}/versions");
+        using var timeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+        using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
+            await repository.UpsertProviderIndexAsync(new MirrorProviderIndex
+            {
+                Hostname = hostname,
+                Namespace = providerNamespace,
+                Type = type,
+                VersionsJson = "{}",
+                State = "not_found",
+                LastSyncAt = DateTime.UtcNow
+            });
             return null;
         }
 
@@ -235,6 +261,13 @@ public sealed class ProviderMirrorService(
         }
 
         var leaseKey = $"provider-package:{hostname}:{providerNamespace}:{type}:{version.Version}:{platform.Os}:{platform.Arch}";
+        using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
+        if (admission is null)
+        {
+            RegistryLog.Warning(logger, "Provider mirror admission limit reached for {LeaseKey}", leaseKey);
+            return null;
+        }
+
         var lease = await leaseService.TryAcquireAsync(leaseKey, "provider-package", TimeSpan.FromMinutes(5), cancellationToken);
         if (lease is null)
         {
@@ -321,9 +354,10 @@ public sealed class ProviderMirrorService(
         try
         {
             var metadataUri = BuildUpstreamUri(
-                config.UpstreamRegistryBaseUrl,
+                MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(),
                 $"/v1/providers/{providerNamespace}/{type}/{version.Version}/download/{platform.Os}/{platform.Arch}");
-            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(metadataUri, JsonOptions, cancellationToken);
+            using var metadataTimeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(metadataUri, JsonOptions, metadataTimeout.Token);
             if (metadata is null)
             {
                 return null;
@@ -336,6 +370,7 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxPackageBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: true,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             var packageSha = packageArtifact.Sha256Hex ??
                              throw new InvalidOperationException("Provider package SHA-256 could not be computed.");
@@ -349,6 +384,7 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxChecksumBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: false,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             shasumsArtifact.Content.Position = 0;
             using var shasumsReader = new StreamReader(shasumsArtifact.Content, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
@@ -364,10 +400,17 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxChecksumBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: false,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             var packagePath = PackageStoragePath(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, metadata.Filename);
             var shasumsPath = ShasumsStoragePath(hostname, providerNamespace, type, version.Version);
             var signaturePath = $"{shasumsPath}.sig";
+            var cacheBytes = checked(packageArtifact.Length + shasumsArtifact.Length + signatureArtifact.Length);
+            if (cacheBudget is not null &&
+                !await cacheBudget.EnsureCapacityAsync(cacheBytes, config.Limits.MaxTotalCachedBytes, cancellationToken))
+            {
+                throw new InvalidOperationException("Mirror cache budget cannot accommodate the provider package.");
+            }
 
             packageArtifact.Content.Position = 0;
             var packageSave = await storage.SaveAsync(packagePath, packageArtifact.Content, cancellationToken);
@@ -389,6 +432,7 @@ public sealed class ProviderMirrorService(
                 Filename = metadata.Filename,
                 PackageStoragePath = packageSave.StoragePath,
                 SizeBytes = packageSave.SizeBytes,
+                CacheSizeBytes = cacheBytes,
                 ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
                 HashesJson = JsonSerializer.Serialize(hashes, JsonOptions),
                 Shasum = packageSha,
@@ -466,6 +510,7 @@ public sealed class ProviderMirrorService(
         long maxBytes,
         int maxRedirects,
         bool computeSha256,
+        int timeoutSeconds,
         CancellationToken cancellationToken)
     {
         if (maxBytes <= 0)
@@ -477,8 +522,14 @@ public sealed class ProviderMirrorService(
         {
             throw new ArgumentOutOfRangeException(nameof(maxRedirects), "Maximum redirects must not be negative.");
         }
+        if (timeoutSeconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds), "Timeout must be positive.");
+        }
 
-        var currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(url, cancellationToken);
+        using var timeout = CreateTimeout(timeoutSeconds, cancellationToken);
+        var requestToken = timeout.Token;
+        var currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(url, requestToken);
         var mirrorClient = httpClientFactory.CreateClient(MirrorHttpClientName);
 
         for (var redirectCount = 0; ; redirectCount++)
@@ -488,7 +539,7 @@ public sealed class ProviderMirrorService(
             using var response = await mirrorClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                requestToken);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -505,12 +556,12 @@ public sealed class ProviderMirrorService(
                 var redirectUri = response.Headers.Location.IsAbsoluteUri
                     ? response.Headers.Location
                     : new Uri(currentEndpoint.Uri, response.Headers.Location);
-                currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(redirectUri.ToString(), cancellationToken);
+                currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(redirectUri.ToString(), requestToken);
                 continue;
             }
 
             response.EnsureSuccessStatusCode();
-            return await ReadArtifactToTempFileAsync(response, currentEndpoint.Uri, maxBytes, computeSha256, cancellationToken);
+            return await ReadArtifactToTempFileAsync(response, currentEndpoint.Uri, maxBytes, computeSha256, requestToken);
         }
     }
 
@@ -591,6 +642,13 @@ public sealed class ProviderMirrorService(
             or HttpStatusCode.RedirectMethod
             or HttpStatusCode.TemporaryRedirect
             or HttpStatusCode.PermanentRedirect;
+
+    private static CancellationTokenSource CreateTimeout(int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        return timeout;
+    }
 
     private static ProviderMirrorIndexResponse ToNetworkMirrorIndex(UpstreamProviderVersions versions)
     {

@@ -27,4 +27,5 @@ public sealed record ProviderMirrorPackageDownload(
     Stream Content,
     string Filename,
     string ContentType,
-    long? ContentLength);
+    long? ContentLength,
+    IDisposable? CacheLease = null);
