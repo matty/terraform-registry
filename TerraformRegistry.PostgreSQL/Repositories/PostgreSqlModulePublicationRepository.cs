@@ -6,7 +6,9 @@ using TerraformRegistry.Models;
 
 namespace TerraformRegistry.PostgreSQL.Repositories;
 
-public sealed class PostgreSqlModulePublicationRepository(string connectionString) : IModulePublicationRepository
+public sealed class PostgreSqlModulePublicationRepository(string connectionString) :
+    IModulePublicationRepository,
+    IModuleExtractionJobRepository
 {
     public async Task CreatePublicationAttemptWithExtractionJobAsync(
         ModulePublicationAttempt attempt,
@@ -25,10 +27,12 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
                 @expectedRevision, @committedRevision, @error, @createdAt, @updatedAt, @completedAt);
 
             INSERT INTO module_extraction_jobs (
-                id, publication_attempt_id, namespace, name, provider, version, state, created_at, updated_at)
+                id, publication_attempt_id, namespace, name, provider, version, state, owner_id,
+                lease_expires_at, attempt_count, last_error, created_at, updated_at, completed_at)
             VALUES (
                 @jobId, @attemptId, @jobNamespace, @jobName, @jobProvider, @jobVersion, @jobState,
-                @jobCreatedAt, @jobUpdatedAt);
+                @jobOwnerId, @jobLeaseExpiresAt, @jobAttemptCount, @jobLastError,
+                @jobCreatedAt, @jobUpdatedAt, @jobCompletedAt);
             """,
             connection,
             transaction);
@@ -127,7 +131,8 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
             """
-            SELECT id, publication_attempt_id, namespace, name, provider, version, state, created_at, updated_at
+            SELECT id, publication_attempt_id, namespace, name, provider, version, state, owner_id,
+                   lease_expires_at, attempt_count, last_error, created_at, updated_at, completed_at
             FROM module_extraction_jobs
             WHERE id = @id
             """,
@@ -136,6 +141,92 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         await using var reader = await command.ExecuteReaderAsync();
 
         return await reader.ReadAsync() ? ReadJob(reader) : null;
+    }
+
+    public async Task<ModuleExtractionJob?> TryClaimNextExtractionJobAsync(
+        string ownerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            WITH candidate AS (
+                SELECT id
+                FROM module_extraction_jobs
+                WHERE state IN (@pending, @retry)
+                   OR (state = @processing AND lease_expires_at <= @now)
+                ORDER BY created_at, id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1)
+            UPDATE module_extraction_jobs AS jobs
+            SET state = @processing, owner_id = @ownerId, lease_expires_at = @leaseExpiresAt,
+                attempt_count = jobs.attempt_count + 1, updated_at = @updatedAt,
+                last_error = CASE WHEN jobs.state = @processing THEN jobs.last_error ELSE NULL END
+            FROM candidate
+            WHERE jobs.id = candidate.id
+            RETURNING jobs.id, jobs.publication_attempt_id, jobs.namespace, jobs.name, jobs.provider, jobs.version,
+                      jobs.state, jobs.owner_id, jobs.lease_expires_at, jobs.attempt_count, jobs.last_error,
+                      jobs.created_at, jobs.updated_at, jobs.completed_at
+            """, connection);
+        AddClaimParameters(command, ownerId, leaseDuration, now);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadJob(reader) : null;
+    }
+
+    public Task<bool> TryHeartbeatExtractionJobAsync(Guid jobId, string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        UpdateLeasedJobAsync(jobId, ownerId, """
+            UPDATE module_extraction_jobs
+            SET lease_expires_at = @leaseExpiresAt, updated_at = @updatedAt
+            WHERE id = @id AND state = @processing AND owner_id = @ownerId
+            """, leaseDuration, cancellationToken);
+
+    public Task<bool> TryCompleteExtractionJobAsync(Guid jobId, string ownerId,
+        CancellationToken cancellationToken = default) =>
+        UpdateLeasedJobAsync(jobId, ownerId, """
+            UPDATE module_extraction_jobs
+            SET state = @succeeded, owner_id = NULL, lease_expires_at = NULL,
+                updated_at = @updatedAt, completed_at = @completedAt, last_error = NULL
+            WHERE id = @id AND state = @processing AND owner_id = @ownerId
+            """, TimeSpan.Zero, cancellationToken);
+
+    public async Task<bool> TryFailExtractionJobAsync(Guid jobId, string ownerId, string failureReason,
+        int maximumAttempts, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE module_extraction_jobs
+            SET state = CASE WHEN attempt_count >= @maximumAttempts THEN @deadLetter ELSE @retry END,
+                owner_id = NULL, lease_expires_at = NULL, last_error = @failureReason,
+                updated_at = @updatedAt,
+                completed_at = CASE WHEN attempt_count >= @maximumAttempts THEN @completedAt ELSE NULL END
+            WHERE id = @id AND state = @processing AND owner_id = @ownerId
+            """, connection);
+        command.Parameters.AddWithValue("@maximumAttempts", maximumAttempts);
+        command.Parameters.AddWithValue("@deadLetter", ModuleExtractionJobState.DeadLetter);
+        command.Parameters.AddWithValue("@retry", ModuleExtractionJobState.Retry);
+        command.Parameters.AddWithValue("@failureReason", failureReason);
+        command.Parameters.AddWithValue("@updatedAt", now);
+        command.Parameters.AddWithValue("@completedAt", now);
+        command.Parameters.AddWithValue("@id", jobId);
+        command.Parameters.AddWithValue("@processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("@ownerId", ownerId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM module_extraction_jobs WHERE state IN (@pending, @retry)", connection);
+        command.Parameters.AddWithValue("@pending", ModuleExtractionJobState.Pending);
+        command.Parameters.AddWithValue("@retry", ModuleExtractionJobState.Retry);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void AddAttemptParameters(NpgsqlCommand command, ModulePublicationAttempt attempt)
@@ -233,8 +324,13 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         command.Parameters.AddWithValue("@jobProvider", job.Provider);
         command.Parameters.AddWithValue("@jobVersion", job.Version);
         command.Parameters.AddWithValue("@jobState", job.State);
+        command.Parameters.AddWithValue("@jobOwnerId", (object?)job.OwnerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@jobLeaseExpiresAt", (object?)job.LeaseExpiresAt ?? DBNull.Value);
+        command.Parameters.AddWithValue("@jobAttemptCount", job.AttemptCount);
+        command.Parameters.AddWithValue("@jobLastError", (object?)job.LastError ?? DBNull.Value);
         command.Parameters.AddWithValue("@jobCreatedAt", job.CreatedAt);
         command.Parameters.AddWithValue("@jobUpdatedAt", job.UpdatedAt);
+        command.Parameters.AddWithValue("@jobCompletedAt", (object?)job.CompletedAt ?? DBNull.Value);
     }
 
     private static ModulePublicationAttempt ReadAttempt(NpgsqlDataReader reader) => new()
@@ -263,7 +359,40 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         Provider = reader.GetString(4),
         Version = reader.GetString(5),
         State = reader.GetString(6),
-        CreatedAt = reader.GetDateTime(7),
-        UpdatedAt = reader.GetDateTime(8)
+        OwnerId = reader.IsDBNull(7) ? null : reader.GetString(7),
+        LeaseExpiresAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
+        AttemptCount = reader.GetInt32(9),
+        LastError = reader.IsDBNull(10) ? null : reader.GetString(10),
+        CreatedAt = reader.GetDateTime(11),
+        UpdatedAt = reader.GetDateTime(12),
+        CompletedAt = reader.IsDBNull(13) ? null : reader.GetDateTime(13)
     };
+
+    private static void AddClaimParameters(NpgsqlCommand command, string ownerId, TimeSpan leaseDuration, DateTime now)
+    {
+        command.Parameters.AddWithValue("@pending", ModuleExtractionJobState.Pending);
+        command.Parameters.AddWithValue("@retry", ModuleExtractionJobState.Retry);
+        command.Parameters.AddWithValue("@processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@ownerId", ownerId);
+        command.Parameters.AddWithValue("@leaseExpiresAt", now.Add(leaseDuration));
+        command.Parameters.AddWithValue("@updatedAt", now);
+    }
+
+    private async Task<bool> UpdateLeasedJobAsync(Guid jobId, string ownerId, string sql, TimeSpan leaseDuration,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@id", jobId);
+        command.Parameters.AddWithValue("@ownerId", ownerId);
+        command.Parameters.AddWithValue("@processing", ModuleExtractionJobState.Processing);
+        command.Parameters.AddWithValue("@succeeded", ModuleExtractionJobState.Succeeded);
+        command.Parameters.AddWithValue("@leaseExpiresAt", now.Add(leaseDuration));
+        command.Parameters.AddWithValue("@updatedAt", now);
+        command.Parameters.AddWithValue("@completedAt", now);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
 }

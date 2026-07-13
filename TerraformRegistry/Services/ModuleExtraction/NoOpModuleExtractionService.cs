@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-
 namespace TerraformRegistry.Services.ModuleExtraction;
 
 public sealed class NoOpModuleExtractionService : IModuleExtractionService
@@ -14,12 +12,7 @@ public sealed class NoOpModuleExtractionService : IModuleExtractionService
         return Task.FromResult<IReadOnlyList<ModuleExtractionRequest>>([]);
     }
 
-    public async IAsyncEnumerable<ModuleExtractionRequest> ReadQueuedAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await Task.CompletedTask;
-        yield break;
-    }
+    public Task<bool> ProcessNextAsync(string ownerId, CancellationToken cancellationToken) => Task.FromResult(false);
 
     public Task ExtractAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
     {

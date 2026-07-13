@@ -421,7 +421,15 @@ internal static class ServiceRegistrationExtensions
         services.AddSingleton<ITerraformModuleInspector, TerraformConfigInspectRunner>();
         services.AddSingleton<IModuleLlmContextGenerator, ModuleLlmContextGenerator>();
         services.AddSingleton<IModuleExtractionConfigService, ModuleExtractionConfigService>();
-        services.AddSingleton<IModuleExtractionService, ModuleExtractionService>();
+        services.AddSingleton<IModuleExtractionService>(provider => new ModuleExtractionService(
+            provider.GetRequiredService<IModuleService>(),
+            provider.GetRequiredService<IDatabaseService>(),
+            provider.GetRequiredService<IArchiveWorkspaceFactory>(),
+            provider.GetRequiredService<ITerraformModuleInspector>(),
+            provider.GetRequiredService<IModuleLlmContextGenerator>(),
+            provider.GetRequiredService<IModuleExtractionConfigService>(),
+            provider.GetRequiredService<ILogger<ModuleExtractionService>>(),
+            provider.GetRequiredService<IOptions<ModuleExtractionOptions>>().Value));
         services.AddHostedService<ModuleExtractionHostedService>();
         services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 

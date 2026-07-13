@@ -10,7 +10,7 @@ namespace TerraformRegistry.Services;
 /// <summary>
 ///     SQLite compatibility facade for local development/storage.
 /// </summary>
-public class SqliteDatabaseService : IDatabaseService, IModulePublicationRepository, IInitializableDb
+public class SqliteDatabaseService : IDatabaseService, IModulePublicationRepository, IModuleExtractionJobRepository, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly DbUpMigrator _dbUpMigrator;
@@ -55,6 +55,25 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
     public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
 
     public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
+
+    public Task<ModuleExtractionJob?> TryClaimNextExtractionJobAsync(string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryClaimNextExtractionJobAsync(ownerId, leaseDuration, cancellationToken);
+
+    public Task<bool> TryHeartbeatExtractionJobAsync(Guid jobId, string ownerId, TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryHeartbeatExtractionJobAsync(jobId, ownerId, leaseDuration, cancellationToken);
+
+    public Task<bool> TryCompleteExtractionJobAsync(Guid jobId, string ownerId,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryCompleteExtractionJobAsync(jobId, ownerId, cancellationToken);
+
+    public Task<bool> TryFailExtractionJobAsync(Guid jobId, string ownerId, string failureReason, int maximumAttempts,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryFailExtractionJobAsync(jobId, ownerId, failureReason, maximumAttempts, cancellationToken);
+
+    public Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default) =>
+        _publications.CountPendingExtractionJobsAsync(cancellationToken);
 
     public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
         _modules.ListModulesAsync(request);

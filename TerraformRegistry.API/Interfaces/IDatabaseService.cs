@@ -9,7 +9,8 @@ public interface IDatabaseService :
     IUserRepository,
     IApiKeyRepository,
     IModuleDownloadRecorder,
-    IModulePublicationRepository
+    IModulePublicationRepository,
+    IModuleExtractionJobRepository
 {
     /// <summary>
     ///     Checks that the database connection is healthy.

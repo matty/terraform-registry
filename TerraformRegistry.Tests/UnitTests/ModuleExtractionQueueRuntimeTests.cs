@@ -52,6 +52,11 @@ public class ModuleExtractionQueueRuntimeTests
         Assert.NotNull(metadata.LlmContext);
         Assert.Equal("pending", metadata.LlmContext.Status);
         Assert.NotNull(metadata.LlmContext.LastUpdatedAt);
+        database.Verify(x => x.CreatePublicationAttemptWithExtractionJobAsync(
+            It.Is<ModulePublicationAttempt>(attempt =>
+                attempt.Namespace == "acme" && attempt.State == ModulePublicationAttemptState.Committed),
+            It.Is<ModuleExtractionJob>(job =>
+                job.Namespace == "acme" && job.State == ModuleExtractionJobState.Pending)), Times.Once);
     }
 
     [Fact]
@@ -162,9 +167,28 @@ public class ModuleExtractionQueueRuntimeTests
         Assert.Equal("tool missing", metadata.Extraction.Error);
     }
 
+    [Fact]
+    public async Task QueueAsyncRejectsWorkWhenDurableBacklogIsFull()
+    {
+        var config = new Mock<IModuleExtractionConfigService>();
+        config.Setup(x => x.IsEnabledAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.CountPendingExtractionJobsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        var service = CreateService(config.Object, database.Object, new ModuleExtractionOptions { MaxPendingJobs = 1 });
+
+        var queued = await service.QueueAsync(new ModuleExtractionRequest("acme", "network", "aws", "1.0.0"),
+            CancellationToken.None);
+
+        Assert.False(queued);
+        database.Verify(x => x.CreatePublicationAttemptWithExtractionJobAsync(
+            It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()), Times.Never);
+    }
+
     private static ModuleExtractionService CreateService(
         IModuleExtractionConfigService config,
-        IDatabaseService? database = null)
+        IDatabaseService? database = null,
+        ModuleExtractionOptions? options = null)
     {
         return new ModuleExtractionService(
             Mock.Of<IModuleService>(),
@@ -173,6 +197,7 @@ public class ModuleExtractionQueueRuntimeTests
             Mock.Of<ITerraformModuleInspector>(),
             Mock.Of<IModuleLlmContextGenerator>(),
             config,
-            NullLogger<ModuleExtractionService>.Instance);
+            NullLogger<ModuleExtractionService>.Instance,
+            options);
     }
 }
