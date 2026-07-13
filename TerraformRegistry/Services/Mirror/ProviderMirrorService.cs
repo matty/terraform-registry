@@ -261,28 +261,31 @@ public sealed class ProviderMirrorService(
         }
 
         var leaseKey = $"provider-package:{hostname}:{providerNamespace}:{type}:{version.Version}:{platform.Os}:{platform.Arch}";
-        using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
-        if (admission is null)
-        {
-            RegistryLog.Warning(logger, "Provider mirror admission limit reached for {LeaseKey}", leaseKey);
-            return null;
-        }
-
         var lease = await leaseService.TryAcquireAsync(leaseKey, "provider-package", TimeSpan.FromMinutes(5), cancellationToken);
         if (lease is null)
         {
-            return await GetReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, cancellationToken);
+            return await WaitForReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch,
+                config.Providers.DownloadTimeoutSeconds, cancellationToken);
         }
 
         try
         {
+            using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
+            if (admission is null)
+            {
+                RegistryLog.Warning(logger, "Provider mirror admission limit reached for {LeaseKey}", leaseKey);
+                return await WaitForReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch,
+                    config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            }
+
             cached = await GetReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, cancellationToken);
             if (cached is not null)
             {
                 return cached;
             }
 
-            return await FetchAndCachePackageAsync(hostname, providerNamespace, type, version, platform, config, cancellationToken);
+            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1));
+            return await FetchAndCachePackageAsync(hostname, providerNamespace, type, version, platform, config, heartbeat, cancellationToken);
         }
         finally
         {
@@ -341,6 +344,21 @@ public sealed class ProviderMirrorService(
         return null;
     }
 
+    private async Task<MirrorProviderPackage?> WaitForReadyPackageAsync(
+        string hostname, string providerNamespace, string type, string version, string os, string arch,
+        int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        do
+        {
+            var cached = await GetReadyPackageAsync(hostname, providerNamespace, type, version, os, arch, cancellationToken);
+            if (cached is not null) return cached;
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        } while (DateTime.UtcNow < deadline);
+
+        return await GetReadyPackageAsync(hostname, providerNamespace, type, version, os, arch, cancellationToken);
+    }
+
     private async Task<MirrorProviderPackage?> FetchAndCachePackageAsync(
         string hostname,
         string providerNamespace,
@@ -348,6 +366,7 @@ public sealed class ProviderMirrorService(
         UpstreamProviderVersion version,
         UpstreamProviderPlatform platform,
         MirrorOptions config,
+        MirrorLeaseHeartbeat heartbeat,
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient();
@@ -412,6 +431,8 @@ public sealed class ProviderMirrorService(
                 throw new InvalidOperationException("Mirror cache budget cannot accommodate the provider package.");
             }
 
+            heartbeat.ThrowIfOwnershipLost();
+
             packageArtifact.Content.Position = 0;
             var packageSave = await storage.SaveAsync(packagePath, packageArtifact.Content, cancellationToken);
             shasumsArtifact.Content.Position = 0;
@@ -447,6 +468,7 @@ public sealed class ProviderMirrorService(
                 LastSyncAt = DateTime.UtcNow
             };
 
+            heartbeat.ThrowIfOwnershipLost();
             await repository.UpsertProviderPackageAsync(package);
             return package;
         }
