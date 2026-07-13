@@ -14,6 +14,10 @@ public static class MirrorConfigurationValidator
             .Where(static host => !string.IsNullOrWhiteSpace(host))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        if (hosts.Length == 0)
+        {
+            throw new InvalidOperationException("Mirror provider configuration must allow at least one hostname.");
+        }
         if (options.Providers.UpstreamRegistryUrls.Count == 0)
         {
             var upstreamHost = new Uri(options.UpstreamRegistryBaseUrl, UriKind.Absolute).DnsSafeHost;

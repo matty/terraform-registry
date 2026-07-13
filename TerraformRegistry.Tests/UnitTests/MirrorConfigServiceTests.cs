@@ -197,4 +197,17 @@ public class MirrorConfigServiceTests
 
         Assert.Contains("explicit upstream mapping", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void MirrorConfigurationRejectsAnEmptyProviderHostnameAllowlist()
+    {
+        var options = new MirrorOptions
+        {
+            Providers = new MirrorProviderRuntimeOptions { AllowedHostnames = [] }
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MirrorConfigurationValidator.Validate(options));
+
+        Assert.Contains("at least one", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }
