@@ -229,9 +229,9 @@ public class LocalModuleServiceTests
         Assert.Equal(string.Empty, filePath);
     }
 
-    // Verifies that UploadModuleAsyncCore saves the file and adds the module to the database
+    // Verifies that UploadModuleAsyncCore promotes a unique artifact only after the catalog commit succeeds.
     [Fact]
-    public async Task UploadModuleAsyncCoreSavesFileAndAddsToDatabase()
+    public async Task UploadModuleAsyncCorePromotesFileAfterCatalogCommit()
     {
         // Arrange
         var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
@@ -241,13 +241,131 @@ public class LocalModuleServiceTests
         var version = "1.0.0";
         var desc = "desc";
         var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
-        _mockDbService.Setup(x => x.AddModuleAsync(It.IsAny<ModuleStorage>())).ReturnsAsync(true);
+        ModuleStorage? committed = null;
+        _mockDbService.Setup(x => x.GetModuleStorageAsync(ns, name, provider, version))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => committed = module)
+            .ReturnsAsync(true);
         // Act
         var result = await service.CallUploadModuleAsyncCore(ns, name, provider, version, content, desc);
         // Assert
         Assert.True(result);
-        var filePath = Path.Combine(_testModulePath, ns, $"{name}-{provider}-{version}.zip");
-        Assert.True(File.Exists(filePath));
+        Assert.NotNull(committed);
+        Assert.True(File.Exists(committed!.FilePath));
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCoreStagesAndCommitsAUniquePublicationAttempt()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        await using var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
+        ModulePublicationAttempt? capturedAttempt = null;
+        ModuleExtractionJob? capturedJob = null;
+        ModuleStorage? capturedModule = null;
+
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0"))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDbService.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Callback<ModulePublicationAttempt, ModuleExtractionJob>((attempt, job) =>
+            {
+                capturedAttempt = attempt;
+                capturedJob = job;
+            })
+            .Returns(Task.CompletedTask);
+        _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => capturedModule = module)
+            .ReturnsAsync(true);
+
+        var result = await service.CallUploadModuleAsyncCore("ns", "name", "provider", "1.0.0", content, "desc");
+
+        Assert.True(result);
+        Assert.NotNull(capturedAttempt);
+        Assert.NotNull(capturedJob);
+        Assert.NotNull(capturedModule);
+        Assert.Equal(ModulePublicationAttemptState.Staged, capturedAttempt!.State);
+        Assert.Equal(capturedAttempt.Id, capturedJob!.PublicationAttemptId);
+        Assert.Contains(capturedAttempt.Id.ToString("N"), capturedAttempt.StagingKey, StringComparison.Ordinal);
+        Assert.Contains(capturedAttempt.Id.ToString("N"), capturedModule!.FilePath, StringComparison.Ordinal);
+        Assert.True(File.Exists(capturedModule.FilePath));
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCoreRemovesOnlyItsArtifactWhenCatalogCommitLoses()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        await using var content = new MemoryStream(Encoding.UTF8.GetBytes("loser"));
+        ModuleStorage? attemptedModule = null;
+        ModulePublicationAttempt? attemptedPublication = null;
+        var existing = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "winner",
+            FilePath = Path.Join(_testModulePath, "ns/.published/winner/module.zip"),
+            PublishedAt = DateTime.UtcNow.AddMinutes(-1),
+            Dependencies = []
+        };
+        Directory.CreateDirectory(Path.GetDirectoryName(existing.FilePath)!);
+        await File.WriteAllTextAsync(existing.FilePath, "winner");
+
+        _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0"))
+            .ReturnsAsync(existing);
+        _mockDbService.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Callback<ModulePublicationAttempt, ModuleExtractionJob>((attempt, _) => attemptedPublication = attempt)
+            .Returns(Task.CompletedTask);
+        _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), existing))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => attemptedModule = module)
+            .ReturnsAsync(false);
+        _mockDbService.Setup(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        var result = await service.CallUploadModuleAsyncCore("ns", "name", "provider", "1.0.0", content, "desc",
+            replace: true);
+
+        Assert.False(result);
+        Assert.NotNull(attemptedModule);
+        Assert.False(File.Exists(attemptedModule!.FilePath));
+        Assert.True(File.Exists(existing.FilePath));
+        _mockDbService.Verify(x => x.TryFailStagedPublicationAsync(attemptedPublication!.Id,
+            It.Is<string>(reason => reason.Contains("Catalog changed", StringComparison.Ordinal))), Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeModuleVersionAsyncDeletesOwnedArtifactBeforeRemovingCatalogRow()
+    {
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var filePath = Path.Join(_testModulePath, "ns/.published/attempt/module.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(filePath, "artifact");
+        var module = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = filePath,
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDbService.Setup(x => x.GetModuleStorageIncludingDeletedAsync("ns", "name", "provider", "1.0.0"))
+            .ReturnsAsync(module);
+        _mockDbService.Setup(x => x.RemoveModuleAsync(module))
+            .Callback(() => Assert.False(File.Exists(filePath)))
+            .ReturnsAsync(true);
+
+        var result = await service.PurgeModuleVersionAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.True(result);
+        Assert.False(File.Exists(filePath));
     }
 
     [Fact]

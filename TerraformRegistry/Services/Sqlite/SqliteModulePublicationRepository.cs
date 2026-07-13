@@ -125,6 +125,20 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         if (await attemptCommand.ExecuteNonQueryAsync() != 1)
             return false;
 
+        await using var jobCommand = connection.CreateCommand();
+        jobCommand.Transaction = transaction;
+        jobCommand.CommandText = """
+            UPDATE module_extraction_jobs
+            SET state = $pending, updated_at = $updatedAt
+            WHERE publication_attempt_id = $attemptId AND state = $staged
+            """;
+        jobCommand.Parameters.AddWithValue("$pending", ModuleExtractionJobState.Pending);
+        jobCommand.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("O"));
+        jobCommand.Parameters.AddWithValue("$attemptId", attempt.Id.ToString());
+        jobCommand.Parameters.AddWithValue("$staged", ModuleExtractionJobState.Staged);
+        if (await jobCommand.ExecuteNonQueryAsync() != 1)
+            return false;
+
         transaction.Commit();
         return true;
     }

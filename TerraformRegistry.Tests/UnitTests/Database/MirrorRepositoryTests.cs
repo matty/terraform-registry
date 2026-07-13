@@ -222,12 +222,18 @@ internal static class PublicationCommitContract
         var now = TruncateToMicroseconds(DateTime.UtcNow);
         var first = CreateModule("artifacts/acme/network/aws/1.0.0/first.zip", now);
         var firstAttempt = CreateAttempt(first, now);
-        await publications.CreatePublicationAttemptWithExtractionJobAsync(firstAttempt, CreateJob(firstAttempt));
+        var firstJob = CreateJob(firstAttempt);
+        await publications.CreatePublicationAttemptWithExtractionJobAsync(firstAttempt, firstJob);
+
+        Assert.Null(await ((IModuleExtractionJobRepository)publications)
+            .TryClaimNextExtractionJobAsync("worker", TimeSpan.FromMinutes(1)));
 
         Assert.True(await publications.TryCommitStagedPublicationAsync(firstAttempt, first, null));
         AssertModuleEquals(first, await modules.GetModuleStorageAsync("acme", "network", "aws", "1.0.0"));
         Assert.Equal(ModulePublicationAttemptState.Committed,
             (await publications.GetPublicationAttemptAsync(firstAttempt.Id))!.State);
+        Assert.Equal(ModuleExtractionJobState.Pending,
+            (await publications.GetExtractionJobAsync(firstJob.Id))!.State);
 
         var replacement = CreateModule("artifacts/acme/network/aws/1.0.0/replacement.zip", now.AddMinutes(1));
         replacement.Description = "replacement artifact";
@@ -274,7 +280,7 @@ internal static class PublicationCommitContract
         Name = attempt.Name,
         Provider = attempt.Provider,
         Version = attempt.Version,
-        State = ModuleExtractionJobState.Pending,
+        State = ModuleExtractionJobState.Staged,
         CreatedAt = attempt.CreatedAt,
         UpdatedAt = attempt.UpdatedAt
     };

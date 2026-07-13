@@ -274,20 +274,56 @@ public class LocalModuleService : ModuleService
         if (coordinateError != null)
             throw new ArgumentException(coordinateError);
 
-        var namespaceDir = GetNamespaceDirectory(moduleNamespace);
-        if (!Directory.Exists(namespaceDir)) Directory.CreateDirectory(namespaceDir);
+        var existing = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+        if (!replace && existing is not null)
+            return false;
 
+        var now = DateTime.UtcNow;
+        var attemptId = Guid.NewGuid();
+        var namespaceDir = GetNamespaceDirectory(moduleNamespace);
+        var stagingDirectory = GetContainedPath(_moduleStorageRoot, ".staging");
+        var publicationDirectory = GetContainedPath(namespaceDir, ".published");
         var fileName = $"{name}-{provider}-{version}{ModuleArchiveFormat.GetFileSuffix(metadata)}";
-        var tempFileName = $"{fileName}.tmp";
-        var tempFilePath = GetContainedPath(namespaceDir, tempFileName);
-        var finalFilePath = GetContainedPath(namespaceDir, fileName);
+        var stagingFilePath = GetContainedPath(stagingDirectory, $"{attemptId:N}-{fileName}");
+        var finalDirectory = GetContainedPath(publicationDirectory, attemptId.ToString("N"));
+        var finalFilePath = GetContainedPath(finalDirectory, fileName);
+        var attempt = new ModulePublicationAttempt
+        {
+            Id = attemptId,
+            Namespace = moduleNamespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModulePublicationAttemptState.Staged,
+            StagingKey = Path.GetRelativePath(_moduleStorageRoot, stagingFilePath).Replace(Path.DirectorySeparatorChar, '/'),
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attemptId,
+            Namespace = moduleNamespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModuleExtractionJobState.Staged,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var committed = false;
 
         try
         {
-            await using (var fileStream = File.Create(tempFilePath))
+            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+            Directory.CreateDirectory(stagingDirectory);
+            await using (var fileStream = File.Create(stagingFilePath))
             {
                 await moduleContent.CopyToAsync(fileStream);
             }
+
+            Directory.CreateDirectory(finalDirectory);
+            File.Move(stagingFilePath, finalFilePath);
 
             var module = new ModuleStorage
             {
@@ -297,73 +333,29 @@ public class LocalModuleService : ModuleService
                 Version = version,
                 Description = description,
                 FilePath = finalFilePath,
-                PublishedAt = DateTime.UtcNow,
+                PublishedAt = now,
                 Dependencies = [],
                 Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
-            if (replace)
-            {
-                try
-                {
-                    await _databaseService.RemoveModuleAsync(module);
-                }
-                catch (Exception ex)
-                {
-                    RegistryLog.Warning(_logger, ex,
-                        "Failed to remove existing database module {Namespace}/{Name}/{Provider}/{Version}; continuing with add",
-                        moduleNamespace, name, provider, version);
-                }
+            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing);
+            if (committed)
+                return true;
 
-                try
-                {
-                    if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
-                }
-                catch (Exception ex)
-                {
-                    RegistryLog.Warning(_logger, ex,
-                        "Failed to delete existing module file {Path}; continuing with overwrite", finalFilePath);
-                }
-            }
-
-            var dbResult = await _databaseService.AddModuleAsync(module);
-            if (dbResult)
-            {
-                try
-                {
-                    if (File.Exists(finalFilePath)) File.Delete(finalFilePath);
-                    File.Move(tempFilePath, finalFilePath);
-                    return true;
-                }
-                catch (Exception fileMoveEx)
-                {
-                    try
-                    {
-                        await _databaseService.RemoveModuleAsync(module);
-                    }
-                    catch (Exception dbRollbackEx)
-                    {
-                        RegistryLog.Error(_logger, dbRollbackEx,
-                            "Failed to rollback DB entry after file move failure for {Namespace}/{Name}/{Provider}/{Version}",
-                            moduleNamespace, name, provider, version);
-                    }
-
-                    RegistryLog.Error(_logger, fileMoveEx,
-                        "Failed to move file, rolled back DB entry for {Namespace}/{Name}/{Provider}/{Version}",
-                        moduleNamespace, name, provider, version);
-                    if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
-                    return false;
-                }
-            }
-
-            File.Delete(tempFilePath);
+            CleanupOwnedArtifact(finalDirectory, stagingFilePath);
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, "Catalog changed before publication could commit.");
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            RegistryLog.Error(_logger, ex, "Failed to upload module {Namespace}/{Name}/{Provider}/{Version}", moduleNamespace, name,
-                provider, version);
-            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+            RegistryLog.Error(_logger, ex, "Failed to publish module {Namespace}/{Name}/{Provider}/{Version}", moduleNamespace,
+                name, provider, version);
+            if (!committed)
+            {
+                CleanupOwnedArtifact(finalDirectory, stagingFilePath);
+                await TryFailPublicationAttemptAsync(attemptId, ex.Message);
+            }
+
             return false;
         }
     }
@@ -394,25 +386,19 @@ public class LocalModuleService : ModuleService
             return false;
         }
 
-        // Delete from database first (permanent delete)
-        var dbResult = await _databaseService.RemoveModuleAsync(moduleStorage);
-        if (!dbResult)
-            return false;
-
-        // Delete the file from disk
         try
         {
             if (File.Exists(moduleStorage.FilePath))
                 File.Delete(moduleStorage.FilePath);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(_logger, ex, "Failed to delete file for purged module {Namespace}/{Name}/{Provider}/{Version}",
                 moduleNamespace, name, provider, version);
-            // DB deletion succeeded, file deletion may have failed - still return true
+            return false;
         }
 
-        return true;
+        return await _databaseService.RemoveModuleAsync(moduleStorage);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
@@ -459,6 +445,33 @@ public class LocalModuleService : ModuleService
             throw new ArgumentException("Module file path resolves outside the storage root.", nameof(fileName));
 
         return path;
+    }
+
+    private void CleanupOwnedArtifact(string finalDirectory, string stagingFilePath)
+    {
+        try
+        {
+            if (File.Exists(stagingFilePath))
+                File.Delete(stagingFilePath);
+            if (Directory.Exists(finalDirectory))
+                Directory.Delete(finalDirectory, true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RegistryLog.Warning(_logger, ex, "Failed to clean up the owned local publication artifact.");
+        }
+    }
+
+    private async Task TryFailPublicationAttemptAsync(Guid attemptId, string reason)
+    {
+        try
+        {
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RegistryLog.Error(_logger, ex, "Failed to mark local publication attempt {AttemptId} as failed.", attemptId);
+        }
     }
 
     private bool IsInsideStorageRoot(string path)
