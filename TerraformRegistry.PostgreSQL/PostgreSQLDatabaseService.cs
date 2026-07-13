@@ -10,7 +10,7 @@ namespace TerraformRegistry.PostgreSQL;
 /// <summary>
 ///     PostgreSQL compatibility facade for registry database storage.
 /// </summary>
-public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
+public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRepository, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly DbUpMigrator _dbUpMigrator;
@@ -18,6 +18,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
     private readonly PostgreSqlModuleDownloadRecorder _downloads;
     private readonly PostgreSqlModuleExtractionRepository _moduleExtractions;
     private readonly PostgreSqlModuleRepository _modules;
+    private readonly PostgreSqlModulePublicationRepository _publications;
     private readonly PostgreSqlUserRepository _users;
 
     public PostgreSqlDatabaseService(string connectionString, string baseUrl, ILogger<PostgreSqlDatabaseService> logger,
@@ -26,6 +27,7 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
         _connectionString = connectionString;
         _dbUpMigrator = dbUpMigrator;
         _modules = new PostgreSqlModuleRepository(connectionString, baseUrl, logger);
+        _publications = new PostgreSqlModulePublicationRepository(connectionString);
         _moduleExtractions = new PostgreSqlModuleExtractionRepository(connectionString);
         _users = new PostgreSqlUserRepository(connectionString);
         _apiKeys = new PostgreSqlApiKeyRepository(connectionString);
@@ -34,6 +36,17 @@ public class PostgreSqlDatabaseService : IDatabaseService, IInitializableDb
 
     public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
         _modules.ListModulesAsync(request);
+
+    public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job) => _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+    public Task<bool> TryCommitStagedPublicationAsync(
+        ModulePublicationAttempt attempt,
+        ModuleStorage newModule,
+        ModuleStorage? expectedModule) =>
+        _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule);
+    public Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason) =>
+        _publications.TryFailStagedPublicationAsync(attemptId, failureReason);
+    public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
+    public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
 
     public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version) =>
         _modules.GetModuleAsync(moduleNamespace, name, provider, version);

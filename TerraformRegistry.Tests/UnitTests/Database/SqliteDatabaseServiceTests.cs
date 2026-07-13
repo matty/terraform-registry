@@ -88,6 +88,47 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
         Assert.IsAssignableFrom<IUserRepository>(svc);
         Assert.IsAssignableFrom<IApiKeyRepository>(svc);
         Assert.IsAssignableFrom<IModuleDownloadRecorder>(svc);
+        Assert.IsAssignableFrom<IModulePublicationRepository>(svc);
+    }
+
+    [Fact]
+    public async Task CreatePublicationAttemptWithExtractionJobPersistsBothRecordsAtomically()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+        var attempt = new ModulePublicationAttempt
+        {
+            Id = Guid.NewGuid(),
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.0.0",
+            State = ModulePublicationAttemptState.Staged,
+            StagingKey = "attempts/staged.zip",
+            ExpectedRevision = "catalog-r17",
+            CommittedRevision = "artifact-r17",
+            Error = "transient storage failure",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attempt.Id,
+            Namespace = attempt.Namespace,
+            Name = attempt.Name,
+            Provider = attempt.Provider,
+            Version = attempt.Version,
+            State = ModuleExtractionJobState.Pending,
+            CreatedAt = attempt.CreatedAt,
+            UpdatedAt = attempt.UpdatedAt
+        };
+
+        await svc.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+
+        Assert.Equal(attempt, await svc.GetPublicationAttemptAsync(attempt.Id));
+        Assert.Equal(job, await svc.GetExtractionJobAsync(job.Id));
     }
 
     [Fact]

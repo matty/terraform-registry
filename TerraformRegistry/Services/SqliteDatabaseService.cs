@@ -10,7 +10,7 @@ namespace TerraformRegistry.Services;
 /// <summary>
 ///     SQLite compatibility facade for local development/storage.
 /// </summary>
-public class SqliteDatabaseService : IDatabaseService, IInitializableDb
+public class SqliteDatabaseService : IDatabaseService, IModulePublicationRepository, IInitializableDb
 {
     private readonly string _connectionString;
     private readonly DbUpMigrator _dbUpMigrator;
@@ -18,6 +18,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
     private readonly SqliteModuleDownloadRecorder _downloads;
     private readonly SqliteModuleExtractionRepository _moduleExtractions;
     private readonly SqliteModuleRepository _modules;
+    private readonly SqliteModulePublicationRepository _publications;
     private readonly SqliteUserRepository _users;
 
     public SqliteDatabaseService(string connectionString, string baseUrl, ILogger<SqliteDatabaseService> logger,
@@ -26,6 +27,7 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         _connectionString = connectionString;
         _dbUpMigrator = dbUpMigrator;
         _modules = new SqliteModuleRepository(connectionString, baseUrl, logger);
+        _publications = new SqliteModulePublicationRepository(connectionString);
         _moduleExtractions = new SqliteModuleExtractionRepository(connectionString);
         _users = new SqliteUserRepository(connectionString);
         _apiKeys = new SqliteApiKeyRepository(connectionString);
@@ -37,6 +39,22 @@ public class SqliteDatabaseService : IDatabaseService, IInitializableDb
         _dbUpMigrator.Migrate("sqlite", _connectionString);
         return Task.CompletedTask;
     }
+
+    public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job) =>
+        _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+
+    public Task<bool> TryCommitStagedPublicationAsync(
+        ModulePublicationAttempt attempt,
+        ModuleStorage newModule,
+        ModuleStorage? expectedModule) =>
+        _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule);
+
+    public Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason) =>
+        _publications.TryFailStagedPublicationAsync(attemptId, failureReason);
+
+    public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
+
+    public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
 
     public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
         _modules.ListModulesAsync(request);
