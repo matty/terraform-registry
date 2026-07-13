@@ -24,6 +24,54 @@ public sealed class RegistryRateLimitMetrics : IDisposable
     public void Dispose() => _meter.Dispose();
 }
 
+public static class RegistryRateLimiterFactory
+{
+    public static RateLimiter Create(RegistryRateLimitPolicyOptions policy)
+    {
+        var fixedWindow = new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = policy.PermitLimit,
+            Window = TimeSpan.FromSeconds(policy.WindowSeconds),
+            QueueLimit = policy.QueueLimit,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true
+        });
+        var concurrency = new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+        {
+            PermitLimit = policy.ConcurrencyLimit,
+            QueueLimit = policy.QueueLimit,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        });
+        return new OwnedRateLimiter(RateLimiter.CreateChained([fixedWindow, concurrency]), fixedWindow, concurrency);
+    }
+
+    private sealed class OwnedRateLimiter(RateLimiter inner, params RateLimiter[] owned) : RateLimiter
+    {
+        public override TimeSpan? IdleDuration => inner.IdleDuration;
+
+        public override RateLimiterStatistics? GetStatistics() => inner.GetStatistics();
+
+        protected override RateLimitLease AttemptAcquireCore(int permitCount) => inner.AttemptAcquire(permitCount);
+
+        protected override ValueTask<RateLimitLease> AcquireAsyncCore(int permitCount, CancellationToken cancellationToken) =>
+            inner.AcquireAsync(permitCount, cancellationToken);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+                foreach (var limiter in owned)
+                {
+                    limiter.Dispose();
+                }
+            }
+
+            base.Dispose(disposing);
+        }
+    }
+}
+
 public static class RegistryRateLimitingExtensions
 {
     private const string PolicyItemKey = "terraform-registry.rate-limit-policy";
@@ -64,14 +112,7 @@ public static class RegistryRateLimitingExtensions
                 {
                     httpContext.Items[PolicyItemKey] = name;
                     var partition = RateLimitPartitionKey.For(httpContext);
-                    return RateLimitPartition.GetFixedWindowLimiter(partition, _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = policy.PermitLimit,
-                        Window = TimeSpan.FromSeconds(policy.WindowSeconds),
-                        QueueLimit = policy.QueueLimit,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        AutoReplenishment = true
-                    });
+                    return RateLimitPartition.Get(partition, _ => RegistryRateLimiterFactory.Create(policy));
                 });
             }
         });
