@@ -171,6 +171,7 @@ internal static class ServiceRegistrationExtensions
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
         services.AddAnalyticsService();
+        services.AddDurableOutboxServices();
         services.AddWebhookServices();
         services.AddVcsServices();
         services.AddMirrorServices();
@@ -344,6 +345,24 @@ internal static class ServiceRegistrationExtensions
                     config["PostgreSQL:ConnectionString"]
                     ?? throw new InvalidOperationException("PostgreSQL connection string is missing for analytics service.")),
                 "sqlite" => new SqliteAnalyticsService(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+
+        return services;
+    }
+
+    private static IServiceCollection AddDurableOutboxServices(this IServiceCollection services)
+    {
+        services.AddSingleton<IOutboxEventRepository>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlOutboxEventRepository(config["PostgreSQL:ConnectionString"]
+                    ?? throw new InvalidOperationException("PostgreSQL connection string is missing for durable outbox.")),
+                "sqlite" => new SqliteOutboxEventRepository(config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
                 _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
             };
         });
