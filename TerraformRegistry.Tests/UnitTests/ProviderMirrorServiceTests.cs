@@ -39,6 +39,56 @@ public sealed class ProviderMirrorServiceTests
     }
 
     [Fact]
+    public async Task ProviderIndexUsesTheUpstreamMappedToTheRequestedHostname()
+    {
+        var http = new RecordingHttpMessageHandler();
+        http.RespondJson("https://secondary-upstream.example.net/v1/providers/hashicorp/aws/versions", UpstreamVersionsJson());
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Mirror:Providers:AllowedHostnames:1"] = "registry.secondary.example",
+            ["Mirror:Providers:UpstreamRegistryUrls:registry.terraform.io"] = "https://registry.example.com",
+            ["Mirror:Providers:UpstreamRegistryUrls:registry.secondary.example"] = "https://secondary-upstream.example.net"
+        });
+        var service = CreateService(http, configuration: configuration);
+
+        var index = await service.GetProviderIndexAsync(
+            "registry.secondary.example",
+            "hashicorp",
+            "aws",
+            CancellationToken.None);
+
+        Assert.NotNull(index);
+        Assert.Contains(http.Requests, uri => uri.Host == "secondary-upstream.example.net");
+        Assert.DoesNotContain(http.Requests, uri => uri.Host == "registry.example.com");
+    }
+
+    [Fact]
+    public async Task ProviderIndexCachesAnUpstreamNotFoundForTheConfiguredNegativeTtl()
+    {
+        var http = new RecordingHttpMessageHandler();
+        var repo = new Mock<IProviderMirrorRepository>();
+        repo.SetupSequence(x => x.GetProviderIndexAsync("registry.terraform.io", "hashicorp", "missing"))
+            .ReturnsAsync((MirrorProviderIndex?)null)
+            .ReturnsAsync(new MirrorProviderIndex
+            {
+                Hostname = "registry.terraform.io",
+                Namespace = "hashicorp",
+                Type = "missing",
+                VersionsJson = "{}",
+                State = "not_found",
+                LastSyncAt = DateTime.UtcNow
+            });
+        var service = CreateService(http, repo: repo);
+
+        Assert.Null(await service.GetProviderIndexAsync("registry.terraform.io", "hashicorp", "missing", CancellationToken.None));
+        Assert.Null(await service.GetProviderIndexAsync("registry.terraform.io", "hashicorp", "missing", CancellationToken.None));
+
+        Assert.Single(http.Requests);
+        repo.Verify(x => x.UpsertProviderIndexAsync(It.Is<MirrorProviderIndex>(index =>
+            index.State == "not_found" && index.LastSyncAt != null)), Times.Once);
+    }
+
+    [Fact]
     public async Task ProviderVersionDownloadsCachesAndReturnsSignedArchiveWithTerraformHash()
     {
         var packageBytes = new byte[] { 1, 2, 3 };
@@ -878,6 +928,7 @@ public sealed class ProviderMirrorServiceTests
             ["Mirror:UpstreamRegistryBaseUrl"] = "https://registry.example.com",
             ["Mirror:Providers:Enabled"] = "true",
             ["Mirror:Providers:AllowedHostnames:0"] = "registry.terraform.io",
+            ["Mirror:Providers:UpstreamRegistryUrls:registry.terraform.io"] = "https://registry.example.com",
             ["Mirror:PackageUrlSigningKey"] = "provider-mirror-service-signing-key",
             ["Oidc:JwtSecretKey"] = "provider-mirror-service-jwt-secret-key"
         };

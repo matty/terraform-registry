@@ -70,6 +70,9 @@ public class MirrorConfigServiceTests
                                 "enabled": true,
                                 "requireAuthentication": false,
                                 "allowedHostnames": ["registry.terraform.io"],
+                                "upstreamRegistryUrls": {
+                                  "registry.terraform.io": "https://registry.terraform.io"
+                                },
                                 "allowlist": ["hashicorp/aws"],
                                 "denylist": ["blocked/provider"],
                                 "platforms": ["linux_amd64"],
@@ -154,5 +157,44 @@ public class MirrorConfigServiceTests
         Assert.DoesNotContain("mirror.read", Permissions.DefaultUserPermissions);
         Assert.DoesNotContain("mirror.manage", Permissions.DefaultUserPermissions);
         Assert.DoesNotContain("mirror.configure", Permissions.DefaultUserPermissions);
+    }
+
+    [Fact]
+    public void MirrorConfigurationMapsEveryAllowedProviderHostToItsOwnHttpsUpstream()
+    {
+        var options = new MirrorOptions
+        {
+            Providers = new MirrorProviderRuntimeOptions
+            {
+                AllowedHostnames = ["registry.terraform.io", "registry.example.com"],
+                UpstreamRegistryUrls = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["registry.terraform.io"] = "https://registry.terraform.io",
+                    ["registry.example.com"] = "https://mirror-upstream.example.net"
+                }
+            }
+        };
+
+        MirrorConfigurationValidator.Validate(options);
+
+        Assert.Equal(
+            "https://mirror-upstream.example.net/",
+            MirrorConfigurationValidator.GetProviderUpstreamUri(options, "registry.example.com").ToString());
+    }
+
+    [Fact]
+    public void MirrorConfigurationRejectsAnAllowedProviderHostWithoutAnExplicitMapping()
+    {
+        var options = new MirrorOptions
+        {
+            Providers = new MirrorProviderRuntimeOptions
+            {
+                AllowedHostnames = ["first.example.com", "second.example.com"]
+            }
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MirrorConfigurationValidator.Validate(options));
+
+        Assert.Contains("explicit upstream mapping", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

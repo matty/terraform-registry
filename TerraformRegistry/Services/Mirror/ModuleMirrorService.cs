@@ -18,11 +18,13 @@ public sealed class ModuleMirrorService(
     IHttpClientFactory httpClientFactory,
     MirrorHttpClient mirrorHttpClient,
     IModulePublishCoordinator publishCoordinator,
-    ILogger<ModuleMirrorService> logger) : IModuleMirrorService
+    ILogger<ModuleMirrorService> logger,
+    MirrorDownloadAdmission? downloadAdmission = null) : IModuleMirrorService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan LeaseReleaseTimeout = TimeSpan.FromSeconds(5);
     private const string MirrorDiscoveryHttpClientName = "TerraformRegistryMirrorDiscovery";
+    private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
 
     public async Task<ModuleVersions> GetModuleVersionsAsync(
         string moduleNamespace,
@@ -73,7 +75,8 @@ public sealed class ModuleMirrorService(
         var uri = BuildUpstreamUri(
             config.UpstreamRegistryBaseUrl,
             $"/v1/modules/{moduleNamespace}/{name}/{provider}/{version}");
-        using var response = await client.GetAsync(uri, cancellationToken);
+        using var timeout = CreateTimeout(config.Modules.DownloadTimeoutSeconds, cancellationToken);
+        using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return null;
@@ -138,6 +141,13 @@ public sealed class ModuleMirrorService(
         }
 
         var leaseKey = $"module-package:{hostname}:{moduleNamespace}:{name}:{provider}:{version}";
+        using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
+        if (admission is null)
+        {
+            RegistryLog.Warning(logger, "Module mirror admission limit reached for {LeaseKey}", leaseKey);
+            return null;
+        }
+
         var lease = await leaseService.TryAcquireAsync(leaseKey, "module-package", TimeSpan.FromMinutes(5), cancellationToken);
         if (lease is null)
         {
@@ -177,6 +187,14 @@ public sealed class ModuleMirrorService(
     {
         var cached = await repository.GetModuleVersionsAsync(hostname, moduleNamespace, name, provider);
         if (cached is not null &&
+            string.Equals(cached.State, "not_found", StringComparison.OrdinalIgnoreCase) &&
+            cached.LastSyncAt is { } negativeSync &&
+            negativeSync.AddSeconds(config.Limits.NegativeCacheTtlSeconds) > DateTime.UtcNow)
+        {
+            return null;
+        }
+
+        if (cached is not null &&
             string.Equals(cached.State, "ready", StringComparison.OrdinalIgnoreCase) &&
             cached.LastSyncAt is { } lastSync &&
             lastSync.AddMinutes(Math.Max(1, config.Modules.MetadataTtlMinutes)) > DateTime.UtcNow)
@@ -186,9 +204,20 @@ public sealed class ModuleMirrorService(
 
         var client = httpClientFactory.CreateClient();
         var uri = BuildUpstreamUri(config.UpstreamRegistryBaseUrl, $"/v1/modules/{moduleNamespace}/{name}/{provider}/versions");
-        using var response = await client.GetAsync(uri, cancellationToken);
+        using var timeout = CreateTimeout(config.Modules.DownloadTimeoutSeconds, cancellationToken);
+        using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
+            await repository.UpsertModuleVersionsAsync(new MirrorModuleVersions
+            {
+                Hostname = hostname,
+                Namespace = moduleNamespace,
+                Name = name,
+                Provider = provider,
+                VersionsJson = "{}",
+                State = "not_found",
+                LastSyncAt = DateTime.UtcNow
+            });
             return null;
         }
 
@@ -300,7 +329,10 @@ public sealed class ModuleMirrorService(
             var upstreamDownloadUri = BuildUpstreamUri(
                 config.UpstreamRegistryBaseUrl,
                 $"/v1/modules/{moduleNamespace}/{name}/{provider}/{version}/download");
-            source = await GetUpstreamArchiveSourceAsync(upstreamDownloadUri, cancellationToken);
+            source = await GetUpstreamArchiveSourceAsync(
+                upstreamDownloadUri,
+                config.Modules.DownloadTimeoutSeconds,
+                cancellationToken);
 
             var replaceExistingMirror = false;
             var currentModule = await moduleService.GetModuleAsync(moduleNamespace, name, provider, version);
@@ -336,6 +368,7 @@ public sealed class ModuleMirrorService(
                 source.ArchiveUrl.ToString(),
                 config.Modules.MaxPackageBytes,
                 config.Modules.MaxRedirects,
+                config.Modules.DownloadTimeoutSeconds,
                 cancellationToken)).Content;
 
             var sizeBytes = archive.CanSeek ? archive.Length : (long?)null;
@@ -412,10 +445,12 @@ public sealed class ModuleMirrorService(
 
     private async Task<ModuleArchiveSource> GetUpstreamArchiveSourceAsync(
         Uri upstreamDownloadUri,
+        int timeoutSeconds,
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient(MirrorDiscoveryHttpClientName);
-        using var response = await client.GetAsync(upstreamDownloadUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var timeout = CreateTimeout(timeoutSeconds, cancellationToken);
+        using var response = await client.GetAsync(upstreamDownloadUri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             throw new InvalidOperationException("Upstream module package was not found.");
@@ -611,6 +646,13 @@ public sealed class ModuleMirrorService(
 
     private static string GetUpstreamHostname(MirrorOptions config) =>
         new Uri(config.UpstreamRegistryBaseUrl.TrimEnd('/') + "/").DnsSafeHost;
+
+    private static CancellationTokenSource CreateTimeout(int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        return timeout;
+    }
 
     private static string AppendPreservedHints(string localPath, ModuleArchiveSource source)
     {
