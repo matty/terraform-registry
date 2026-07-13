@@ -243,7 +243,7 @@ public class LocalModuleServiceTests
         var content = new MemoryStream(Encoding.UTF8.GetBytes("dummy"));
         ModuleStorage? committed = null;
         _mockDbService.Setup(x => x.GetModuleStorageAsync(ns, name, provider, version))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync((ModuleStorage)null!);
         _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
             .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => committed = module)
@@ -266,7 +266,7 @@ public class LocalModuleServiceTests
         ModuleStorage? capturedModule = null;
 
         _mockDbService.Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0"))
-            .ReturnsAsync((ModuleStorage?)null);
+            .ReturnsAsync((ModuleStorage)null!);
         _mockDbService.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
             .Callback<ModulePublicationAttempt, ModuleExtractionJob>((attempt, job) =>
@@ -307,7 +307,7 @@ public class LocalModuleServiceTests
             Provider = "provider",
             Version = "1.0.0",
             Description = "winner",
-            FilePath = Path.Combine(_testModulePath, "ns", ".published", "winner", "module.zip"),
+            FilePath = Path.Combine(_testModulePath, "ns/.published/winner/module.zip"),
             PublishedAt = DateTime.UtcNow.AddMinutes(-1),
             Dependencies = []
         };
@@ -342,7 +342,7 @@ public class LocalModuleServiceTests
     public async Task PurgeModuleVersionAsyncDeletesOwnedArtifactBeforeRemovingCatalogRow()
     {
         var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
-        var filePath = Path.Combine(_testModulePath, "ns", ".published", "attempt", "module.zip");
+        var filePath = Path.Combine(_testModulePath, "ns/.published/attempt/module.zip");
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         await File.WriteAllTextAsync(filePath, "artifact");
         var module = new ModuleStorage
