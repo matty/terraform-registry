@@ -25,6 +25,9 @@ public class User
     [MaxLength(255)]
     public string ProviderId { get; set; } = string.Empty;
 
+    [Column("is_active")]
+    public bool IsActive { get; set; } = true;
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

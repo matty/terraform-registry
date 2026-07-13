@@ -2,6 +2,7 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace TerraformRegistry.Startup;
 
@@ -99,20 +100,23 @@ internal static class ProviderEndpointMappingExtensions
                 (string @namespace, string type, string version, IProviderRegistryService service,
                         HttpContext context, HttpRequest request) =>
                     ProviderHandlers.UploadShasums(@namespace, type, version, service, context, request))
-            .WithTags("Providers");
+            .WithTags("Providers")
+            .RequireRateLimiting(RateLimitPolicyNames.ProviderUpload);
 
         app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/shasums.sig",
                 (string @namespace, string type, string version, IProviderRegistryService service,
                         HttpContext context, HttpRequest request) =>
                     ProviderHandlers.UploadShasumsSignature(@namespace, type, version, service, context, request))
-            .WithTags("Providers");
+            .WithTags("Providers")
+            .RequireRateLimiting(RateLimitPolicyNames.ProviderUpload);
 
         app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}/package",
                 (string @namespace, string type, string version, string os, string arch,
                         IProviderRegistryService service, HttpContext context, HttpRequest request) =>
                     ProviderHandlers.UploadPlatformPackage(@namespace, type, version, os, arch, service, context,
                         request))
-            .WithTags("Providers");
+            .WithTags("Providers")
+            .RequireRateLimiting(RateLimitPolicyNames.ProviderUpload);
 
         return app;
     }
@@ -144,7 +148,8 @@ internal static class ProviderEndpointMappingExtensions
         app.MapGet("/provider/download", async context =>
         {
             var token = context.Request.Query["token"].ToString();
-            if (string.IsNullOrEmpty(token) || !LocalProviderArtifactStorage.TryGetFilePathFromToken(token, out var filePath))
+            var storage = context.RequestServices.GetRequiredService<IProviderArtifactStorage>() as LocalProviderArtifactStorage;
+            if (string.IsNullOrEmpty(token) || storage is null || !storage.TryGetFilePathFromToken(token, out var filePath))
             {
                 context.Response.StatusCode = 404;
                 await context.Response.WriteAsync("Invalid or expired download link.");

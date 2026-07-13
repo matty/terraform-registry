@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.AzureBlob;
@@ -24,9 +25,29 @@ internal static class ServiceRegistrationExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddRegistryRateLimiting(configuration);
+        services.AddSingleton<ArtifactDownloadTokenService>();
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
-        services.Configure<ModuleExtractionOptions>(configuration.GetSection("ModuleExtraction"));
+        services.AddOptions<ModuleExtractionOptions>()
+            .Bind(configuration.GetSection("ModuleExtraction"))
+            .Validate(options =>
+            {
+                try
+                {
+                    options.Validate();
+                    return true;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            }, "Module extraction limits must all be greater than zero.")
+            .ValidateOnStart();
+        var providerUploadOptions = new ProviderUploadOptions();
+        configuration.GetSection(ProviderUploadOptions.SectionName).Bind(providerUploadOptions);
+        providerUploadOptions.Validate();
+        services.AddSingleton(providerUploadOptions);
         services.Configure<MirrorOptions>(configuration.GetSection("Mirror"));
         services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
         services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
@@ -43,6 +64,21 @@ internal static class ServiceRegistrationExtensions
         });
 
         services.AddDatabaseServices();
+        services.AddSingleton<INamespaceMaintainerStore>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlNamespaceMaintainerStore(
+                    config["PostgreSQL:ConnectionString"] ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing for namespace maintainers.")),
+                "sqlite" => new SqliteNamespaceMaintainerStore(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db"),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
+        services.AddSingleton<NamespaceAuthorizationService>();
         services.AddModuleStorageServices();
         services.AddProviderRegistryServices();
 
@@ -87,10 +123,36 @@ internal static class ServiceRegistrationExtensions
         var oidcOptions = new OidcOptions();
         configuration.GetSection("Oidc").Bind(oidcOptions);
         services.AddSingleton(oidcOptions);
+        var userAdmissionOptions = new UserAdmissionOptions();
+        configuration.GetSection(UserAdmissionOptions.SectionName).Bind(userAdmissionOptions);
+        userAdmissionOptions.Validate();
+        services.AddSingleton(userAdmissionOptions);
+        var apiKeySecurityOptions = new ApiKeySecurityOptions();
+        configuration.GetSection(ApiKeySecurityOptions.SectionName).Bind(apiKeySecurityOptions);
+        apiKeySecurityOptions.Validate();
+        services.AddSingleton(apiKeySecurityOptions);
+        services.AddSingleton<ApiKeyVerificationGate>();
         services.AddSingleton<JwtService>();
         services.AddSingleton<OAuthService>();
-        services.AddSingleton(new TerraformLoginOptions());
-        services.AddSingleton<ITerraformAuthorizationCodeStore, InMemoryTerraformAuthorizationCodeStore>();
+        var terraformLoginOptions = new TerraformLoginOptions();
+        configuration.GetSection("TerraformLogin").Bind(terraformLoginOptions);
+        services.AddSingleton(terraformLoginOptions);
+        services.AddSingleton<ITerraformAuthorizationCodeStore>(provider =>
+        {
+            var config = provider.GetRequiredService<IConfiguration>();
+            var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
+            return databaseProvider switch
+            {
+                "postgres" => new PostgreSqlTerraformAuthorizationCodeStore(
+                    config["PostgreSQL:ConnectionString"] ?? throw new InvalidOperationException(
+                        "PostgreSQL connection string is missing for Terraform authorization codes."),
+                    provider.GetRequiredService<TerraformLoginOptions>()),
+                "sqlite" => new SqliteTerraformAuthorizationCodeStore(
+                    config["Sqlite:ConnectionString"] ?? "Data Source=terraform.db",
+                    provider.GetRequiredService<TerraformLoginOptions>()),
+                _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
+            };
+        });
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
         services.AddAnalyticsService();
@@ -180,7 +242,7 @@ internal static class ServiceRegistrationExtensions
                     provider.GetRequiredService<ILogger<S3ModuleService>>(),
                     null,
                     provider.GetRequiredService<IS3ClientFactory>()),
-                "local" => CreateLocalModuleService(config, db, logger),
+                "local" => CreateLocalModuleService(config, db, logger, provider),
                 _ => throw new InvalidOperationException(
                     $"Invalid storage provider specified: '{storageProvider}'. Check configuration.")
             };
@@ -192,7 +254,8 @@ internal static class ServiceRegistrationExtensions
     private static LocalModuleService CreateLocalModuleService(
         IConfiguration config,
         IDatabaseService db,
-        ILogger<LocalModuleService> logger)
+        ILogger<LocalModuleService> logger,
+        IServiceProvider provider)
     {
         var storagePath = config["ModuleStoragePath"];
         if (string.IsNullOrEmpty(storagePath))
@@ -203,7 +266,7 @@ internal static class ServiceRegistrationExtensions
                 "ModuleStoragePath is missing or empty. Please check your configuration.");
         }
 
-        return new LocalModuleService(config, db, logger);
+        return new LocalModuleService(config, db, logger, provider.GetRequiredService<ArtifactDownloadTokenService>());
     }
 
     private static IServiceCollection AddProviderRegistryServices(this IServiceCollection services)
@@ -227,7 +290,8 @@ internal static class ServiceRegistrationExtensions
                 "local" => new LocalProviderArtifactStorage(
                     config["ProviderStoragePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "providers"),
                     TimeSpan.FromMinutes(expiryMinutes),
-                    provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>()),
+                    provider.GetRequiredService<ILogger<LocalProviderArtifactStorage>>(),
+                    provider.GetRequiredService<ArtifactDownloadTokenService>()),
                 _ => throw new InvalidOperationException(
                     $"Provider artifact storage is not implemented for StorageProvider '{storageProvider}'.")
             };
@@ -333,6 +397,9 @@ internal static class ServiceRegistrationExtensions
     private static IServiceCollection AddModuleExtractionServices(this IServiceCollection services)
     {
         services.AddSingleton<IArchiveWorkspaceFactory, ArchiveWorkspaceFactory>();
+        services.AddSingleton<IArchiveIngestionValidator>(provider => new ArchiveIngestionValidator(
+            provider.GetRequiredService<IArchiveWorkspaceFactory>(),
+            provider.GetRequiredService<IOptions<ModuleExtractionOptions>>().Value));
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<ReadmeDiscoveryService>();
         services.AddSingleton<ExampleDiscoveryService>();

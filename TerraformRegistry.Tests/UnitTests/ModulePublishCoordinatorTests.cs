@@ -14,6 +14,38 @@ namespace TerraformRegistry.Tests.UnitTests;
 
 public class ModulePublishCoordinatorTests
 {
+    private static readonly HttpClient StaticOkClient = new(new StaticOkHandler());
+
+    [Fact]
+    public async Task PublishAsyncDoesNotCreateSideEffectsWhenArchiveValidationFails()
+    {
+        var validator = new Mock<IArchiveIngestionValidator>();
+        validator.Setup(x => x.PrepareAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Archive expanded content exceeds the configured limit."));
+        var moduleService = new Mock<IModuleService>();
+
+        var coordinator = new ModulePublishCoordinator(
+            moduleService.Object,
+            Mock.Of<IModuleExtractionService>(),
+            CreateWebhookDispatcher(),
+            Mock.Of<IAuditService>(),
+            NullLogger<ModulePublishCoordinator>.Instance,
+            validator.Object);
+        await using var content = new MemoryStream([1, 2, 3]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.PublishAsync(new ModulePublishRequest
+        {
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.2.3",
+            ModuleContent = content,
+            Metadata = new ModuleArtifactMetadata { Source = new ModuleSourceInfo { Kind = "api-upload" } }
+        }, CancellationToken.None));
+
+        moduleService.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task PublishAsyncUploadsModuleAndQueuesExtraction()
     {
@@ -44,7 +76,7 @@ public class ModulePublishCoordinatorTests
 
         var webhookDispatcher = new WebhookDispatcher(
             webhookService.Object,
-            new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
+            new TestHttpClientFactory(StaticOkClient),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal) { ["BaseUrl"] = "https://registry.example.com" })
                 .Build(),
@@ -118,7 +150,7 @@ public class ModulePublishCoordinatorTests
             Mock.Of<IModuleExtractionService>(),
             new WebhookDispatcher(
                 webhookService.Object,
-                new TestHttpClientFactory(new HttpClient(new StaticOkHandler())),
+                new TestHttpClientFactory(StaticOkClient),
                 new ConfigurationBuilder()
                     .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal))
                     .Build(),
@@ -153,6 +185,22 @@ public class ModulePublishCoordinatorTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+    }
+
+    private static WebhookDispatcher CreateWebhookDispatcher()
+    {
+        var webhookService = new Mock<IWebhookService>();
+        webhookService.Setup(x => x.GetActiveWebhooksForEventAsync("module.published"))
+            .ReturnsAsync(Array.Empty<Webhook>());
+        return new WebhookDispatcher(
+            webhookService.Object,
+            new TestHttpClientFactory(StaticOkClient),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
+            new WebhookUrlValidator(
+                Options.Create(new WebhookSecurityOptions { AllowPrivateNetworks = true }),
+                new StaticWebhookHostResolver(IPAddress.Loopback),
+                NullLogger<WebhookUrlValidator>.Instance),
+            NullLogger<WebhookDispatcher>.Instance);
     }
 
     private sealed class TestHttpClientFactory(HttpClient client) : IHttpClientFactory

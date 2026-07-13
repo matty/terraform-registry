@@ -4,6 +4,7 @@ using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Publishing;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace TerraformRegistry.Startup;
 
@@ -109,21 +110,24 @@ internal static class ModuleEndpointMappingExtensions
                 async (string @namespace, string name, string provider, string version, HttpRequest request,
                         IModulePublishCoordinator publishCoordinator,
                         IOptions<ModuleExtractionOptions> extractionOptions,
+                        NamespaceAuthorizationService namespaceAuthorization,
                         HttpContext context) =>
                     await ModuleHandlers.UploadModule(@namespace, name, provider, version, request, publishCoordinator,
-                        extractionOptions, context))
+                        extractionOptions, namespaceAuthorization, context))
             .WithTags("Modules")
             .WithDescription("Uploads a new module version")
             .Accepts<IFormFile>("multipart/form-data")
+            .RequireRateLimiting(RateLimitPolicyNames.ModuleUpload)
             .ProducesProblem(400)
             .ProducesProblem(409)
             .Produces(201);
 
         app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+                        WebhookDispatcher webhookDispatcher, IAuditService auditService,
+                        NamespaceAuthorizationService namespaceAuthorization, HttpContext context) =>
                     ModuleHandlers.DeleteModuleVersion(@namespace, name, provider, version, moduleService,
-                        webhookDispatcher, auditService, context))
+                        webhookDispatcher, auditService, namespaceAuthorization, context))
             .WithTags("Modules")
             .WithDescription("Soft deletes a module version")
             .Produces(204)
@@ -131,9 +135,10 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}/restore",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+                        WebhookDispatcher webhookDispatcher, IAuditService auditService,
+                        NamespaceAuthorizationService namespaceAuthorization, HttpContext context) =>
                     ModuleHandlers.RestoreModuleVersion(@namespace, name, provider, version, moduleService,
-                        webhookDispatcher, auditService, context))
+                        webhookDispatcher, auditService, namespaceAuthorization, context))
             .WithTags("Modules")
             .WithDescription("Restores a soft-deleted module version")
             .Produces(204)
@@ -141,9 +146,10 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}/purge",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        WebhookDispatcher webhookDispatcher, IAuditService auditService, HttpContext context) =>
+                        WebhookDispatcher webhookDispatcher, IAuditService auditService,
+                        NamespaceAuthorizationService namespaceAuthorization, HttpContext context) =>
                     ModuleHandlers.PurgeModuleVersion(@namespace, name, provider, version, moduleService,
-                        webhookDispatcher, auditService, context))
+                        webhookDispatcher, auditService, namespaceAuthorization, context))
             .WithTags("Modules")
             .WithDescription("Permanently deletes a module version")
             .Produces(204)
@@ -159,9 +165,9 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapPatch("/v1/modules/{namespace}/{name}/{provider}/description",
                 (string @namespace, string name, string provider, HttpRequest request, IModuleService moduleService,
-                        IAuditService auditService, HttpContext context) =>
+                        IAuditService auditService, NamespaceAuthorizationService namespaceAuthorization, HttpContext context) =>
                     ModuleHandlers.UpdateDescription(@namespace, name, provider, request, moduleService, auditService,
-                        context))
+                        namespaceAuthorization, context))
             .WithTags("Modules")
             .WithDescription("Updates the description for a module")
             .Produces(200)
@@ -175,7 +181,8 @@ internal static class ModuleEndpointMappingExtensions
         app.MapGet("/module/download", async context =>
         {
             var token = context.Request.Query["token"].ToString();
-            if (string.IsNullOrEmpty(token) || !LocalModuleService.TryGetFilePathFromToken(token, out var filePath))
+            var moduleService = context.RequestServices.GetRequiredService<IModuleService>() as LocalModuleService;
+            if (string.IsNullOrEmpty(token) || moduleService is null || !moduleService.TryGetFilePathFromToken(token, out var filePath))
             {
                 context.Response.StatusCode = 404;
                 await context.Response.WriteAsync("Invalid or expired download link.");

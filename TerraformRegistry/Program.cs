@@ -117,6 +117,22 @@ if (Directory.Exists(webFolderPath))
 
 // Portal authentication middleware (validates JWT sessions for portal routes)
 var jwtService = app.Services.GetRequiredService<JwtService>();
+var apiKeySecurityOptions = app.Services.GetRequiredService<ApiKeySecurityOptions>();
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") &&
+    apiKeySecurityOptions.DigestKey == "configure-a-unique-api-key-digest-key-before-production")
+{
+    throw new InvalidOperationException(
+        "ApiKeySecurity:DigestKey is set to the default placeholder. Configure a unique secret before running outside Development/Test.");
+}
+apiKeySecurityOptions.ValidateDigestKey();
+var artifactDownloadSigningKey = app.Configuration["ArtifactDownloadTokens:SigningKey"];
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Test") &&
+    artifactDownloadSigningKey == ArtifactDownloadTokenService.ProductionPlaceholder)
+{
+    throw new InvalidOperationException(
+        "ArtifactDownloadTokens:SigningKey is set to the default placeholder. Configure a unique secret before running outside Development/Test.");
+}
+_ = app.Services.GetRequiredService<ArtifactDownloadTokenService>();
 app.UseMiddleware<PortalAuthenticationMiddleware>(jwtService);
 
 // API key authentication middleware (for /v1/* routes used by Terraform CLI)
@@ -125,6 +141,7 @@ app.UseMiddleware<AuthenticationMiddleware>(authToken, jwtService);
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 if (enableSwagger)
 {

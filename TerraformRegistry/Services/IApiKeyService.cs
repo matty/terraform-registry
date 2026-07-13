@@ -53,6 +53,9 @@ public interface IApiKeyService
     /// </summary>
     Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId);
 
+    Task<User> GetOrCreateOidcUserAsync(OidcUserAdmission admission) =>
+        GetOrCreateOidcUserAsync(admission.Email, admission.Provider, admission.ProviderId);
+
     /// <summary>
     /// Ensures a User record exists for the given external details.
     /// </summary>
@@ -63,3 +66,11 @@ public interface IApiKeyService
     /// </summary>
     Task<User?> GetUserByIdAsync(string id);
 }
+
+public sealed record OidcUserAdmission(
+    string Email,
+    string Provider,
+    string ProviderId,
+    string Issuer,
+    string TenantId,
+    bool EmailVerified);

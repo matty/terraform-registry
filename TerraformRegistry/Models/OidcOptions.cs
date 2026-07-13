@@ -45,4 +45,7 @@ public class UserInfo
     public string Name { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public string AvatarUrl { get; set; } = string.Empty;
+    public string Issuer { get; set; } = string.Empty;
+    public string TenantId { get; set; } = string.Empty;
+    public bool EmailVerified { get; set; }
 }

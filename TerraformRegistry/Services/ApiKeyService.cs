@@ -4,10 +4,16 @@ using Konscious.Security.Cryptography;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Services;
 
-public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> logger) : IApiKeyService
+public class ApiKeyService(
+    IDatabaseService dbService,
+    ILogger<ApiKeyService> logger,
+    UserAdmissionOptions userAdmissionOptions,
+    ApiKeySecurityOptions securityOptions,
+    ApiKeyVerificationGate verificationGate) : IApiKeyService
 {
     private const int TokenLength = 32;
     // private const string TokenPrefix = "tf-"; // Removed prefix requirement
@@ -32,8 +38,7 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             .Replace("+", "-", StringComparison.Ordinal).Replace("/", "_", StringComparison.Ordinal).Replace("=", "", StringComparison.Ordinal); // URL-safe base64
         var rawToken = tokenCore; // No prefix
 
-        // Hash token using Argon2id
-        var tokenHash = HashToken(rawToken);
+        var tokenHash = CreateDigest(rawToken);
 
         var apiKey = new ApiKey
         {
@@ -68,15 +73,48 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
         foreach (var key in candidates)
         {
-            if (VerifyHash(rawToken, key.TokenHash))
+            using var prefixLease = verificationGate.TryEnterPrefix(key.Prefix);
+            if (prefixLease is null)
             {
+                RegistryLog.Warning(logger, "Rejected API key verification because the prefix limit was reached.");
+                return new ApiKeyValidationResult(null, false, true);
+            }
+
+            var isLegacy = !key.TokenHash.StartsWith("v1:", StringComparison.Ordinal);
+            if (VerifyToken(rawToken, key.TokenHash))
+            {
+                using var principalLease = verificationGate.TryEnterPrincipal(key.UserId);
+                if (principalLease is null)
+                {
+                    RegistryLog.Warning(logger, "Rejected API key verification because the principal limit was reached.");
+                    return new ApiKeyValidationResult(null, false, true);
+                }
+
                 if (key.ExpiresAt.HasValue && key.ExpiresAt.Value < DateTime.UtcNow)
                 {
                     return new ApiKeyValidationResult(null, true);
                 }
 
-                key.LastUsedAt = DateTime.UtcNow;
-                await dbService.UpdateApiKeyAsync(key);
+                var user = await dbService.GetUserByIdAsync(key.UserId);
+                if (user?.IsActive != true)
+                {
+                    RegistryLog.Warning(logger, "Rejected API key for inactive or missing user {UserId}", key.UserId);
+                    return new ApiKeyValidationResult(null, false);
+                }
+
+                var now = DateTime.UtcNow;
+                var upgradeNeeded = isLegacy;
+                if (upgradeNeeded)
+                {
+                    key.TokenHash = CreateDigest(rawToken);
+                }
+
+                if (upgradeNeeded || !key.LastUsedAt.HasValue ||
+                    now - key.LastUsedAt.Value >= TimeSpan.FromSeconds(securityOptions.LastUsedUpdateIntervalSeconds))
+                {
+                    key.LastUsedAt = now;
+                    await dbService.UpdateApiKeyAsync(key);
+                }
                 return new ApiKeyValidationResult(key, false);
             }
         }
@@ -139,12 +177,17 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
 
     public async Task<User> GetOrCreateOidcUserAsync(string email, string provider, string providerId)
     {
-        if (string.IsNullOrWhiteSpace(email))
+        return await GetOrCreateOidcUserAsync(new OidcUserAdmission(email, provider, providerId, provider, string.Empty, true));
+    }
+
+    public async Task<User> GetOrCreateOidcUserAsync(OidcUserAdmission admission)
+    {
+        if (string.IsNullOrWhiteSpace(admission.Email))
         {
             throw new InvalidOperationException("OIDC login requires a non-empty email address.");
         }
 
-        var canonicalEmail = CanonicalizeEmail(email);
+        var canonicalEmail = CanonicalizeEmail(admission.Email);
         var matchingUsers = await dbService.GetUsersByEmailCaseInsensitiveAsync(canonicalEmail);
         if (matchingUsers.Count > 1)
         {
@@ -155,12 +198,18 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         var user = matchingUsers.Count == 0 ? null : matchingUsers[0];
         if (user == null)
         {
+            if (userAdmissionOptions.Mode != UserAdmissionMode.ConstrainedAutoProvision ||
+                !userAdmissionOptions.Allows(admission.Issuer, admission.TenantId, canonicalEmail, admission.EmailVerified))
+            {
+                throw new InvalidOperationException("OIDC admission policy denied this new identity.");
+            }
+
             user = new User
             {
                 Id = Guid.NewGuid().ToString(),
                 Email = canonicalEmail,
-                Provider = provider,
-                ProviderId = providerId,
+                Provider = admission.Provider,
+                ProviderId = admission.ProviderId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -168,11 +217,16 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
             return user;
         }
 
-        if (!string.Equals(user.Provider, provider, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(user.ProviderId, providerId, StringComparison.Ordinal))
+        if (!string.Equals(user.Provider, admission.Provider, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(user.ProviderId, admission.ProviderId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"The email '{canonicalEmail}' is already linked to a different identity. Manual account linking is required.");
+        }
+
+        if (!user.IsActive)
+        {
+            throw new InvalidOperationException("The user account is disabled.");
         }
 
         return user;
@@ -207,27 +261,25 @@ public class ApiKeyService(IDatabaseService dbService, ILogger<ApiKeyService> lo
         return email.Trim().ToLowerInvariant();
     }
 
-    private static string HashToken(string password)
+    private string CreateDigest(string token)
     {
-        // Salt is randomly generated, but for stateless verification we usually store salt with hash.
-        // Simpler Argon2 wrappers often handle "$argon2id$..." format strings containing params, salt, and hash.
-        // Konscious.Security.Cryptography is low level.
-        // Let's use a standard format: SALT(16b) + HASH(32b) -> Base64
-
-        var salt = RandomNumberGenerator.GetBytes(16);
-        using var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password));
-        argon2.Salt = salt;
-        argon2.DegreeOfParallelism = 2; // Core count
-        argon2.MemorySize = 65536; // 64 MB
-        argon2.Iterations = 4;
-
-        var hash = argon2.GetBytes(32);
-
-        // Return format: {salt_base64}${hash_base64}
-        return $"{Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(securityOptions.DigestKey));
+        return $"v1:{Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(token)))}";
     }
 
-    private static bool VerifyHash(string password, string storedHash)
+    private bool VerifyToken(string token, string storedHash)
+    {
+        if (storedHash.StartsWith("v1:", StringComparison.Ordinal))
+        {
+            var expected = Encoding.UTF8.GetBytes(CreateDigest(token));
+            var actual = Encoding.UTF8.GetBytes(storedHash);
+            return CryptographicOperations.FixedTimeEquals(expected, actual);
+        }
+
+        return VerifyLegacyHash(token, storedHash);
+    }
+
+    private static bool VerifyLegacyHash(string password, string storedHash)
     {
         try
         {
@@ -262,4 +314,4 @@ public enum ApiKeyUpdateStatus
 
 public record ApiKeyUpdateResult(ApiKeyUpdateStatus Status, ApiKey? Key);
 
-public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired);
+public record ApiKeyValidationResult(ApiKey? Key, bool IsExpired, bool IsRateLimited = false);

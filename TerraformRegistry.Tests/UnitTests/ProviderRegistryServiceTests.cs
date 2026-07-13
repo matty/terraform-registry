@@ -3,6 +3,7 @@ using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Tests.UnitTests;
 
@@ -414,16 +415,88 @@ public class ProviderRegistryServiceTests
         repository.Verify(x => x.SetPlatformPackagePathAsync(platformId, "stored-package", 3), Times.Once);
     }
 
+    [Fact]
+    public async Task UploadPlatformPackageAsyncRejectsOversizedNonSeekableUploadBody()
+    {
+        var repository = new Mock<IProviderRepository>();
+        var storage = new Mock<IProviderArtifactStorage>(MockBehavior.Strict);
+        var validator = new Mock<IProviderPackageValidator>(MockBehavior.Strict);
+        var tempDir = Directory.CreateTempSubdirectory();
+        using var package = new NonSeekableReadStream([1, 2, 3, 4, 5]);
+        var service = CreateService(repository, storage, validator, new ProviderUploadOptions
+        {
+            MaxPackageBytes = 4,
+            TempRoot = tempDir.FullName
+        });
+        SetUpUploadPrerequisites(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UploadPlatformPackageAsync("acme", "example", "1.0.0", "linux", "amd64", package, CancellationToken.None));
+
+        Assert.Contains("exceeds", exception.Message, StringComparison.OrdinalIgnoreCase);
+        validator.VerifyNoOtherCalls();
+        storage.VerifyNoOtherCalls();
+        Assert.Empty(Directory.EnumerateFiles(tempDir.FullName));
+    }
+
     private static ProviderRegistryService CreateService(
         Mock<IProviderRepository>? repository = null,
         Mock<IProviderArtifactStorage>? storage = null,
-        Mock<IProviderPackageValidator>? validator = null)
+        Mock<IProviderPackageValidator>? validator = null,
+        ProviderUploadOptions? uploadOptions = null)
     {
         return new ProviderRegistryService(
             repository?.Object ?? Mock.Of<IProviderRepository>(),
             storage?.Object ?? Mock.Of<IProviderArtifactStorage>(),
             validator?.Object ?? Mock.Of<IProviderPackageValidator>(),
-            NullLogger<ProviderRegistryService>.Instance);
+            NullLogger<ProviderRegistryService>.Instance,
+            uploadOptions);
+    }
+
+    private static void SetUpUploadPrerequisites(Mock<IProviderRepository> repository)
+    {
+        var providerId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        repository.Setup(x => x.GetProviderAsync("acme", "example"))
+            .ReturnsAsync(new TerraformProvider
+            {
+                Id = providerId,
+                Namespace = "acme",
+                Type = "example",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        repository.Setup(x => x.GetProviderVersionAsync("acme", "example", "1.0.0"))
+            .ReturnsAsync(new ProviderVersion
+            {
+                Id = versionId,
+                ProviderId = providerId,
+                Version = "1.0.0",
+                Protocols = ["5.0"],
+                KeyId = "ABCDEF",
+                ShasumsStoragePath = "shasums",
+                ShasumsSignatureStoragePath = "sig",
+                PublishedAt = DateTime.UtcNow
+            });
+        repository.Setup(x => x.GetProviderPlatformAsync("acme", "example", "1.0.0", "linux", "amd64"))
+            .ReturnsAsync(new ProviderPlatform
+            {
+                Id = Guid.NewGuid(),
+                ProviderVersionId = versionId,
+                Os = "linux",
+                Arch = "amd64",
+                Filename = "terraform-provider-example_1.0.0_linux_amd64.zip",
+                Shasum = new string('a', 64)
+            });
+        repository.Setup(x => x.GetGpgKeyAsync("acme", "ABCDEF"))
+            .ReturnsAsync(new ProviderGpgKey
+            {
+                Id = Guid.NewGuid(),
+                Namespace = "acme",
+                KeyId = "ABCDEF",
+                AsciiArmor = "public-key",
+                CreatedAt = DateTime.UtcNow
+            });
     }
 
     private sealed class NonSeekableReadStream : Stream

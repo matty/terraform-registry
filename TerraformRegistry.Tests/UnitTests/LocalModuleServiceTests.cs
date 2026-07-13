@@ -23,7 +23,8 @@ public class LocalModuleServiceTests
         var inMemorySettings = new Dictionary<string, string?>
 (StringComparer.Ordinal)
         {
-            { "ModuleStoragePath", testModulePath }
+            { "ModuleStoragePath", testModulePath },
+            { "ArtifactDownloadTokens:SigningKey", "test-signing-key-that-is-long-enough-to-be-safe-0123456789" }
         };
         _configuration = new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
         _testModulePath = testModulePath;
@@ -221,7 +222,8 @@ public class LocalModuleServiceTests
     public void TryGetFilePathFromTokenReturnsFalseForInvalidToken()
     {
         // Act
-        var found = LocalModuleService.TryGetFilePathFromToken("notatoken", out var filePath);
+        var service = new LocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        var found = service.TryGetFilePathFromToken("notatoken", out var filePath);
         // Assert
         Assert.False(found);
         Assert.Equal(string.Empty, filePath);

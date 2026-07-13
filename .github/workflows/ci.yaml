@@ -46,6 +46,7 @@ jobs:
   dotnet:
     name: .NET build, test, coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -162,6 +163,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Verify storage emulator harness scripts
+        run: |
+          bash scripts/remediation/storage-emulators/test-lifecycle.sh
+          bash scripts/remediation/storage-emulators/test-ci-workflow.sh
+          bash scripts/remediation/storage-emulators/test-smoke-script.sh
+
       - name: Run Azurite and MinIO Terraform contract smoke
         run: >-
           bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh
@@ -203,6 +210,20 @@ jobs:
 
       - name: Run portable Phase 1 deployment gate
         run: bash scripts/remediation/gates/phase-1.sh
+
+  bounded-ingestion-security-gate:
+    name: Bounded ingestion security gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p2-security-abuse-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run bounded ingestion security gate
+        run: bash scripts/remediation/gates/bounded-ingestion-security.sh
 
   docker:
     name: Docker build and scan

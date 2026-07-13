@@ -14,7 +14,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         await using var cmd = connection.CreateCommand();
         cmd.CommandText =
             """
-            SELECT id, email, provider, provider_id, created_at, updated_at
+            SELECT id, email, provider, provider_id, is_active, created_at, updated_at
             FROM users
             WHERE lower(email) = lower($email)
             ORDER BY CASE WHEN email = $email THEN 0 ELSE 1 END, created_at ASC
@@ -42,7 +42,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users WHERE id = $id";
+        cmd.CommandText = "SELECT id, email, provider, provider_id, is_active, created_at, updated_at FROM users WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", id);
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -57,13 +57,14 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
-            VALUES ($id, $email, $prov, $provId, $created, $updated)";
+            INSERT INTO users (id, email, provider, provider_id, is_active, created_at, updated_at)
+            VALUES ($id, $email, $prov, $provId, $isActive, $created, $updated)";
 
         cmd.Parameters.AddWithValue("$id", user.Id);
         cmd.Parameters.AddWithValue("$email", user.Email);
         cmd.Parameters.AddWithValue("$prov", user.Provider);
         cmd.Parameters.AddWithValue("$provId", user.ProviderId);
+        cmd.Parameters.AddWithValue("$isActive", user.IsActive ? 1 : 0);
         cmd.Parameters.AddWithValue("$created", user.CreatedAt.ToString("o", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
@@ -77,7 +78,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
             UPDATE users SET 
-                email = $email, provider = $prov, provider_id = $provId, 
+                email = $email, provider = $prov, provider_id = $provId, is_active = $isActive,
                 updated_at = $updated
             WHERE id = $id";
 
@@ -85,6 +86,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         cmd.Parameters.AddWithValue("$email", user.Email);
         cmd.Parameters.AddWithValue("$prov", user.Provider);
         cmd.Parameters.AddWithValue("$provId", user.ProviderId);
+        cmd.Parameters.AddWithValue("$isActive", user.IsActive ? 1 : 0);
         cmd.Parameters.AddWithValue("$updated", user.UpdatedAt.ToString("o", CultureInfo.InvariantCulture));
 
         await cmd.ExecuteNonQueryAsync();
@@ -106,7 +108,7 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT id, email, provider, provider_id, created_at, updated_at FROM users ORDER BY created_at DESC";
+        cmd.CommandText = "SELECT id, email, provider, provider_id, is_active, created_at, updated_at FROM users ORDER BY created_at DESC";
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -124,8 +126,9 @@ public sealed class SqliteUserRepository(string connectionString) : IUserReposit
             Email = reader.GetString(1),
             Provider = reader.GetString(2),
             ProviderId = reader.GetString(3),
-            CreatedAt = DateTime.Parse(reader.GetString(4), CultureInfo.InvariantCulture),
-            UpdatedAt = DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture)
+            IsActive = reader.GetInt64(4) != 0,
+            CreatedAt = DateTime.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
+            UpdatedAt = DateTime.Parse(reader.GetString(6), CultureInfo.InvariantCulture)
         };
     }
 }

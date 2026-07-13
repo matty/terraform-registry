@@ -60,7 +60,7 @@ public class GitHubVcsService : IGitHubVcsService
     }
 
     public async Task<(string Status, string? Reason, string? Version)> HandleWebhookAsync(
-        string? signatureHeader, string? eventHeader, string body)
+        string? signatureHeader, string? eventHeader, string body, CancellationToken cancellationToken)
     {
         if (eventHeader != "push")
         {
@@ -173,7 +173,7 @@ public class GitHubVcsService : IGitHubVcsService
         HttpResponseMessage response;
         try
         {
-            response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -186,7 +186,7 @@ public class GitHubVcsService : IGitHubVcsService
             return ("error", $"GitHub API returned {(int)response.StatusCode} for tarball download", null);
         }
 
-        await using var tarballStream = await response.Content.ReadAsStreamAsync();
+        await using var tarballStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var uploaded = await _publishCoordinator.PublishAsync(new ModulePublishRequest
         {
             Namespace = vcsSource.Namespace,
@@ -209,7 +209,7 @@ public class GitHubVcsService : IGitHubVcsService
                     Ref = $"refs/tags/{tag}"
                 }
             }
-        }, CancellationToken.None);
+        }, cancellationToken);
 
         if (!uploaded)
         {

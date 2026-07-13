@@ -176,6 +176,8 @@ For Azure Blob Storage and S3-compatible storage, one configured container or bu
 - `AuthorizationToken` / `TF_REG_AUTHORIZATIONTOKEN` must be set to a unique secret outside `Development` and `Test`.
 - `Oidc:JwtSecretKey` / `TF_REG_OIDC__JWTSECRETKEY` must be set to a secret that is at least 32 characters long. Outside `Development`, the placeholder value is rejected.
 - OIDC login requires a non-empty provider email and rejects same-email logins when they resolve to a different provider or provider ID.
+- OIDC admission is closed by default. To provision new users, set `UserAdmission:Mode` to `ConstrainedAutoProvision` and configure at least one of `AllowedIssuers`, `AllowedTenants`, `AllowedDomains`, or `AllowedEmails`. `RequireVerifiedEmail` defaults to `true`; missing provider claims fail closed when their corresponding constraint is configured.
+- Disabled users are rejected immediately for portal sessions, bearer JWTs, API keys, and Terraform login authorization. Existing user records remain active after the migration unless an operator explicitly disables them.
 - Outbound admin webhooks only support `http` and `https` targets. Private and local network destinations are blocked unless `WebhookSecurity:AllowPrivateNetworks` / `TF_REG_WEBHOOKSECURITY__ALLOWPRIVATENETWORKS` is explicitly enabled.
 
 ### Architecture Options

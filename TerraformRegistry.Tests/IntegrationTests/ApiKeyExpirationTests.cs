@@ -75,6 +75,89 @@ public class ApiKeyExpirationTests(ITestOutputHelper output) : IntegrationTestBa
     }
 
     [Fact]
+    public async Task DisabledUserApiKeyReturnsUnauthorizedImmediately()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
+
+        var user = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "disabled-key-test@example.com",
+            Provider = "test",
+            ProviderId = "test-disabled-key",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await dbService.AddUserAsync(user);
+        await permissionService.EnsureDefaultRoleAsync(user.Id);
+        var (rawToken, _) = await apiKeyService.CreateApiKeyAsync(user.Id, "disabled key");
+
+        var client = Factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", rawToken);
+
+        var response = await client.GetAsync("/v1/modules");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DisabledUserSessionJwtReturnsUnauthorizedImmediately()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var user = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "disabled-session-test@example.com",
+            Provider = "test",
+            ProviderId = "test-disabled-session",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await dbService.AddUserAsync(user);
+
+        var client = Factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Cookie", $"tf-session={jwtService.GenerateToken(user.Id, user.Email, "Disabled", user.Provider)}");
+
+        var response = await client.GetAsync("/v1/modules");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DisabledUserPortalSessionIsRedirectedToLogin()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var user = new User
+        {
+            Id = Guid.NewGuid().ToString(),
+            Email = "disabled-portal-test@example.com",
+            Provider = "test",
+            ProviderId = "test-disabled-portal",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await dbService.AddUserAsync(user);
+
+        var client = Factory.CreateClient(new() { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add("Cookie", $"tf-session={jwtService.GenerateToken(user.Id, user.Email, "Disabled", user.Provider)}");
+
+        var response = await client.GetAsync("/modules");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/login", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
     public async Task ValidApiKeyWithFutureExpirationSucceeds()
     {
         using var scope = Factory.Services.CreateScope();

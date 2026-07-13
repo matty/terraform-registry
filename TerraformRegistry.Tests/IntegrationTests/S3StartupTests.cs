@@ -9,6 +9,7 @@ using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.S3;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
 
@@ -44,6 +45,8 @@ public class S3StartupTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["AuthorizationToken"] = "startup-test-auth-token",
+                            ["ApiKeySecurity:DigestKey"] = "startup-test-api-key-digest-key-32-chars-minimum",
+                            ["ArtifactDownloadTokens:SigningKey"] = "startup-test-artifact-download-token-signing-key-32-chars-minimum",
                             ["DatabaseProvider"] = "sqlite",
                             ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "startup-test.db")}",
                             ["StorageProvider"] = "s3",
@@ -55,6 +58,11 @@ public class S3StartupTests
                     builder.ConfigureServices(services =>
                     {
                         services.RemoveAll<OidcOptions>();
+                        services.RemoveAll<ApiKeySecurityOptions>();
+                        services.AddSingleton(new ApiKeySecurityOptions
+                        {
+                            DigestKey = "startup-test-api-key-digest-key-32-chars-minimum"
+                        });
                         services.AddSingleton(new OidcOptions
                         {
                             JwtSecretKey = "startup-test-jwt-secret-key-32-chars-minimum",
@@ -95,6 +103,8 @@ public class S3StartupTests
                         config.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["AuthorizationToken"] = "startup-test-auth-token",
+                            ["ApiKeySecurity:DigestKey"] = "startup-test-api-key-digest-key-32-chars-minimum",
+                            ["ArtifactDownloadTokens:SigningKey"] = "startup-test-artifact-download-token-signing-key-32-chars-minimum",
                             ["DatabaseProvider"] = "sqlite",
                             ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "startup-test.db")}",
                             ["StorageProvider"] = "s3",
@@ -105,6 +115,11 @@ public class S3StartupTests
                     builder.ConfigureServices(services =>
                     {
                         services.RemoveAll<OidcOptions>();
+                        services.RemoveAll<ApiKeySecurityOptions>();
+                        services.AddSingleton(new ApiKeySecurityOptions
+                        {
+                            DigestKey = "startup-test-api-key-digest-key-32-chars-minimum"
+                        });
                         services.AddSingleton(new OidcOptions
                         {
                             JwtSecretKey = "startup-test-jwt-secret-key-32-chars-minimum",
