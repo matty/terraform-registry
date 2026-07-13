@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Moq;
+using System.Text.Json;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -9,6 +10,24 @@ namespace TerraformRegistry.Tests.UnitTests;
 
 public class MirrorConfigServiceTests
 {
+    [Fact]
+    public void MirrorConfigurationResponseDoesNotSerializeSigningSecrets()
+    {
+        var response = new MirrorConfigResponse
+        {
+            Effective = new MirrorOptions
+            {
+                PackageUrlSigningKey = "private-signing-key",
+                Providers = new MirrorProviderRuntimeOptions { TrustedSigningKeyIds = ["trusted-key-id"] }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(response);
+
+        Assert.DoesNotContain("private-signing-key", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("trusted-key-id", json, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task GetConfigAsyncUsesStartupDefaultsWhenRuntimeSettingMissing()
     {

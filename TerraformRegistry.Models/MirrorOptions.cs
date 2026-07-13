@@ -1,9 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace TerraformRegistry.Models;
 
 public sealed class MirrorOptions
 {
     public bool Enabled { get; set; }
     public string UpstreamRegistryBaseUrl { get; set; } = "https://registry.terraform.io";
+    [JsonIgnore]
     public string? PackageUrlSigningKey { get; set; }
     public MirrorProviderRuntimeOptions Providers { get; set; } = new();
     public MirrorModuleRuntimeOptions Modules { get; set; } = new();
@@ -24,6 +27,7 @@ public sealed class MirrorProviderRuntimeOptions
     /// GPG key IDs that are trusted to sign mirrored provider SHA256SUMS files.
     /// Packages signed by any other key fail closed.
     /// </summary>
+    [JsonIgnore]
     public List<string> TrustedSigningKeyIds { get; set; } = [];
     public List<string> AllowedArtifactHosts { get; set; } = [];
     public List<string> Allowlist { get; set; } = [];
