@@ -5,6 +5,7 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
+using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Tests.UnitTests;
 
@@ -90,6 +91,60 @@ public sealed class MirrorAdminHandlersTests
 
         Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)result).StatusCode);
         modules.VerifyAll();
+    }
+
+    [Fact]
+    public async Task PurgeProviderReturnsConflictForAnInUseEntry()
+    {
+        var context = CreateContext([Permissions.MirrorManage]);
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.GetProviderPackageAsync("registry.example.com", "hashicorp", "aws", "1.0.0", "linux", "amd64"))
+            .ReturnsAsync(new MirrorProviderPackage
+            {
+                Hostname = "registry.example.com", Namespace = "hashicorp", Type = "aws", Version = "1.0.0",
+                Os = "linux", Arch = "amd64", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/aws"
+            });
+        var usage = new MirrorCacheUsage();
+        using var lease = usage.Acquire("provider:registry.example.com:hashicorp:aws:1.0.0:linux:amd64");
+        var budget = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(),
+            Mock.Of<IProviderArtifactStorage>(), Mock.Of<IModuleService>(), usage);
+        var audit = new Mock<IAuditService>();
+
+        var result = await MirrorAdminHandlers.PurgeProvider(budget, audit.Object, context,
+            "registry.example.com", "hashicorp", "aws", "1.0.0", "linux", "amd64");
+
+        Assert.Equal(StatusCodes.Status409Conflict, ((IStatusCodeHttpResult)result).StatusCode);
+        audit.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task PurgeProviderAuditsSuccessfulDeletion()
+    {
+        var context = CreateContext([Permissions.MirrorManage]);
+        var package = new MirrorProviderPackage
+        {
+            Hostname = "registry.example.com", Namespace = "hashicorp", Type = "aws", Version = "1.0.0",
+            Os = "linux", Arch = "amd64", DownloadUrl = "https://registry.example.com/package", PackageStoragePath = "cache/aws"
+        };
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.GetProviderPackageAsync(package.Hostname, package.Namespace, package.Type, package.Version,
+                package.Os, package.Arch))
+            .ReturnsAsync(package);
+        providers.Setup(x => x.UpsertProviderPackageAsync(It.Is<MirrorProviderPackage>(item =>
+                item.PackageStoragePath == null && item.State == "evicted")))
+            .Returns(Task.CompletedTask);
+        var storage = new Mock<IProviderArtifactStorage>();
+        storage.Setup(x => x.DeleteAsync("cache/aws", context.RequestAborted)).ReturnsAsync(true);
+        var budget = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(), storage.Object,
+            Mock.Of<IModuleService>(), new MirrorCacheUsage());
+        var audit = new Mock<IAuditService>();
+
+        var result = await MirrorAdminHandlers.PurgeProvider(budget, audit.Object, context,
+            package.Hostname, package.Namespace, package.Type, package.Version, package.Os, package.Arch);
+
+        Assert.Equal(StatusCodes.Status204NoContent, ((IStatusCodeHttpResult)result).StatusCode);
+        audit.Verify(x => x.LogAsync("operator-1", "mirror.provider_purged", "mirror_provider",
+            "registry.example.com/hashicorp/aws/1.0.0/linux/amd64", null, null), Times.Once);
     }
 
     private static DefaultHttpContext CreateContext(string[] permissions)

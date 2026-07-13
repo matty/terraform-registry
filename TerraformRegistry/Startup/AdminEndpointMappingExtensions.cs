@@ -3,6 +3,7 @@ using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
+using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Startup;
 
@@ -196,6 +197,13 @@ internal static class AdminEndpointMappingExtensions
                 (IProviderMirrorRepository providerRepository, HttpContext context, string? q, string? state,
                         int limit = 50, int offset = 0) =>
                     MirrorAdminHandlers.ListProviderCache(providerRepository, context, q, state, limit, offset))
+            .WithTags("Mirror");
+
+        app.MapDelete("/api/admin/mirror/providers/{hostname}/{namespace}/{type}/{version}/{os}/{arch}",
+                (string hostname, string @namespace, string type, string version, string os, string arch,
+                        MirrorCacheBudgetService cacheBudget, IAuditService auditService, HttpContext context) =>
+                    MirrorAdminHandlers.PurgeProvider(cacheBudget, auditService, context, hostname, @namespace, type,
+                        version, os, arch))
             .WithTags("Mirror");
 
         app.MapGet("/api/admin/mirror/modules",

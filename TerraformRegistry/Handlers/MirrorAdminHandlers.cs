@@ -2,11 +2,45 @@ using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
+using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Handlers;
 
 public static class MirrorAdminHandlers
 {
+    public static async Task<IResult> PurgeProvider(
+        MirrorCacheBudgetService cacheBudget,
+        IAuditService auditService,
+        HttpContext context,
+        string hostname,
+        string providerNamespace,
+        string type,
+        string version,
+        string os,
+        string arch)
+    {
+        if (!Has(context, Permissions.MirrorManage)) return Forbidden();
+
+        var result = await cacheBudget.PurgeProviderAsync(
+            hostname, providerNamespace, type, version, os, arch, context.RequestAborted);
+        if (result == MirrorCachePurgeResult.InUse)
+        {
+            return Results.Conflict(new { error = "The mirror cache entry is currently in use." });
+        }
+        if (result == MirrorCachePurgeResult.NotFound)
+        {
+            return Results.NotFound(new { error = "Mirror cache entry not found." });
+        }
+        if (result == MirrorCachePurgeResult.Failed)
+        {
+            return Results.Problem("The mirror cache entry could not be purged.", statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        context.FireAuditLog(auditService, "mirror.provider_purged", "mirror_provider",
+            $"{hostname}/{providerNamespace}/{type}/{version}/{os}/{arch}");
+        return Results.NoContent();
+    }
+
     public static async Task<IResult> ListProviderCache(
         IProviderMirrorRepository providerRepository,
         HttpContext context,
