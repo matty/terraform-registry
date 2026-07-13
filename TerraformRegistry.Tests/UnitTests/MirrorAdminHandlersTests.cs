@@ -64,6 +64,34 @@ public sealed class MirrorAdminHandlersTests
         leases.VerifyAll();
     }
 
+    [Fact]
+    public async Task ListProviderCacheRequiresMirrorReadAndClampsPagination()
+    {
+        var context = CreateContext([Permissions.MirrorRead]);
+        var providers = new Mock<IProviderMirrorRepository>(MockBehavior.Strict);
+        providers.Setup(x => x.ListProviderPackagesAsync("aws", "ready", 100, 0))
+            .ReturnsAsync([]);
+
+        var result = await MirrorAdminHandlers.ListProviderCache(providers.Object, context, "aws", "ready", 500, -1);
+
+        Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)result).StatusCode);
+        providers.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ListModuleCacheRequiresMirrorReadAndClampsPagination()
+    {
+        var context = CreateContext([Permissions.MirrorRead]);
+        var modules = new Mock<IModuleMirrorRepository>(MockBehavior.Strict);
+        modules.Setup(x => x.ListModulePackagesAsync("vpc", "ready", 100, 0))
+            .ReturnsAsync([]);
+
+        var result = await MirrorAdminHandlers.ListModuleCache(modules.Object, context, "vpc", "ready", 500, -1);
+
+        Assert.Equal(StatusCodes.Status200OK, ((IStatusCodeHttpResult)result).StatusCode);
+        modules.VerifyAll();
+    }
+
     private static DefaultHttpContext CreateContext(string[] permissions)
     {
         var context = new DefaultHttpContext();
