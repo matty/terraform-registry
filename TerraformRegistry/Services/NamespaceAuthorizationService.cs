@@ -3,6 +3,7 @@ namespace TerraformRegistry.Services;
 public interface INamespaceMaintainerStore
 {
     Task<string?> GetMaintainerAsync(string namespaceName);
+    Task AssignMaintainerAsync(string namespaceName, string userId);
 }
 
 public sealed class NamespaceAuthorizationService(INamespaceMaintainerStore store)

@@ -52,5 +52,11 @@ public sealed class NamespaceAuthorizationServiceTests
 
         public Task<string?> GetMaintainerAsync(string @namespace) =>
             Task.FromResult(Maintainers.GetValueOrDefault(@namespace));
+
+        public Task AssignMaintainerAsync(string @namespace, string userId)
+        {
+            Maintainers[@namespace] = userId;
+            return Task.CompletedTask;
+        }
     }
 }

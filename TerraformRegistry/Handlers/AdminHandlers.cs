@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Utilities;
+using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Handlers;
 
@@ -160,8 +162,37 @@ public static class AdminHandlers
 
         return Results.NoContent();
     }
+
+    public static async Task<IResult> AssignNamespaceMaintainer(
+        string @namespace,
+        INamespaceMaintainerStore maintainerStore,
+        IDatabaseService dbService,
+        IAuditService auditService,
+        HttpContext context,
+        HttpRequest request)
+    {
+        if (context.User.Identity?.IsAuthenticated == true && !context.User.HasPermission(Permissions.AdminUsers))
+            return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
+
+        var body = await request.ReadFromJsonAsync<AssignNamespaceMaintainerRequest>();
+        if (!ModuleIdentifierValidator.IsValidSegment(@namespace) || body == null || string.IsNullOrWhiteSpace(body.UserId))
+            return Results.BadRequest(new { error = "namespace and userId are required" });
+
+        var user = await dbService.GetUserByIdAsync(body.UserId);
+        if (user == null)
+            return Results.NotFound(new { error = "User not found" });
+        if (!user.IsActive)
+            return Results.BadRequest(new { error = "Cannot assign an inactive user as namespace maintainer" });
+
+        await maintainerStore.AssignMaintainerAsync(@namespace, user.Id);
+        context.FireAuditLog(auditService, "namespace.maintainer_assigned", "namespace", @namespace,
+            new { namespaceName = @namespace, userId = user.Id });
+
+        return Results.Ok(new { @namespace, userId = user.Id });
+    }
 }
 
 public record CreateRoleRequest(string Name, string? Description, string[] Permissions);
 public record UpdateRoleRequest(string? Name, string? Description, string[]? Permissions);
 public record AssignRoleRequest(Guid RoleId);
+public record AssignNamespaceMaintainerRequest(string UserId);
