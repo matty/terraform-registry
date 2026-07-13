@@ -251,6 +251,33 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return await reader.ReadAsync() ? MapVersion(reader) : null;
     }
 
+    public async Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version, string os, string arch)
+    {
+        await using var connection = await OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(@"
+            SELECT p.id, pv.protocols::text, pv.key_id, pv.shasums_storage_path, pv.shasums_signature_storage_path,
+                   pp.os, pp.arch, pp.filename, pp.shasum, pp.package_storage_path,
+                   g.ascii_armor, g.trust_signature, g.source, g.source_url
+            FROM providers p
+            INNER JOIN provider_versions pv ON pv.provider_id = p.id AND pv.deleted_at IS NULL
+            INNER JOIN provider_platforms pp ON pp.provider_version_id = pv.id
+            INNER JOIN provider_gpg_keys g ON g.namespace = p.namespace AND g.key_id = pv.key_id AND g.revoked_at IS NULL
+            WHERE p.namespace = @providerNamespace AND p.type = @type AND pv.version = @version
+              AND pp.os = @os AND pp.arch = @arch AND p.deleted_at IS NULL", connection);
+        command.Parameters.AddWithValue("providerNamespace", providerNamespace);
+        command.Parameters.AddWithValue("@type", type);
+        command.Parameters.AddWithValue("@version", version);
+        command.Parameters.AddWithValue("@os", os);
+        command.Parameters.AddWithValue("@arch", arch);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) return null;
+        if (reader.IsDBNull(3) || reader.IsDBNull(4) || reader.IsDBNull(9)) return null;
+        return new ProviderPackageDetails(reader.GetGuid(0), DeserializeProtocols(reader.GetString(1)), reader.GetString(2),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7), reader.GetString(8),
+            reader.GetString(9), reader.GetString(10), ReadNullableString(reader, 11), ReadNullableString(reader, 12), ReadNullableString(reader, 13));
+    }
+
     public async Task<ProviderVersion> CreateProviderVersionAsync(Guid providerId, string version, string[] protocols, string keyId)
     {
         var providerVersion = new ProviderVersion

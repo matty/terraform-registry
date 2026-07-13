@@ -96,6 +96,55 @@ public class ProviderRegistryServiceTests
     }
 
     [Fact]
+    public async Task GetPackageAsyncUsesOneRepositoryReadAndCreatesArtifactUrlsConcurrently()
+    {
+        var repository = new Mock<IProviderRepository>(MockBehavior.Strict);
+        var storage = new Mock<IProviderArtifactStorage>(MockBehavior.Strict);
+        var packageDetails = new ProviderPackageDetails(
+            Guid.NewGuid(),
+            ["5.0"],
+            "ABCDEF",
+            "shasums",
+            "signature",
+            "linux",
+            "amd64",
+            "terraform-provider-example_1.0.0_linux_amd64.zip",
+            new string('a', 64),
+            "package.zip",
+            "key",
+            null,
+            null,
+            null);
+        repository
+            .Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"))
+            .ReturnsAsync(packageDetails);
+        repository
+            .Setup(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux", "amd64", null, null))
+            .Returns(Task.CompletedTask);
+
+        var urlsStarted = 0;
+        var releaseUrls = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        storage
+            .Setup(x => x.CreateDownloadUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string path, CancellationToken cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref urlsStarted) == 3)
+                    releaseUrls.SetResult();
+
+                await releaseUrls.Task.WaitAsync(cancellationToken);
+                return $"/provider/download?token={path}";
+            });
+        var service = CreateService(repository, storage);
+
+        var response = await service.GetPackageAsync("acme", "example", "1.0.0", "linux", "amd64", null, null, CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Equal(3, urlsStarted);
+        repository.Verify(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"), Times.Once);
+        repository.Verify(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux", "amd64", null, null), Times.Once);
+    }
+
+    [Fact]
     public async Task CreateProviderAsyncRejectsInvalidProviderNamespace()
     {
         var service = CreateService();
