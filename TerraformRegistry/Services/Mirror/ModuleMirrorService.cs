@@ -420,6 +420,7 @@ public sealed class ModuleMirrorService(
                 Source = source.OriginalSource,
                 PackageStoragePath = localPath,
                 SizeBytes = sizeBytes,
+                CacheSizeBytes = sizeBytes,
                 MetadataJson = JsonSerializer.Serialize(packageMetadata, JsonOptions),
                 State = "ready",
                 LastSyncAt = DateTime.UtcNow

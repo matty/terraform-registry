@@ -420,6 +420,7 @@ public sealed class ProviderMirrorService(
                 Filename = metadata.Filename,
                 PackageStoragePath = packageSave.StoragePath,
                 SizeBytes = packageSave.SizeBytes,
+                CacheSizeBytes = checked(packageSave.SizeBytes + shasumsSave.SizeBytes + signatureSave.SizeBytes),
                 ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
                 HashesJson = JsonSerializer.Serialize(hashes, JsonOptions),
                 Shasum = packageSha,
