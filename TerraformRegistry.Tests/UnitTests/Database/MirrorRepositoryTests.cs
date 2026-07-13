@@ -51,6 +51,14 @@ public sealed class SqliteMirrorRepositoryTests : IDisposable
         await MirrorLeaseRepositoryContract.ManagesAcquireHeartbeatReleaseAndExpiredTakeover(repository);
     }
 
+    [Fact]
+    public async Task PublicationRepositoryRoundTripsAllAttemptFields()
+    {
+        var repository = new SqliteModulePublicationRepository(_connectionString);
+
+        await PublicationRepositoryContract.RoundTripsAllAttemptFields(repository);
+    }
+
     public void Dispose()
     {
         _connection.Dispose();
@@ -108,6 +116,58 @@ public sealed class PostgreSqlMirrorRepositoryTests : IAsyncLifetime
 
         await MirrorLeaseRepositoryContract.ManagesAcquireHeartbeatReleaseAndExpiredTakeover(repository);
     }
+
+    [Fact]
+    public async Task PublicationRepositoryRoundTripsAllAttemptFields()
+    {
+        var repository = new PostgreSqlModulePublicationRepository(_connectionString);
+
+        await PublicationRepositoryContract.RoundTripsAllAttemptFields(repository);
+    }
+}
+
+internal static class PublicationRepositoryContract
+{
+    public static async Task RoundTripsAllAttemptFields(IModulePublicationRepository repository)
+    {
+        var now = TruncateToMicroseconds(DateTime.UtcNow);
+        var attempt = new ModulePublicationAttempt
+        {
+            Id = Guid.NewGuid(),
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.0.0",
+            State = ModulePublicationAttemptState.Failed,
+            StagingKey = "publication-attempts/acme/network/aws/1.0.0/staged.zip",
+            ExpectedRevision = "catalog-r17",
+            CommittedRevision = "artifact-r17",
+            Error = "promotion failed after compare-and-swap",
+            CreatedAt = now,
+            UpdatedAt = now.AddMinutes(1),
+            CompletedAt = now.AddMinutes(2)
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attempt.Id,
+            Namespace = attempt.Namespace,
+            Name = attempt.Name,
+            Provider = attempt.Provider,
+            Version = attempt.Version,
+            State = ModuleExtractionJobState.Pending,
+            CreatedAt = attempt.CreatedAt,
+            UpdatedAt = attempt.UpdatedAt
+        };
+
+        await repository.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+
+        Assert.Equal(attempt, await repository.GetPublicationAttemptAsync(attempt.Id));
+        Assert.Equal(job, await repository.GetExtractionJobAsync(job.Id));
+    }
+
+    private static DateTime TruncateToMicroseconds(DateTime value) =>
+        new(value.Ticks - value.Ticks % 10, DateTimeKind.Utc);
 }
 
 internal static class ProviderRepositoryContract

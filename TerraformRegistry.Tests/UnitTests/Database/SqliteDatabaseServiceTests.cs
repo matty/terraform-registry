@@ -105,8 +105,12 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
             Version = "1.0.0",
             State = ModulePublicationAttemptState.Staged,
             StagingKey = "attempts/staged.zip",
+            ExpectedRevision = "catalog-r17",
+            CommittedRevision = "artifact-r17",
+            Error = "transient storage failure",
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
         };
         var job = new ModuleExtractionJob
         {
