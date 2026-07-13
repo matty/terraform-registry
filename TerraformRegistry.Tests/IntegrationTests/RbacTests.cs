@@ -140,16 +140,53 @@ public class RbacTests(ITestOutputHelper output) : IntegrationTestBase(output, A
         var customRole = await createRoleResponse.Content.ReadFromJsonAsync<JsonElement>();
         var customRoleId = customRole.GetProperty("id").GetString();
 
-        // Create a user with the upload role
+        // Create a user with the upload role.
         var uploaderClient = await CreateClientWithRoleAsync("uploader@test.com", "uploader-id", Guid.Parse(customRoleId!));
 
-        // Upload a module — should succeed
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var uploader = await apiKeyService.GetOrCreateUserAsync("uploader@test.com", "test", "uploader-id");
+
+        // An administrator must explicitly claim an otherwise unowned namespace for the uploader.
+        var assignmentClient = await CreateAdminClientAsync();
+        var assignmentResponse = await assignmentClient.PutAsJsonAsync(
+            "/api/admin/namespaces/test/maintainer",
+            new { userId = uploader.Id });
+        Assert.Equal(HttpStatusCode.OK, assignmentResponse.StatusCode);
+
+        // The assigned maintainer can then upload a module.
         using var content = new MultipartFormDataContent();
         var zipBytes = CreateMinimalZip();
         content.Add(new ByteArrayContent(zipBytes), "moduleFile", "module.zip");
         var uploadResponse = await uploaderClient.PostAsync("/v1/modules/test/rbacmod/aws/1.0.0", content);
 
         Assert.Equal(HttpStatusCode.Created, uploadResponse.StatusCode);
+
+        var otherUploaderClient = await CreateClientWithRoleAsync(
+            "other-uploader@test.com", "other-uploader-id", Guid.Parse(customRoleId!));
+        using var otherContent = new MultipartFormDataContent();
+        otherContent.Add(new ByteArrayContent(CreateMinimalZip()), "moduleFile", "module.zip");
+
+        var otherUploadResponse = await otherUploaderClient.PostAsync(
+            "/v1/modules/test/rbacmod-other/aws/1.0.0", otherContent);
+
+        Assert.Equal(HttpStatusCode.Forbidden, otherUploadResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task NamespaceMaintainerAssignmentRejectsInvalidNamespace()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var user = await apiKeyService.GetOrCreateUserAsync(
+            "namespace-target@test.com", "test", "namespace-target-id");
+        var adminClient = await CreateAdminClientAsync();
+
+        var response = await adminClient.PutAsJsonAsync(
+            "/api/admin/namespaces/not.a-valid-namespace/maintainer",
+            new { userId = user.Id });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

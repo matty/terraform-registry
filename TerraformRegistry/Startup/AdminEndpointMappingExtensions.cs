@@ -13,6 +13,7 @@ internal static class AdminEndpointMappingExtensions
         app.MapRoleEndpoints();
         app.MapAuditEndpoints();
         app.MapUserEndpoints();
+        app.MapNamespaceEndpoints();
         app.MapModuleDocsEndpoints();
 
         return app;
@@ -113,6 +114,18 @@ internal static class AdminEndpointMappingExtensions
                 (string userId, Guid roleId, IPermissionService permService, IRoleService roleService,
                         IAuditService auditService, HttpContext context) =>
                     AdminHandlers.RemoveUserRole(userId, roleId, permService, roleService, auditService, context))
+            .WithTags("Admin");
+
+        return app;
+    }
+
+    private static WebApplication MapNamespaceEndpoints(this WebApplication app)
+    {
+        app.MapPut("/api/admin/namespaces/{namespace}/maintainer",
+                (string @namespace, INamespaceMaintainerStore maintainerStore, IDatabaseService dbService,
+                        IAuditService auditService, HttpContext context, HttpRequest request) =>
+                    AdminHandlers.AssignNamespaceMaintainer(@namespace, maintainerStore, dbService, auditService,
+                        context, request))
             .WithTags("Admin");
 
         return app;

@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using TerraformRegistry.API;
+using TerraformRegistry.Services;
 using Xunit.Abstractions;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
@@ -72,6 +74,7 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     {
         var client = await CreateAnalyticsClientAsync("analytics-download@example.com", "analytics-download-id",
             Permissions.ModulesRead, Permissions.ModulesUpload);
+        await AssignNamespaceMaintainerAsync("test-ns", "analytics-download@example.com", "analytics-download-id");
 
         // Upload a module
         await UploadTestModule(client, "1.0.0");
@@ -127,6 +130,15 @@ public class AnalyticsEndpointTests(ITestOutputHelper output) : IntegrationTestB
     {
         var permissions = new[] { Permissions.AnalyticsView }.Concat(extraPermissions).ToArray();
         return CreateClientWithPermissionsAsync(email, providerId, permissions);
+    }
+
+    private async Task AssignNamespaceMaintainerAsync(string @namespace, string email, string providerId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var maintainerStore = scope.ServiceProvider.GetRequiredService<INamespaceMaintainerStore>();
+        var user = await apiKeyService.GetOrCreateUserAsync(email, "test", providerId);
+        await maintainerStore.AssignMaintainerAsync(@namespace, user.Id);
     }
 
     private static string GetProjectDirectory()

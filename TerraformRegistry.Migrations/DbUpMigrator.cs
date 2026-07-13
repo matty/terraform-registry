@@ -189,6 +189,7 @@ public class DbUpMigrator
             var name when name.Contains("015_module_llm_contexts", StringComparison.OrdinalIgnoreCase) => ["module_llm_contexts"],
             var name when name.Contains("016_mirror_cache", StringComparison.OrdinalIgnoreCase) => ["mirror_provider_indexes", "mirror_provider_packages", "mirror_module_versions", "mirror_module_packages"],
             var name when name.Contains("terraform_authorization_codes", StringComparison.OrdinalIgnoreCase) => ["terraform_authorization_codes"],
+            var name when name.Contains("namespace_maintainers", StringComparison.OrdinalIgnoreCase) => ["namespace_maintainers"],
             _ => []
         };
     }
