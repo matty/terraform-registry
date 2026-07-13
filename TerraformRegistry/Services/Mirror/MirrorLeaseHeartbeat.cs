@@ -82,6 +82,8 @@ public sealed class MirrorLeaseHeartbeat : IAsyncDisposable
         }
         catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
         {
+            // Disposal deliberately cancels the renewal delay after the fetch completes.
+            return;
         }
         finally
         {
