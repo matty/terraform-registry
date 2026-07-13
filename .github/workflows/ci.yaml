@@ -211,6 +211,20 @@ jobs:
       - name: Run portable Phase 1 deployment gate
         run: bash scripts/remediation/gates/phase-1.sh
 
+  bounded-ingestion-security-gate:
+    name: Bounded ingestion security gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p2-security-abuse-gate'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run bounded ingestion security gate
+        run: bash scripts/remediation/gates/bounded-ingestion-security.sh
+
   docker:
     name: Docker build and scan
     needs:
