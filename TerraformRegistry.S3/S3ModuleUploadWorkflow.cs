@@ -25,7 +25,7 @@ internal sealed class S3ModuleUploadWorkflow(
         {
             existingModule = await databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger,
                 ex,
@@ -56,6 +56,8 @@ internal sealed class S3ModuleUploadWorkflow(
         var logicalObjectKey = S3ModuleObjectKeys.CreateLogicalObjectKey(@namespace, name, provider, version,
             ModuleArchiveFormat.GetFileSuffix(metadata));
         var objectKey = S3ModuleObjectKeys.CreateFinalObjectKey(logicalObjectKey);
+        var now = DateTime.UtcNow;
+        var attemptId = Guid.NewGuid();
         var newModule = new ModuleStorage
         {
             Namespace = @namespace,
@@ -64,18 +66,55 @@ internal sealed class S3ModuleUploadWorkflow(
             Version = version,
             Description = description,
             FilePath = objectKey,
-            PublishedAt = DateTime.UtcNow,
+            PublishedAt = now,
             Dependencies = [],
             Metadata = metadata ?? new ModuleArtifactMetadata()
         };
 
         var tempKey = S3ModuleObjectKeys.CreateTemporaryObjectKey(objectKey);
-        if (!await objectStore.UploadTemporaryObjectAsync(newModule, moduleContent, tempKey))
+        var attempt = new ModulePublicationAttempt
         {
+            Id = attemptId,
+            Namespace = @namespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModulePublicationAttemptState.Staged,
+            StagingKey = tempKey,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attemptId,
+            Namespace = @namespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModuleExtractionJobState.Staged,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        try
+        {
+            await databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RegistryLog.Error(logger, ex,
+                "Error creating staged S3 publication for {Namespace}/{Name}/{Provider}/{Version}.",
+                @namespace, name, provider, version);
             return false;
         }
 
-        return await FinalizeUploadAsync(existingModule, newModule, tempKey, replace && existingModule != null);
+        if (!await objectStore.UploadTemporaryObjectAsync(newModule, moduleContent, tempKey))
+        {
+            await TryFailPublicationAsync(attemptId, "Temporary S3 upload failed.");
+            return false;
+        }
+
+        return await FinalizeUploadAsync(existingModule, newModule, tempKey, attempt, replace && existingModule != null);
     }
 
     private async Task<bool> EnsureNoDeletedModuleBlocksUploadAsync(
@@ -101,7 +140,7 @@ internal sealed class S3ModuleUploadWorkflow(
                 version);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger,
                 ex,
@@ -118,100 +157,58 @@ internal sealed class S3ModuleUploadWorkflow(
         ModuleStorage? existingModule,
         ModuleStorage newModule,
         string tempKey,
+        ModulePublicationAttempt attempt,
         bool replacingExisting)
     {
         if (!await objectStore.TryPromoteTemporaryObjectAsync(tempKey, newModule, replacingExisting ? "replace" : "create"))
         {
-            await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
-            await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
+            await CleanupFailedPublicationAsync(newModule, tempKey, attempt.Id, "S3 finalization failed.");
             return false;
         }
 
-        if (replacingExisting)
-        {
-            if (!await TryReplaceExistingModuleSnapshotAsync(existingModule, newModule))
-            {
-                await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
-                await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-                return false;
-            }
-
-            if (existingModule != null)
-            {
-                await objectStore.TryDeleteObjectAsync(existingModule.FilePath, "superseded final");
-            }
-
-            await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-            return true;
-        }
-
+        bool committed;
         try
         {
-            var added = await databaseService.AddModuleAsync(newModule);
-            if (!added)
-            {
-                await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
-                await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-                RegistryLog.Error(logger,
-                    "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
-                    newModule.Namespace,
-                    newModule.Name,
-                    newModule.Provider,
-                    newModule.Version);
-                return false;
-            }
+            committed = await databaseService.TryCommitStagedPublicationAsync(attempt, newModule, existingModule);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
-            await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
-            RegistryLog.Error(logger,
-                ex,
-                "Error adding module {Namespace}/{Name}/{Provider}/{Version} to database after S3 finalization.",
-                newModule.Namespace,
-                newModule.Name,
-                newModule.Provider,
-                newModule.Version);
+            RegistryLog.Error(logger, ex,
+                "Error committing staged S3 publication for {Namespace}/{Name}/{Provider}/{Version}.",
+                newModule.Namespace, newModule.Name, newModule.Provider, newModule.Version);
+            await CleanupFailedPublicationAsync(newModule, tempKey, attempt.Id, ex.Message);
+            return false;
+        }
+
+        if (!committed)
+        {
+            await CleanupFailedPublicationAsync(newModule, tempKey, attempt.Id,
+                "Catalog changed before publication could commit.");
             return false;
         }
 
         await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
+        if (replacingExisting && existingModule != null)
+        {
+            await objectStore.TryDeleteObjectAsync(existingModule.FilePath, "superseded final");
+        }
         return true;
     }
 
-    private async Task<bool> TryReplaceExistingModuleSnapshotAsync(ModuleStorage? existingModule, ModuleStorage newModule)
+    private async Task CleanupFailedPublicationAsync(
+        ModuleStorage newModule,
+        string tempKey,
+        Guid attemptId,
+        string reason)
     {
-        if (existingModule == null)
-        {
-            return false;
-        }
+        await objectStore.TryDeleteObjectAsync(newModule.FilePath, "final");
+        await objectStore.TryDeleteTemporaryObjectAsync(tempKey);
+        await TryFailPublicationAsync(attemptId, reason);
+    }
 
-        try
-        {
-            var replaced = await databaseService.ReplaceModuleExactAsync(existingModule, newModule);
-            if (replaced)
-            {
-                return true;
-            }
-
-            RegistryLog.Warning(logger,
-                "Failed to replace exact existing module row for {Namespace}/{Name}/{Provider}/{Version} after S3 finalization.",
-                existingModule.Namespace,
-                existingModule.Name,
-                existingModule.Provider,
-                existingModule.Version);
-            return false;
-        }
-        catch (Exception ex)
-        {
-            RegistryLog.Warning(logger,
-                ex,
-                "Error replacing exact existing module row for {Namespace}/{Name}/{Provider}/{Version} after S3 finalization.",
-                existingModule.Namespace,
-                existingModule.Name,
-                existingModule.Provider,
-                existingModule.Version);
-            return false;
-        }
+    private async Task TryFailPublicationAsync(Guid attemptId, string reason)
+    {
+        try { await databaseService.TryFailStagedPublicationAsync(attemptId, reason); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { RegistryLog.Error(logger, ex, "Failed to mark staged S3 publication {AttemptId} as failed.", attemptId); }
     }
 }
