@@ -209,6 +209,6 @@ internal sealed class S3ModuleUploadWorkflow(
     private async Task TryFailPublicationAsync(Guid attemptId, string reason)
     {
         try { await databaseService.TryFailStagedPublicationAsync(attemptId, reason); }
-        catch (Exception ex) { RegistryLog.Error(logger, ex, "Failed to mark staged S3 publication {AttemptId} as failed.", attemptId); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { RegistryLog.Error(logger, ex, "Failed to mark staged S3 publication {AttemptId} as failed.", attemptId); }
     }
 }
