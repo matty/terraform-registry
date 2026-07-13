@@ -24,6 +24,25 @@ public sealed class RegistryRateLimitMetrics : IDisposable
     public void Dispose() => _meter.Dispose();
 }
 
+public static class RegistryRateLimiterFactory
+{
+    public static RateLimiter Create(RegistryRateLimitPolicyOptions policy) => RateLimiter.CreateChained(
+        new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = policy.PermitLimit,
+            Window = TimeSpan.FromSeconds(policy.WindowSeconds),
+            QueueLimit = policy.QueueLimit,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true
+        }),
+        new ConcurrencyLimiter(new ConcurrencyLimiterOptions
+        {
+            PermitLimit = policy.ConcurrencyLimit,
+            QueueLimit = policy.QueueLimit,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+        }));
+}
+
 public static class RegistryRateLimitingExtensions
 {
     private const string PolicyItemKey = "terraform-registry.rate-limit-policy";
@@ -64,14 +83,7 @@ public static class RegistryRateLimitingExtensions
                 {
                     httpContext.Items[PolicyItemKey] = name;
                     var partition = RateLimitPartitionKey.For(httpContext);
-                    return RateLimitPartition.GetFixedWindowLimiter(partition, _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = policy.PermitLimit,
-                        Window = TimeSpan.FromSeconds(policy.WindowSeconds),
-                        QueueLimit = policy.QueueLimit,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        AutoReplenishment = true
-                    });
+                    return RateLimitPartition.Get(partition, _ => RegistryRateLimiterFactory.Create(policy));
                 });
             }
         });

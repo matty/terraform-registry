@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,6 +65,23 @@ public sealed class RateLimitOptionsTests
         var exception = Assert.Throws<InvalidOperationException>(policy.Validate);
 
         Assert.Contains("PermitLimit", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PolicyLimiterEnforcesConfiguredConcurrencyLimit()
+    {
+        var policy = new RegistryRateLimitPolicyOptions
+        {
+            PermitLimit = 2,
+            WindowSeconds = 60,
+            ConcurrencyLimit = 1
+        };
+        using var limiter = RegistryRateLimiterFactory.Create(policy);
+        using var first = limiter.AttemptAcquire();
+        using var second = limiter.AttemptAcquire();
+
+        Assert.True(first.IsAcquired);
+        Assert.False(second.IsAcquired);
     }
 
     [Fact]
