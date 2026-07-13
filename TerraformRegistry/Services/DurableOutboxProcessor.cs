@@ -34,6 +34,7 @@ public sealed class DurableOutboxProcessor(
         {
             throw;
         }
+        // lgtm[cs/catch-of-all-exceptions] Delivery handlers are extension points; every failure must be persisted for retry.
         catch (Exception ex)
         {
             RegistryLog.Error(logger, ex, "Durable outbox worker {OwnerId} failed to deliver an event.", ownerId);

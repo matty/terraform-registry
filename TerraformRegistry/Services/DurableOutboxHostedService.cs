@@ -6,8 +6,7 @@ namespace TerraformRegistry.Services;
 
 public sealed class DurableOutboxHostedService(
     DurableOutboxProcessor processor,
-    IOptions<DurableOutboxOptions> options,
-    ILogger<DurableOutboxHostedService> logger) : BackgroundService
+    IOptions<DurableOutboxOptions> options) : BackgroundService
 {
     private readonly DurableOutboxOptions options = options.Value;
 
@@ -28,11 +27,6 @@ public sealed class DurableOutboxHostedService(
                 await Task.Delay(options.PollIntervalMilliseconds, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
-            catch (Exception ex)
-            {
-                RegistryLog.Error(logger, ex, "Durable outbox worker {OwnerId} failed to deliver an event.", ownerId);
-                await Task.Delay(options.PollIntervalMilliseconds, stoppingToken);
-            }
         }
     }
 }
