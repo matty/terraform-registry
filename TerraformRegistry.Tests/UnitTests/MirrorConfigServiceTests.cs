@@ -45,7 +45,7 @@ public class MirrorConfigServiceTests
             .Build();
         var settings = new Mock<IRuntimeSettingsService>();
         settings.Setup(x => x.GetAsync("mirror.config", It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RuntimeSetting?)null);
+            .ReturnsAsync(() => null);
 
         var service = new MirrorConfigService(configuration, settings.Object);
 
