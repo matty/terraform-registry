@@ -1,5 +1,6 @@
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.ModuleExtraction;
 
@@ -15,6 +16,7 @@ internal static class AdminEndpointMappingExtensions
         app.MapUserEndpoints();
         app.MapNamespaceEndpoints();
         app.MapModuleDocsEndpoints();
+        app.MapMirrorAdminEndpoints();
 
         return app;
     }
@@ -184,6 +186,22 @@ internal static class AdminEndpointMappingExtensions
                         HttpRequest request) =>
                     ModuleDocsHandlers.UpdateConfig(configService, auditService, context, request))
             .WithTags("Module Docs");
+
+        return app;
+    }
+
+    private static WebApplication MapMirrorAdminEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/admin/mirror/config",
+                (IMirrorConfigService configService, HttpContext context) =>
+                    MirrorAdminHandlers.GetConfig(configService, context))
+            .WithTags("Mirror");
+
+        app.MapPut("/api/admin/mirror/config",
+                (IMirrorConfigService configService, IAuditService auditService, HttpContext context,
+                        MirrorConfigUpdateRequest request) =>
+                    MirrorAdminHandlers.UpdateConfig(configService, auditService, context, request))
+            .WithTags("Mirror");
 
         return app;
     }
