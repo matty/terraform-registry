@@ -37,6 +37,14 @@ internal static class ServiceRegistrationExtensions
                 catch (InvalidOperationException) { return false; }
             }, "Durable outbox worker limits must be greater than zero.")
             .ValidateOnStart();
+        services.AddOptions<DownloadAnalyticsOptions>()
+            .Bind(configuration.GetSection(DownloadAnalyticsOptions.SectionName))
+            .Validate(options =>
+            {
+                try { options.Validate(); return true; }
+                catch (InvalidOperationException) { return false; }
+            }, "Download analytics queue capacity must be greater than zero.")
+            .ValidateOnStart();
         services.AddOptions<ModuleExtractionOptions>()
             .Bind(configuration.GetSection("ModuleExtraction"))
             .Validate(options =>
@@ -179,7 +187,10 @@ internal static class ServiceRegistrationExtensions
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
         services.AddAnalyticsService();
+        services.AddSingleton<ModuleDownloadAnalyticsBuffer>();
+        services.AddHostedService<ModuleDownloadAnalyticsHostedService>();
         services.AddDurableOutboxServices();
+        services.AddSingleton<DurableOutboxProcessor>();
         services.AddHostedService<DurableOutboxHostedService>();
         services.AddWebhookServices();
         services.AddVcsServices();
@@ -556,7 +567,7 @@ internal static class ServiceRegistrationExtensions
             };
         });
 
-        services.AddSingleton<IAuditService>(provider =>
+        services.AddSingleton<IAuditLogStore>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();
             var databaseProvider = config["DatabaseProvider"]?.ToLowerInvariant() ?? "sqlite";
@@ -572,6 +583,7 @@ internal static class ServiceRegistrationExtensions
                 _ => throw new InvalidOperationException($"Invalid database provider: '{databaseProvider}'")
             };
         });
+        services.AddSingleton<IAuditService, DurableAuditService>();
 
         return services;
     }

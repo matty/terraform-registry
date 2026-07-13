@@ -7,7 +7,7 @@ using TerraformRegistry.API.Logging;
 
 namespace TerraformRegistry.PostgreSQL;
 
-public class PostgreSqlAuditService : IAuditService
+public class PostgreSqlAuditService : IAuditLogStore
 {
     private readonly string _connectionString;
     private readonly ILogger<PostgreSqlAuditService> _logger;
@@ -44,6 +44,7 @@ public class PostgreSqlAuditService : IAuditService
         catch (Exception ex)
         {
             RegistryLog.Error(_logger, ex, "Failed to write audit log entry for action {Action}", action);
+            throw;
         }
     }
 

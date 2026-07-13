@@ -50,8 +50,8 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}/download",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,
-                        IModuleMirrorService moduleMirrorService, IDatabaseService dbService, HttpContext context) =>
-                    ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, moduleMirrorService, dbService,
+                        IModuleMirrorService moduleMirrorService, ModuleDownloadAnalyticsBuffer downloadAnalytics, HttpContext context) =>
+                    ModuleHandlers.DownloadModule(@namespace, name, provider, version, moduleService, moduleMirrorService, downloadAnalytics,
                         context))
             .WithTags("Modules")
             .WithDescription("Downloads a specific module version")
@@ -60,8 +60,8 @@ internal static class ModuleEndpointMappingExtensions
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/download",
                 (string @namespace, string name, string provider, IModuleService moduleService,
-                        IModuleMirrorService moduleMirrorService, IDatabaseService dbService, HttpContext context) =>
-                    ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, moduleMirrorService, dbService, context))
+                        IModuleMirrorService moduleMirrorService, ModuleDownloadAnalyticsBuffer downloadAnalytics, HttpContext context) =>
+                    ModuleHandlers.DownloadLatestModule(@namespace, name, provider, moduleService, moduleMirrorService, downloadAnalytics, context))
             .WithTags("Modules")
             .WithDescription("Downloads the latest version of a module for a provider")
             .Produces(302)

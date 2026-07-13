@@ -5,8 +5,7 @@ using TerraformRegistry.API.Logging;
 namespace TerraformRegistry.Services;
 
 public sealed class DurableOutboxHostedService(
-    IOutboxEventRepository repository,
-    IEnumerable<IOutboxDeliveryHandler> handlers,
+    DurableOutboxProcessor processor,
     IOptions<DurableOutboxOptions> options,
     ILogger<DurableOutboxHostedService> logger) : BackgroundService
 {
@@ -23,22 +22,15 @@ public sealed class DurableOutboxHostedService(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            TerraformRegistry.Models.OutboxEvent? @event = null;
             try
             {
-                @event = await repository.TryClaimNextAsync(ownerId, TimeSpan.FromSeconds(options.LeaseSeconds), stoppingToken);
-                if (@event is null) { await Task.Delay(options.PollIntervalMilliseconds, stoppingToken); continue; }
-                var handler = handlers.FirstOrDefault(candidate => candidate.CanHandle(@event.Kind));
-                if (handler is null) throw new InvalidOperationException($"No durable outbox handler is registered for '{@event.Kind}'.");
-                await handler.HandleAsync(@event, stoppingToken);
-                await repository.TryCompleteAsync(@event.Id, ownerId, stoppingToken);
+                if (await processor.ProcessNextAsync(ownerId, stoppingToken)) continue;
+                await Task.Delay(options.PollIntervalMilliseconds, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
                 RegistryLog.Error(logger, ex, "Durable outbox worker {OwnerId} failed to deliver an event.", ownerId);
-                if (@event is not null)
-                    await repository.TryFailAsync(@event.Id, ownerId, ex.Message, options.RetryLimit, stoppingToken);
                 await Task.Delay(options.PollIntervalMilliseconds, stoppingToken);
             }
         }

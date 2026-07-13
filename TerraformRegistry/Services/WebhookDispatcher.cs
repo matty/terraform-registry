@@ -14,12 +14,12 @@ public class WebhookDispatcher(
     WebhookUrlValidator webhookUrlValidator,
     ILogger<WebhookDispatcher> logger)
 {
-    public Task FireEventAsync(string eventType, string @namespace, string name, string provider, string version, string? description,
+    public async Task FireEventAsync(string eventType, string @namespace, string name, string provider, string version, string? description,
         CancellationToken cancellationToken = default)
     {
         var payload = new WebhookOutboxPayload("wh_" + Guid.NewGuid().ToString("N"), eventType, @namespace, name, provider, version, description);
         var now = DateTime.UtcNow;
-        return outboxRepository.EnqueueAsync(new OutboxEvent
+        var enqueued = await outboxRepository.EnqueueAsync(new OutboxEvent
         {
             Id = Guid.NewGuid(),
             Kind = WebhookOutboxDeliveryHandler.Kind,
@@ -29,6 +29,7 @@ public class WebhookDispatcher(
             CreatedAt = now,
             UpdatedAt = now
         }, cancellationToken);
+        if (!enqueued) throw new InvalidOperationException("The webhook event could not be persisted to the durable outbox.");
     }
 
     public async Task DeliverAsync(WebhookOutboxPayload payload, CancellationToken cancellationToken)

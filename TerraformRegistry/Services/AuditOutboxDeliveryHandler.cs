@@ -4,7 +4,7 @@ using TerraformRegistry.Models;
 
 namespace TerraformRegistry.Services;
 
-public sealed class AuditOutboxDeliveryHandler(IAuditService auditService) : IOutboxDeliveryHandler
+public sealed class AuditOutboxDeliveryHandler(IAuditLogStore auditService) : IOutboxDeliveryHandler
 {
     public const string Kind = "audit";
 

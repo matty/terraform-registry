@@ -585,7 +585,7 @@ public sealed class ModuleMirrorServiceTests
             "aws",
             moduleService.Object,
             mirror.Object,
-            Mock.Of<IDatabaseService>(),
+            new ModuleDownloadAnalyticsBuffer(Microsoft.Extensions.Options.Options.Create(new DownloadAnalyticsOptions())),
             context);
 
         Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NoContent>(result);

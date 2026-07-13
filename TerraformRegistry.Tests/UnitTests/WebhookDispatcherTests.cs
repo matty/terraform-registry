@@ -81,7 +81,26 @@ public class WebhookDispatcherTests
         Assert.Equal(443, connector.Port);
     }
 
-    private static WebhookDispatcher CreateDispatcher(HttpMessageHandler handler, WebhookUrlValidator validator)
+    [Fact]
+    public async Task FireEventAsyncPersistsWebhookDeliveryBeforeReturning()
+    {
+        var outbox = new Mock<IOutboxEventRepository>();
+        OutboxEvent? enqueued = null;
+        outbox.Setup(repository => repository.EnqueueAsync(It.IsAny<OutboxEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<OutboxEvent, CancellationToken>((@event, _) => enqueued = @event)
+            .ReturnsAsync(true);
+        var dispatcher = CreateDispatcher(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)),
+            CreateValidator(IPAddress.Parse("93.184.216.34")), outbox.Object);
+
+        await dispatcher.FireEventAsync("module.published", "hashicorp", "vpc", "aws", "1.0.0", "network");
+
+        Assert.NotNull(enqueued);
+        Assert.Equal(WebhookOutboxDeliveryHandler.Kind, enqueued.Kind);
+        Assert.StartsWith("webhook:wh_", enqueued.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    private static WebhookDispatcher CreateDispatcher(HttpMessageHandler handler, WebhookUrlValidator validator,
+        IOutboxEventRepository? outbox = null)
     {
         var webhookService = new Mock<IWebhookService>(MockBehavior.Strict);
         var client = new HttpClient(handler);
@@ -92,7 +111,7 @@ public class WebhookDispatcherTests
 
         return new WebhookDispatcher(
             webhookService.Object,
-            Mock.Of<IOutboxEventRepository>(),
+            outbox ?? Mock.Of<IOutboxEventRepository>(),
             factory,
             configuration,
             validator,
