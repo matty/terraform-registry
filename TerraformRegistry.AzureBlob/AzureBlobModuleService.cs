@@ -216,52 +216,56 @@ public class AzureBlobModuleService : ModuleService
     protected override async Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
         string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
     {
-        // Create a consistent blob path format for easy retrieval
-        var blobPath = $"{moduleNamespace}/{name}-{provider}-{version}{ModuleArchiveFormat.GetFileSuffix(metadata)}";
+        var existing = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+        if (!replace && existing is not null)
+            return false;
+
+        var now = DateTime.UtcNow;
+        var attemptId = Guid.NewGuid();
+        var fileName = $"{name}-{provider}-{version}{ModuleArchiveFormat.GetFileSuffix(metadata)}";
+        var blobPath = $"publications/{attemptId:N}/{fileName}";
         var blobClient = _containerClient.GetBlobClient(blobPath);
-
-        // Check if blob already exists to avoid duplication or allow replacement
-        if (await blobClient.ExistsAsync())
+        var attempt = new ModulePublicationAttempt
         {
-            if (!replace)
-            {
-                RegistryLog.Warning(_logger, "Module {Namespace}/{Name}/{Provider}/{Version} already exists in blob storage",
-                    moduleNamespace, name, provider, version);
-                return false;
-            }
-
-            // Replace requested: delete existing blob
-            try
-            {
-                await blobClient.DeleteIfExistsAsync();
-            }
-            catch (Exception ex)
-            {
-                RegistryLog.Error(_logger, ex, "Failed to delete existing blob for {Namespace}/{Name}/{Provider}/{Version}",
-                    moduleNamespace, name, provider, version);
-                return false;
-            }
-        }
-
+            Id = attemptId,
+            Namespace = moduleNamespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModulePublicationAttemptState.Staged,
+            StagingKey = blobPath,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = attemptId,
+            Namespace = moduleNamespace,
+            Name = name,
+            Provider = provider,
+            Version = version,
+            State = ModuleExtractionJobState.Staged,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var committed = false;
         try
         {
-            // Step 1: Upload the actual module content to Azure Blob Storage
-            // We store metadata in the blob properties for redundancy and easier recovery
+            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
             await blobClient.UploadAsync(moduleContent, new BlobUploadOptions
             {
-                Metadata = new Dictionary<string, string>
-(StringComparer.Ordinal)
+                Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     { "namespace", moduleNamespace },
                     { "name", name },
                     { "provider", provider },
                     { "version", version },
                     { "description", description },
-                    { "publishedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }
+                    { "publishedAt", now.ToString("o", CultureInfo.InvariantCulture) }
                 }
             });
 
-            // Step 2: Store module metadata in PostgreSQL database with a reference to the blob
             var module = new ModuleStorage
             {
                 Namespace = moduleNamespace,
@@ -269,58 +273,25 @@ public class AzureBlobModuleService : ModuleService
                 Provider = provider,
                 Version = version,
                 Description = description,
-                FilePath = blobPath, // This is the crucial link between database and blob storage
-                PublishedAt = DateTime.UtcNow,
-                Dependencies = new List<string>(), // Simplified, no dependencies
+                FilePath = blobPath,
+                PublishedAt = now,
+                Dependencies = [],
                 Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
-            if (replace)
-            {
-                try
-                {
-                    await _databaseService.RemoveModuleAsync(module);
-                }
-                catch (Exception ex)
-                {
-                    RegistryLog.Warning(_logger, ex,
-                        "Failed to remove existing database module {Namespace}/{Name}/{Provider}/{Version}; continuing with upsert",
-                        moduleNamespace, name, provider, version);
-                }
-            }
+            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing);
+            if (committed)
+                return true;
 
-            // Add to database - this stores metadata and the blob path reference
-            var result = await _databaseService.AddModuleAsync(module);
-
-            if (!result)
-            {
-                // Clean up the blob if database insertion fails to maintain consistency
-                await blobClient.DeleteAsync();
-                RegistryLog.Error(_logger,
-                    "Failed to add module {Namespace}/{Name}/{Provider}/{Version} to database, cleaned up blob storage",
-                    moduleNamespace, name, provider, version);
-            }
-
-            return result;
+            await CleanupFailedPublicationAsync(blobClient, attemptId, "Catalog changed before publication could commit.");
+            return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Log any errors during upload
-            RegistryLog.Error(_logger, ex, "Error uploading module {Namespace}/{Name}/{Provider}/{Version}",
+            RegistryLog.Error(_logger, ex, "Error publishing module {Namespace}/{Name}/{Provider}/{Version}",
                 moduleNamespace, name, provider, version);
-
-            // Try to clean up the blob if an error occurred
-            try
-            {
-                if (await blobClient.ExistsAsync()) await blobClient.DeleteAsync();
-            }
-            catch (Exception cleanupEx)
-            {
-                RegistryLog.Warning(_logger, cleanupEx,
-                    "Failed to clean up blob for module {Namespace}/{Name}/{Provider}/{Version} after upload error",
-                    moduleNamespace, name, provider, version);
-            }
-
+            if (!committed)
+                await CleanupFailedPublicationAsync(blobClient, attemptId, ex.Message);
             return false;
         }
     }
@@ -344,6 +315,9 @@ public class AzureBlobModuleService : ModuleService
             // List all blobs in the container
             await foreach (var blobItem in _containerClient.GetBlobsAsync(cancellationToken: cancellationToken))
             {
+                if (blobItem.Name.StartsWith("publications/", StringComparison.Ordinal))
+                    continue;
+
                 try
                 {
                     // Get the blob client
@@ -473,25 +447,19 @@ public class AzureBlobModuleService : ModuleService
         if (moduleStorage == null)
             return false;
 
-        // Delete from database first (permanent delete)
-        var dbResult = await _databaseService.RemoveModuleAsync(moduleStorage);
-        if (!dbResult)
-            return false;
-
-        // Delete the blob from Azure Storage
         try
         {
             var blobClient = _containerClient.GetBlobClient(moduleStorage.FilePath);
             await blobClient.DeleteIfExistsAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(_logger, ex, "Failed to delete blob for purged module {Namespace}/{Name}/{Provider}/{Version}",
                 moduleNamespace, name, provider, version);
-            // DB deletion succeeded, blob deletion may have failed - still return true
+            return false;
         }
 
-        return true;
+        return await _databaseService.RemoveModuleAsync(moduleStorage);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
@@ -503,6 +471,27 @@ public class AzureBlobModuleService : ModuleService
         string description)
     {
         return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
+    }
+
+    private async Task CleanupFailedPublicationAsync(BlobClient blobClient, Guid attemptId, string reason)
+    {
+        try
+        {
+            await blobClient.DeleteIfExistsAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RegistryLog.Warning(_logger, ex, "Failed to clean up Azure publication attempt {AttemptId}.", attemptId);
+        }
+
+        try
+        {
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            RegistryLog.Error(_logger, ex, "Failed to mark Azure publication attempt {AttemptId} as failed.", attemptId);
+        }
     }
 
     public override async Task<(bool Healthy, string? Reason)> CheckStorageAsync()

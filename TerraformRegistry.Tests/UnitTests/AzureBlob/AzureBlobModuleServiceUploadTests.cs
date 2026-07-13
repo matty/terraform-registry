@@ -57,16 +57,26 @@ public class AzureBlobModuleServiceUploadTests
         return service;
     }
 
-    // Test: Should return false and log a warning if the blob already exists in storage
+    // Test: Should return false before staging when the catalog already owns the coordinate.
     [Fact]
-    public async Task UploadModuleAsyncReturnsFalseIfBlobAlreadyExists()
+    public async Task UploadModuleAsyncReturnsFalseWhenCatalogAlreadyOwnsCoordinate()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
-        mockBlobClient.Setup(bc => bc.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
-
         _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>()))
             .Returns(mockBlobClient.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(new ModuleStorage
+            {
+                Namespace = "ns",
+                Name = "name",
+                Provider = "prov",
+                Version = "1.0.0",
+                Description = "desc",
+                FilePath = "publications/winner/module.zip",
+                PublishedAt = DateTime.UtcNow,
+                Dependencies = []
+            });
 
         var service = CreateService();
         using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
@@ -78,31 +88,27 @@ public class AzureBlobModuleServiceUploadTests
         Assert.False(result);
         mockBlobClient.Verify(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default),
             Times.Never);
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("already exists in blob storage")),
-                null,
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
     }
 
-    // Test: Should return true on successful upload to blob storage and successful database add
+    // Test: Should return true on successful upload and transactional catalog commit.
     [Fact]
-    public async Task UploadModuleAsyncReturnsTrueOnSuccessfulUploadAndDbAdd()
+    public async Task UploadModuleAsyncReturnsTrueAfterTransactionalCatalogCommit()
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
-        mockBlobClient.Setup(bc => bc.ExistsAsync(default))
-            .ReturnsAsync(Response.FromValue(false, Mock.Of<Response>()));
         mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
             .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
 
         _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>()))
             .Returns(mockBlobClient.Object);
 
-        _mockDatabaseService.Setup(db => db.AddModuleAsync(It.IsAny<ModuleStorage>()))
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
             .ReturnsAsync(true);
 
         var service = CreateService();
@@ -115,31 +121,70 @@ public class AzureBlobModuleServiceUploadTests
         Assert.True(result);
         mockBlobClient.Verify(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default),
             Times.Once);
-        _mockDatabaseService.Verify(db => db.AddModuleAsync(It.Is<ModuleStorage>(m =>
+        _mockDatabaseService.Verify(db => db.TryCommitStagedPublicationAsync(It.IsAny<ModulePublicationAttempt>(), It.Is<ModuleStorage>(m =>
             m.Namespace == "ns" && m.Name == "name" && m.Provider == "prov" && m.Version == "1.0.0"
-        )), Times.Once);
+        ), null), Times.Once);
     }
 
-    // Test: Should delete the blob and return false if the database add fails after upload
     [Fact]
-    public async Task UploadModuleAsyncDeletesBlobAndReturnsFalseIfDbAddFails()
+    public async Task UploadModuleAsyncStagesAnAttemptOwnedBlobAndCommitsTheCatalog()
     {
-        // Arrange
+        var blobPaths = new List<string>();
         var mockBlobClient = new Mock<BlobClient>();
         mockBlobClient.Setup(bc => bc.ExistsAsync(default))
             .ReturnsAsync(Response.FromValue(false, Mock.Of<Response>()));
         mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
             .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
-        mockBlobClient.Setup(bc =>
-                bc.DeleteAsync(It.IsAny<DeleteSnapshotsOption>(), It.IsAny<BlobRequestConditions>(), default))
-            .ReturnsAsync(Mock.Of<Response>());
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>()))
+            .Callback<string>(blobPaths.Add)
+            .Returns(mockBlobClient.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
+            .ReturnsAsync(true);
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc");
+
+        Assert.True(result);
+        var path = Assert.Single(blobPaths);
+        Assert.Contains("publications/", path, StringComparison.Ordinal);
+        Assert.Contains("name-prov-1.0.0.zip", path, StringComparison.Ordinal);
+        _mockDatabaseService.Verify(db => db.TryCommitStagedPublicationAsync(
+            It.Is<ModulePublicationAttempt>(attempt => attempt.State == ModulePublicationAttemptState.Staged),
+            It.Is<ModuleStorage>(module => module.FilePath == path), null), Times.Once);
+        _mockDatabaseService.Verify(db => db.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+    }
+
+    // Test: Should delete the attempt-owned blob and return false if the catalog commit loses.
+    [Fact]
+    public async Task UploadModuleAsyncDeletesBlobAndReturnsFalseIfDbAddFails()
+    {
+        // Arrange
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+        mockBlobClient.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), default))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
 
 
         _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>()))
             .Returns(mockBlobClient.Object);
 
-        _mockDatabaseService.Setup(db => db.AddModuleAsync(It.IsAny<ModuleStorage>()))
-            .ReturnsAsync(false); // Simulate database add failure
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
+            .ReturnsAsync(false);
 
         var service = CreateService();
         using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
@@ -151,18 +196,7 @@ public class AzureBlobModuleServiceUploadTests
         Assert.False(result);
         mockBlobClient.Verify(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default),
             Times.Once);
-        mockBlobClient.Verify(bc => bc.DeleteAsync(DeleteSnapshotsOption.None, null, default),
-            Times.Once); // Verify cleanup
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) =>
-                    v.ToString()!.Contains("Failed to add module") &&
-                    v.ToString()!.Contains("to database, cleaned up blob storage")),
-                null,
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
+        mockBlobClient.Verify(bc => bc.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, default), Times.Once);
     }
 
     // Test: Should handle exceptions during blob upload, attempt cleanup, and return false
@@ -171,20 +205,20 @@ public class AzureBlobModuleServiceUploadTests
     {
         // Arrange
         var mockBlobClient = new Mock<BlobClient>();
-        // First ExistsAsync returns false (blob does not exist)
-        mockBlobClient.SetupSequence(bc => bc.ExistsAsync(default))
-            .ReturnsAsync(Response.FromValue(false, Mock.Of<Response>())) // For initial check
-            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>())); // For cleanup check if upload fails mid-way
-
         mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
             .ThrowsAsync(new RequestFailedException("Upload failed"));
-        mockBlobClient.Setup(bc =>
-                bc.DeleteAsync(It.IsAny<DeleteSnapshotsOption>(), It.IsAny<BlobRequestConditions>(), default))
-            .ReturnsAsync(Mock.Of<Response>());
+        mockBlobClient.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), default))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
 
 
         _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>()))
             .Returns(mockBlobClient.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .Returns(Task.FromResult<ModuleStorage?>(null));
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
 
         var service = CreateService();
         using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
@@ -194,15 +228,160 @@ public class AzureBlobModuleServiceUploadTests
 
         // Assert
         Assert.False(result);
-        mockBlobClient.Verify(bc => bc.DeleteAsync(DeleteSnapshotsOption.None, null, default),
+        mockBlobClient.Verify(bc => bc.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, default),
             Times.Once); // Verify cleanup attempt
         _mockLogger.Verify(
             x => x.Log(
                 LogLevel.Error,
                 It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Error uploading module")),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Error publishing module")),
                 It.IsAny<RequestFailedException>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task PurgeModuleVersionAsyncDeletesBlobBeforeRemovingCatalogRow()
+    {
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), default))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        _mockContainerClient.Setup(cc => cc.GetBlobClient("publications/attempt/module.zip"))
+            .Returns(mockBlobClient.Object);
+        var module = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "prov",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = "publications/attempt/module.zip",
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDatabaseService.Setup(db => db.GetModuleStorageIncludingDeletedAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(module);
+        _mockDatabaseService.Setup(db => db.RemoveModuleAsync(module))
+            .Callback(() => mockBlobClient.Verify(bc => bc.DeleteIfExistsAsync(
+                DeleteSnapshotsOption.None, null, default), Times.Once))
+            .ReturnsAsync(true);
+        var service = CreateService();
+
+        var result = await service.PurgeModuleVersionAsync("ns", "name", "prov", "1.0.0");
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task PurgeModuleVersionAsyncKeepsCatalogRowWhenBlobDeletionFails()
+    {
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), default))
+            .ThrowsAsync(new RequestFailedException("Delete failed"));
+        _mockContainerClient.Setup(cc => cc.GetBlobClient("publications/attempt/module.zip"))
+            .Returns(mockBlobClient.Object);
+        var module = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "prov",
+            Version = "1.0.0",
+            Description = "desc",
+            FilePath = "publications/attempt/module.zip",
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockDatabaseService.Setup(db => db.GetModuleStorageIncludingDeletedAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(module);
+        var service = CreateService();
+
+        var result = await service.PurgeModuleVersionAsync("ns", "name", "prov", "1.0.0");
+
+        Assert.False(result);
+        _mockDatabaseService.Verify(db => db.RemoveModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCleansOnlyItsAttemptBlobWhenCatalogCommitLoses()
+    {
+        var attemptBlob = new Mock<BlobClient>();
+        attemptBlob.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+        attemptBlob.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), default))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        var winner = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "prov",
+            Version = "1.0.0",
+            Description = "winner",
+            FilePath = "publications/winner/module.zip",
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = []
+        };
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>())).Returns(attemptBlob.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(winner);
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), winner))
+            .ReturnsAsync(false);
+        _mockDatabaseService.Setup(db => db.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>()))
+            .ReturnsAsync(true);
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc", replace: true);
+
+        Assert.False(result);
+        attemptBlob.Verify(bc => bc.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, default), Times.Once);
+        _mockContainerClient.Verify(cc => cc.GetBlobClient(winner.FilePath), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCommitsReplacementMetadataInsteadOfStaleCatalogMetadata()
+    {
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), default))
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>())).Returns(mockBlobClient.Object);
+        var existing = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "prov",
+            Version = "1.0.0",
+            Description = "old",
+            FilePath = "publications/winner/module.zip",
+            PublishedAt = DateTime.UtcNow,
+            Dependencies = [],
+            Metadata = new ModuleArtifactMetadata { RootSubdirectory = "old" }
+        };
+        var replacementMetadata = new ModuleArtifactMetadata { RootSubdirectory = "replacement" };
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync(existing);
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
+            .Returns(Task.CompletedTask);
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), existing))
+            .ReturnsAsync(true);
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "replacement",
+            replace: true, metadata: replacementMetadata);
+
+        Assert.True(result);
+        _mockDatabaseService.Verify(db => db.TryCommitStagedPublicationAsync(
+            It.IsAny<ModulePublicationAttempt>(),
+            It.Is<ModuleStorage>(module => module.Description == "replacement" && module.Metadata == replacementMetadata),
+            existing), Times.Once);
     }
 }

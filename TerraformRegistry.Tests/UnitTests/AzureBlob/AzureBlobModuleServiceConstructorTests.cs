@@ -241,4 +241,28 @@ public class AzureBlobModuleServiceConstructorTests
             m.FilePath == blobName
         )), Times.Once);
     }
+
+    [Fact]
+    public async Task InitializationDoesNotImportStagedPublicationBlobs()
+    {
+        var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            { "ContainerName", _containerName },
+            { "SasTokenExpiryMinutes", "5" }
+        };
+        var configuration = CreateConfiguration(settings);
+        const string stagedBlobName = "publications/5f7d39dc3bb84fef8b61cf0e84b33117/network-aws-1.10.0.zip";
+        var stagedBlob = BlobsModelFactory.BlobItem(stagedBlobName, false, null, null, null);
+        var page = Page<BlobItem>.FromValues([stagedBlob], null, Mock.Of<Response>());
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+            .Returns(AsyncPageable<BlobItem>.FromPages([page]));
+
+        var service = new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
+            _mockBlobServiceClient.Object);
+
+        await service.InitializeStorageAsync(CancellationToken.None);
+
+        _mockBlobContainerClient.Verify(c => c.GetBlobClient(stagedBlobName), Times.Never);
+        _mockDatabaseService.Verify(db => db.AddModuleAsync(It.IsAny<TerraformRegistry.Models.ModuleStorage>()), Times.Never);
+    }
 }
