@@ -72,6 +72,22 @@ public class ProviderRegistryServiceTests
                 AsciiArmor = "key",
                 CreatedAt = DateTime.UtcNow
             });
+        repository.Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"))
+            .ReturnsAsync(new ProviderPackageDetails(
+                providerId,
+                ["5.0"],
+                "ABCDEF",
+                "shasums",
+                "sig",
+                "linux",
+                "amd64",
+                "terraform-provider-example_1.0.0_linux_amd64.zip",
+                new string('a', 64),
+                "package.zip",
+                "key",
+                null,
+                null,
+                null));
         storage.Setup(x => x.CreateDownloadUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string path, CancellationToken _) => $"/provider/download?token={path}");
 
