@@ -225,6 +225,14 @@ internal static class PublicationCommitContract
         AssertModuleEquals(first, await modules.GetModuleStorageAsync("acme", "network", "aws", "1.0.0"));
         Assert.Equal(ModulePublicationAttemptState.Staged,
             (await publications.GetPublicationAttemptAsync(replacementAttempt.Id))!.State);
+
+        Assert.False(await publications.TryFailStagedPublicationAsync(firstAttempt.Id, "loser cleanup"));
+        Assert.True(await publications.TryFailStagedPublicationAsync(replacementAttempt.Id, "promotion failed"));
+        var failedReplacement = await publications.GetPublicationAttemptAsync(replacementAttempt.Id);
+        Assert.Equal(ModulePublicationAttemptState.Failed, failedReplacement!.State);
+        Assert.Equal("promotion failed", failedReplacement.Error);
+        Assert.NotNull(failedReplacement.CompletedAt);
+        AssertModuleEquals(first, await modules.GetModuleStorageAsync("acme", "network", "aws", "1.0.0"));
     }
 
     private static ModulePublicationAttempt CreateAttempt(ModuleStorage module, DateTime now) => new()

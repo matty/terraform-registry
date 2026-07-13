@@ -63,6 +63,25 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         return await reader.ReadAsync() ? ReadAttempt(reader) : null;
     }
 
+    public async Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason)
+    {
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE module_publication_attempts
+            SET state = $failed, error = $failureReason, updated_at = $updatedAt, completed_at = $completedAt
+            WHERE id = $id AND state = $staged
+            """;
+        command.Parameters.AddWithValue("$failed", ModulePublicationAttemptState.Failed);
+        command.Parameters.AddWithValue("$failureReason", failureReason);
+        command.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$completedAt", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", attemptId.ToString());
+        command.Parameters.AddWithValue("$staged", ModulePublicationAttemptState.Staged);
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
     public async Task<bool> TryCommitStagedPublicationAsync(
         ModulePublicationAttempt attempt,
         ModuleStorage newModule,

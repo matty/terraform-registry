@@ -9,6 +9,7 @@ public interface IModulePublicationRepository
         ModulePublicationAttempt attempt,
         ModuleStorage newModule,
         ModuleStorage? expectedModule);
+    Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason);
     Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id);
     Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id);
 }

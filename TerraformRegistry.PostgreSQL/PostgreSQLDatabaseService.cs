@@ -43,6 +43,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         ModuleStorage newModule,
         ModuleStorage? expectedModule) =>
         _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule);
+    public Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason) =>
+        _publications.TryFailStagedPublicationAsync(attemptId, failureReason);
     public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
     public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
 
