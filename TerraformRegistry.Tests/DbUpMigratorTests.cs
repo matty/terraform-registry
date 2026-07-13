@@ -62,6 +62,8 @@ public class DbUpMigratorTests : IDisposable
         Assert.Contains("mirror_module_versions", tables);
         Assert.Contains("mirror_module_packages", tables);
         Assert.Contains("mirror_cache_leases", tables);
+        Assert.Contains("module_publication_attempts", tables);
+        Assert.Contains("module_extraction_jobs", tables);
         Assert.Contains("SchemaVersions", tables);
     }
 
