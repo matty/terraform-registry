@@ -27,7 +27,6 @@ public sealed class MirrorProviderRuntimeOptions
     /// GPG key IDs that are trusted to sign mirrored provider SHA256SUMS files.
     /// Packages signed by any other key fail closed.
     /// </summary>
-    [JsonIgnore]
     public List<string> TrustedSigningKeyIds { get; set; } = [];
     public List<string> AllowedArtifactHosts { get; set; } = [];
     public List<string> Allowlist { get; set; } = [];

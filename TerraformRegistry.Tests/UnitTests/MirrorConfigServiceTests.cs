@@ -167,6 +167,27 @@ public class MirrorConfigServiceTests
     }
 
     [Fact]
+    public async Task UpdateConfigAsyncPreservesTrustedSigningKeyIdsThatAreNotExposedToOperators()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["Mirror:Providers:TrustedSigningKeyIds:0"] = "trusted-key-id"
+            })
+            .Build();
+        var settings = new Mock<IRuntimeSettingsService>();
+        settings.Setup(x => x.GetAsync("mirror.config", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((RuntimeSetting?)null);
+        var service = new MirrorConfigService(configuration, settings.Object);
+
+        await service.UpdateConfigAsync(new MirrorConfigUpdateRequest { Enabled = true }, "operator-1", CancellationToken.None);
+
+        settings.Verify(x => x.SetAsync("mirror.config",
+            It.Is<string>(json => json.Contains("trusted-key-id", StringComparison.Ordinal)),
+            "operator-1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public void MirrorPermissionsAreAvailableToAdminsButNotDefaultUsers()
     {
         Assert.Contains("mirror.read", Permissions.All);
