@@ -2,6 +2,7 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Services.Mirror;
 using TerraformRegistry.Services.Publishing;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.RateLimiting;
@@ -188,6 +189,13 @@ internal static class ModuleEndpointMappingExtensions
                 await context.Response.WriteAsync("Invalid or expired download link.");
                 return;
             }
+
+            var downloadTokens = context.RequestServices.GetRequiredService<ArtifactDownloadTokenService>();
+            var cacheUsage = context.RequestServices.GetRequiredService<MirrorCacheUsage>();
+            IDisposable? cacheLease = downloadTokens.TryValidate(token, "module", out var tokenPath)
+                ? cacheUsage.TryAcquireModuleTokenPath(tokenPath)
+                : null;
+            if (cacheLease is not null) context.Response.RegisterForDispose(cacheLease);
 
             if (!File.Exists(filePath))
             {

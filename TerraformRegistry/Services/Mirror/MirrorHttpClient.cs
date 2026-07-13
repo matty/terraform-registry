@@ -13,10 +13,18 @@ public sealed class MirrorHttpClient(
     private const string ClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
 
+    public Task<MirrorFetchResult> FetchModuleArchiveAsync(
+        string archiveUrl,
+        long maxBytes,
+        int maxRedirects,
+        CancellationToken cancellationToken = default) =>
+        FetchModuleArchiveAsync(archiveUrl, maxBytes, maxRedirects, 120, cancellationToken);
+
     public async Task<MirrorFetchResult> FetchModuleArchiveAsync(
         string archiveUrl,
         long maxBytes,
         int maxRedirects,
+        int timeoutSeconds,
         CancellationToken cancellationToken = default)
     {
         if (maxBytes <= 0)
@@ -24,8 +32,13 @@ public sealed class MirrorHttpClient(
 
         if (maxRedirects < 0)
             throw new ArgumentOutOfRangeException(nameof(maxRedirects), "Maximum redirects must not be negative.");
+        if (timeoutSeconds <= 0)
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds), "Timeout must be positive.");
 
-        var currentEndpoint = await policyService.ValidateModuleArchiveUrlAsync(archiveUrl, cancellationToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        var requestToken = timeout.Token;
+        var currentEndpoint = await policyService.ValidateModuleArchiveUrlAsync(archiveUrl, requestToken);
         var httpClient = httpClientFactory.CreateClient(ClientName);
 
         for (var redirectCount = 0; ; redirectCount++)
@@ -35,7 +48,7 @@ public sealed class MirrorHttpClient(
             using var response = await httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                requestToken);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -49,13 +62,13 @@ public sealed class MirrorHttpClient(
                     ? response.Headers.Location
                     : new Uri(currentEndpoint.Uri, response.Headers.Location);
 
-                currentEndpoint = await policyService.ValidateModuleArchiveUrlAsync(redirectUri.ToString(), cancellationToken);
+                currentEndpoint = await policyService.ValidateModuleArchiveUrlAsync(redirectUri.ToString(), requestToken);
                 continue;
             }
 
             response.EnsureSuccessStatusCode();
 
-            var content = await ReadContentAsync(response, currentEndpoint.Uri, maxBytes, cancellationToken);
+            var content = await ReadContentAsync(response, currentEndpoint.Uri, maxBytes, requestToken);
             return new MirrorFetchResult
             {
                 Content = content,

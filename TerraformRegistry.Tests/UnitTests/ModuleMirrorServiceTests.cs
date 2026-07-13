@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TerraformRegistry.API.Interfaces;
@@ -191,6 +192,40 @@ public sealed class ModuleMirrorServiceTests
             request.Metadata.Source.Origin == "registry.example.com" &&
             request.Metadata.Source.SourceUrl == "/archives/vpc-1.2.3.zip" &&
             request.Metadata.Source.ResolvedPackageUrl == "https://registry.example.com/archives/vpc-1.2.3.zip"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CachedMirrorDownloadRegistersItsActiveCacheCoordinate()
+    {
+        var tokens = new ArtifactDownloadTokenService(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ArtifactDownloadTokens:SigningKey"] = "test-signing-key-that-is-long-enough-to-be-safe-0123456789"
+            })
+            .Build());
+        var token = tokens.Create("module", "cache/vpc.zip", TimeSpan.FromMinutes(5));
+        var usage = new MirrorCacheUsage();
+        var moduleService = new Mock<IModuleService>();
+        moduleService.Setup(x => x.GetModuleAsync("hashicorp", "vpc", "aws", "1.2.3"))
+            .ReturnsAsync(CreateModule("cached", "mirror"));
+        var repository = new Mock<IModuleMirrorRepository>();
+        repository.Setup(x => x.GetModulePackageAsync("registry.example.com", "hashicorp", "vpc", "aws", "1.2.3"))
+            .ReturnsAsync(new MirrorModulePackage
+            {
+                Hostname = "registry.example.com",
+                Namespace = "hashicorp",
+                Name = "vpc",
+                Provider = "aws",
+                Version = "1.2.3",
+                DownloadUrl = "https://registry.example.com/archive",
+                State = "ready"
+            });
+        var service = CreateService(new RecordingHttpMessageHandler(), repository, moduleService, cacheUsage: usage, downloadTokens: tokens);
+
+        var result = await service.GetModuleDownloadPathAsync("hashicorp", "vpc", "aws", "1.2.3", $"/module/download?token={token}");
+
+        Assert.Equal($"/module/download?token={token}", result);
+        Assert.NotNull(usage.TryAcquireModuleTokenPath("cache/vpc.zip"));
     }
 
     [Fact]
@@ -585,7 +620,9 @@ public sealed class ModuleMirrorServiceTests
         IMirrorPolicyService? policyService = null,
         Mock<IMirrorLeaseService>? lease = null,
         MirrorOptions? options = null,
-        IHttpClientFactory? httpClientFactory = null)
+        IHttpClientFactory? httpClientFactory = null,
+        MirrorCacheUsage? cacheUsage = null,
+        ArtifactDownloadTokenService? downloadTokens = null)
     {
         options ??= new MirrorOptions
         {
@@ -643,7 +680,9 @@ public sealed class ModuleMirrorServiceTests
             clientFactory,
             new MirrorHttpClient(clientFactory, policyService ?? policy!.Object, NullLogger<MirrorHttpClient>.Instance),
             publish?.Object ?? Mock.Of<IModulePublishCoordinator>(),
-            NullLogger<ModuleMirrorService>.Instance);
+            NullLogger<ModuleMirrorService>.Instance,
+            cacheUsage: cacheUsage,
+            downloadTokens: downloadTokens);
     }
 
     private static MirrorPolicyService CreateRealPolicy(IReadOnlyDictionary<string, IPAddress[]> addressesByHost)

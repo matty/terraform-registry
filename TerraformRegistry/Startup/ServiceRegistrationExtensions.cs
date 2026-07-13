@@ -48,7 +48,21 @@ internal static class ServiceRegistrationExtensions
         configuration.GetSection(ProviderUploadOptions.SectionName).Bind(providerUploadOptions);
         providerUploadOptions.Validate();
         services.AddSingleton(providerUploadOptions);
-        services.Configure<MirrorOptions>(configuration.GetSection("Mirror"));
+        services.AddOptions<MirrorOptions>()
+            .Bind(configuration.GetSection("Mirror"))
+            .Validate(options =>
+            {
+                try
+                {
+                    MirrorConfigurationValidator.Validate(options);
+                    return true;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            }, "Mirror configuration must map allowed provider hostnames to valid HTTPS upstreams and use valid runtime limits.")
+            .ValidateOnStart();
         services.AddSingleton<IWebhookHostResolver, DnsWebhookHostResolver>();
         services.AddSingleton<IWebhookStreamConnector, SocketWebhookStreamConnector>();
         services.AddSingleton<WebhookPinnedConnectionHelper>();
@@ -417,6 +431,9 @@ internal static class ServiceRegistrationExtensions
     private static IServiceCollection AddMirrorServices(this IServiceCollection services)
     {
         services.AddSingleton<IMirrorConfigService, MirrorConfigService>();
+        services.AddSingleton<MirrorDownloadAdmission>();
+        services.AddSingleton<MirrorCacheUsage>();
+        services.AddSingleton<MirrorCacheBudgetService>();
         services.AddSingleton<IMirrorPolicyService, MirrorPolicyService>();
         services.AddSingleton<MirrorPinnedConnectionHelper>();
         services.AddSingleton<MirrorHttpClient>();

@@ -18,7 +18,11 @@ public sealed class ProviderMirrorService(
     IMirrorLeaseService leaseService,
     IHttpClientFactory httpClientFactory,
     MirrorPackageUrlSigner signer,
-    ILogger<ProviderMirrorService> logger) : IProviderMirrorService
+    ILogger<ProviderMirrorService> logger,
+    MirrorDownloadAdmission? downloadAdmission = null,
+    MirrorCacheBudgetService? cacheBudget = null,
+    MirrorCacheUsage? cacheUsage = null,
+    IProviderPackageValidator? packageValidator = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -26,6 +30,9 @@ public sealed class ProviderMirrorService(
     private const int SignedPackageUrlLifetimeMinutes = 10;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly object EmptyVersion = new();
+    private readonly MirrorDownloadAdmission _downloadAdmission = downloadAdmission ?? new MirrorDownloadAdmission();
+    private readonly MirrorCacheUsage _cacheUsage = cacheUsage ?? new MirrorCacheUsage();
+    private readonly IProviderPackageValidator _packageValidator = packageValidator ?? new ProviderPackageValidator();
 
     public async Task<ProviderMirrorIndexResponse?> GetProviderIndexAsync(
         string hostname,
@@ -81,7 +88,7 @@ public sealed class ProviderMirrorService(
                 continue;
             }
 
-            var package = await GetOrFetchPackageAsync(
+            var package = await GetOrFetchPackageMetadataAsync(
                 hostname,
                 providerNamespace,
                 type,
@@ -149,7 +156,27 @@ public sealed class ProviderMirrorService(
             !string.Equals(package.Filename, claims.Filename, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(package.PackageStoragePath))
         {
-            return null;
+            var config = (await configService.GetConfigAsync(cancellationToken)).Effective;
+            if (!config.Enabled || !config.Providers.Enabled ||
+                !await policyService.IsProviderAllowedAsync(claims.Hostname, claims.Namespace, claims.Type, claims.Os, claims.Arch, cancellationToken))
+            {
+                return null;
+            }
+
+            package = await GetOrFetchPackageAsync(
+                claims.Hostname,
+                claims.Namespace,
+                claims.Type,
+                new UpstreamProviderVersion { Version = claims.Version },
+                new UpstreamProviderPlatform { Os = claims.Os, Arch = claims.Arch },
+                config,
+                cancellationToken);
+            if (package is null ||
+                !string.Equals(package.Filename, claims.Filename, StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(package.PackageStoragePath))
+            {
+                return null;
+            }
         }
 
         var content = await storage.OpenReadAsync(package.PackageStoragePath, cancellationToken);
@@ -166,11 +193,14 @@ public sealed class ProviderMirrorService(
             return null;
         }
 
+        var cacheLease = _cacheUsage.Acquire(MirrorCacheBudgetService.ProviderKey(package));
+
         return new ProviderMirrorPackageDownload(
             content,
             package.Filename ?? filename,
             "application/zip",
-            package.SizeBytes);
+            package.SizeBytes,
+            cacheLease);
     }
 
     private async Task<UpstreamProviderVersions?> GetProviderVersionsAsync(
@@ -182,6 +212,14 @@ public sealed class ProviderMirrorService(
     {
         var cached = await repository.GetProviderIndexAsync(hostname, providerNamespace, type);
         if (cached is not null &&
+            string.Equals(cached.State, "not_found", StringComparison.OrdinalIgnoreCase) &&
+            cached.LastSyncAt is { } negativeSync &&
+            negativeSync.AddSeconds(config.Limits.NegativeCacheTtlSeconds) > DateTime.UtcNow)
+        {
+            return null;
+        }
+
+        if (cached is not null &&
             string.Equals(cached.State, "ready", StringComparison.OrdinalIgnoreCase) &&
             cached.LastSyncAt is { } lastSync &&
             lastSync.AddMinutes(Math.Max(1, config.Providers.MetadataTtlMinutes)) > DateTime.UtcNow)
@@ -190,10 +228,20 @@ public sealed class ProviderMirrorService(
         }
 
         var client = httpClientFactory.CreateClient();
-        var uri = BuildUpstreamUri(config.UpstreamRegistryBaseUrl, $"/v1/providers/{providerNamespace}/{type}/versions");
-        using var response = await client.GetAsync(uri, cancellationToken);
+        var uri = BuildUpstreamUri(MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(), $"/v1/providers/{providerNamespace}/{type}/versions");
+        using var timeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+        using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
+            await repository.UpsertProviderIndexAsync(new MirrorProviderIndex
+            {
+                Hostname = hostname,
+                Namespace = providerNamespace,
+                Type = type,
+                VersionsJson = "{}",
+                State = "not_found",
+                LastSyncAt = DateTime.UtcNow
+            });
             return null;
         }
 
@@ -238,22 +286,104 @@ public sealed class ProviderMirrorService(
         var lease = await leaseService.TryAcquireAsync(leaseKey, "provider-package", TimeSpan.FromMinutes(5), cancellationToken);
         if (lease is null)
         {
-            return await GetReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, cancellationToken);
+            return await WaitForReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch,
+                config.Providers.DownloadTimeoutSeconds, cancellationToken);
         }
 
         try
         {
+            using var admission = _downloadAdmission.TryAcquire(config.Limits, leaseKey);
+            if (admission is null)
+            {
+                RegistryLog.Warning(logger, "Provider mirror admission limit reached for {LeaseKey}", leaseKey);
+                return await WaitForReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch,
+                    config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            }
+
             cached = await GetReadyPackageAsync(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, cancellationToken);
             if (cached is not null)
             {
                 return cached;
             }
 
-            return await FetchAndCachePackageAsync(hostname, providerNamespace, type, version, platform, config, cancellationToken);
+            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1));
+            return await FetchAndCachePackageAsync(hostname, providerNamespace, type, version, platform, config, heartbeat, cancellationToken);
         }
         finally
         {
             await ReleaseLeaseAsync(lease);
+        }
+    }
+
+    private async Task<MirrorProviderPackage?> GetOrFetchPackageMetadataAsync(
+        string hostname, string providerNamespace, string type, UpstreamProviderVersion version,
+        UpstreamProviderPlatform platform, MirrorOptions config, CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient();
+        try
+        {
+            var uri = BuildUpstreamUri(MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(),
+                $"/v1/providers/{providerNamespace}/{type}/{version.Version}/download/{platform.Os}/{platform.Arch}");
+            using var timeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(uri, JsonOptions, timeout.Token);
+            if (metadata is null) return null;
+            ValidateUpstreamPackageMetadata(type, version.Version, platform, metadata);
+            await policyService.ValidateProviderArtifactUrlAsync(metadata.DownloadUrl, cancellationToken);
+
+            await using var shasums = await DownloadArtifactToTempFileAsync(metadata.ShasumsUrl, config.Providers.MaxChecksumBytes,
+                config.Providers.MaxRedirects, false, config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            shasums.Content.Position = 0;
+            using var reader = new StreamReader(shasums.Content, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+            var text = await reader.ReadToEndAsync(cancellationToken);
+            if (!string.Equals(FindShasumsEntry(text, metadata.Filename), metadata.Shasum, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Provider package SHA-256 did not match upstream SHA256SUMS entry.");
+            await using var signature = await DownloadArtifactToTempFileAsync(metadata.ShasumsSignatureUrl, config.Providers.MaxChecksumBytes,
+                config.Providers.MaxRedirects, false, config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var sidecarPath = ShasumsStoragePath(hostname, providerNamespace, type, version.Version);
+            shasums.Content.Position = 0;
+            var shasumsSave = await storage.SaveAsync(sidecarPath, shasums.Content, cancellationToken);
+            signature.Content.Position = 0;
+            var signatureSave = await storage.SaveAsync($"{sidecarPath}.sig", signature.Content, cancellationToken);
+            var package = new MirrorProviderPackage
+            {
+                Hostname = hostname,
+                Namespace = providerNamespace,
+                Type = type,
+                Version = version.Version,
+                Os = platform.Os,
+                Arch = platform.Arch,
+                DownloadUrl = metadata.DownloadUrl,
+                Filename = metadata.Filename,
+                CacheSizeBytes = checked(shasums.Length + signature.Length),
+                ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
+                HashesJson = JsonSerializer.Serialize(new[] { $"zh:{metadata.Shasum}" }, JsonOptions),
+                Shasum = metadata.Shasum,
+                SigningKeysJson = JsonSerializer.Serialize(new
+                {
+                    signing_keys = metadata.SigningKeys,
+                    signature_verification = "not_verified",
+                    shasums_storage_path = shasumsSave.StoragePath,
+                    shasums_signature_storage_path = signatureSave.StoragePath
+                }, JsonOptions),
+                State = "pending",
+                LastSyncAt = DateTime.UtcNow
+            };
+            await repository.UpsertProviderPackageAsync(package);
+            return package;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException or IOException)
+        {
+            RegistryLog.Warning(logger, ex, "Provider mirror metadata fetch failed for {Hostname}/{Namespace}/{Type}/{Version}/{Os}/{Arch}", hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch);
+            await repository.MarkProviderPackageFailedAsync(
+                hostname,
+                providerNamespace,
+                type,
+                version.Version,
+                platform.Os,
+                platform.Arch,
+                ex.Message,
+                ex is HttpRequestException httpEx ? (int?)httpEx.StatusCode : null);
+            return null;
         }
     }
 
@@ -308,6 +438,21 @@ public sealed class ProviderMirrorService(
         return null;
     }
 
+    private async Task<MirrorProviderPackage?> WaitForReadyPackageAsync(
+        string hostname, string providerNamespace, string type, string version, string os, string arch,
+        int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        do
+        {
+            var cached = await GetReadyPackageAsync(hostname, providerNamespace, type, version, os, arch, cancellationToken);
+            if (cached is not null) return cached;
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+        } while (DateTime.UtcNow < deadline);
+
+        return await GetReadyPackageAsync(hostname, providerNamespace, type, version, os, arch, cancellationToken);
+    }
+
     private async Task<MirrorProviderPackage?> FetchAndCachePackageAsync(
         string hostname,
         string providerNamespace,
@@ -315,15 +460,17 @@ public sealed class ProviderMirrorService(
         UpstreamProviderVersion version,
         UpstreamProviderPlatform platform,
         MirrorOptions config,
+        MirrorLeaseHeartbeat heartbeat,
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient();
         try
         {
             var metadataUri = BuildUpstreamUri(
-                config.UpstreamRegistryBaseUrl,
+                MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(),
                 $"/v1/providers/{providerNamespace}/{type}/{version.Version}/download/{platform.Os}/{platform.Arch}");
-            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(metadataUri, JsonOptions, cancellationToken);
+            using var metadataTimeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(metadataUri, JsonOptions, metadataTimeout.Token);
             if (metadata is null)
             {
                 return null;
@@ -336,6 +483,7 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxPackageBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: true,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             var packageSha = packageArtifact.Sha256Hex ??
                              throw new InvalidOperationException("Provider package SHA-256 could not be computed.");
@@ -349,6 +497,7 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxChecksumBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: false,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             shasumsArtifact.Content.Position = 0;
             using var shasumsReader = new StreamReader(shasumsArtifact.Content, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
@@ -364,10 +513,43 @@ public sealed class ProviderMirrorService(
                 config.Providers.MaxChecksumBytes,
                 config.Providers.MaxRedirects,
                 computeSha256: false,
+                config.Providers.DownloadTimeoutSeconds,
                 cancellationToken);
             var packagePath = PackageStoragePath(hostname, providerNamespace, type, version.Version, platform.Os, platform.Arch, metadata.Filename);
             var shasumsPath = ShasumsStoragePath(hostname, providerNamespace, type, version.Version);
             var signaturePath = $"{shasumsPath}.sig";
+            var cacheBytes = checked(packageArtifact.Length + shasumsArtifact.Length + signatureArtifact.Length);
+            if (cacheBudget is not null &&
+                !await cacheBudget.EnsureCapacityAsync(cacheBytes, config.Limits.MaxTotalCachedBytes, cancellationToken))
+            {
+                throw new InvalidOperationException("Mirror cache budget cannot accommodate the provider package.");
+            }
+
+            var signingKey = metadata.SigningKeys.GpgPublicKeys.FirstOrDefault(key =>
+                !string.IsNullOrWhiteSpace(key.AsciiArmor) &&
+                config.Providers.TrustedSigningKeyIds.Contains(key.KeyId, StringComparer.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Provider mirror metadata did not include a trusted signing key.");
+            packageArtifact.Content.Position = 0;
+            shasumsArtifact.Content.Position = 0;
+            signatureArtifact.Content.Position = 0;
+            var verification = await _packageValidator.ValidatePackageAsync(
+                type,
+                version.Version,
+                platform.Os,
+                platform.Arch,
+                metadata.Filename,
+                metadata.Shasum,
+                packageArtifact.Content,
+                shasumsArtifact.Content,
+                signatureArtifact.Content,
+                signingKey.AsciiArmor,
+                cancellationToken);
+            if (!verification.Valid)
+            {
+                throw new InvalidOperationException(verification.Error ?? "Provider package signature verification failed.");
+            }
+
+            heartbeat.ThrowIfOwnershipLost();
 
             packageArtifact.Content.Position = 0;
             var packageSave = await storage.SaveAsync(packagePath, packageArtifact.Content, cancellationToken);
@@ -389,13 +571,15 @@ public sealed class ProviderMirrorService(
                 Filename = metadata.Filename,
                 PackageStoragePath = packageSave.StoragePath,
                 SizeBytes = packageSave.SizeBytes,
+                CacheSizeBytes = cacheBytes,
                 ProtocolsJson = JsonSerializer.Serialize(metadata.Protocols, JsonOptions),
                 HashesJson = JsonSerializer.Serialize(hashes, JsonOptions),
                 Shasum = packageSha,
                 SigningKeysJson = JsonSerializer.Serialize(new
                 {
                     signing_keys = metadata.SigningKeys,
-                    signature_verification = "not_verified",
+                    signature_verification = "verified",
+                    verified_key_id = signingKey.KeyId,
                     shasums_storage_path = shasumsSave.StoragePath,
                     shasums_signature_storage_path = signatureSave.StoragePath
                 }, JsonOptions),
@@ -403,6 +587,7 @@ public sealed class ProviderMirrorService(
                 LastSyncAt = DateTime.UtcNow
             };
 
+            heartbeat.ThrowIfOwnershipLost();
             await repository.UpsertProviderPackageAsync(package);
             return package;
         }
@@ -466,6 +651,7 @@ public sealed class ProviderMirrorService(
         long maxBytes,
         int maxRedirects,
         bool computeSha256,
+        int timeoutSeconds,
         CancellationToken cancellationToken)
     {
         if (maxBytes <= 0)
@@ -477,8 +663,14 @@ public sealed class ProviderMirrorService(
         {
             throw new ArgumentOutOfRangeException(nameof(maxRedirects), "Maximum redirects must not be negative.");
         }
+        if (timeoutSeconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds), "Timeout must be positive.");
+        }
 
-        var currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(url, cancellationToken);
+        using var timeout = CreateTimeout(timeoutSeconds, cancellationToken);
+        var requestToken = timeout.Token;
+        var currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(url, requestToken);
         var mirrorClient = httpClientFactory.CreateClient(MirrorHttpClientName);
 
         for (var redirectCount = 0; ; redirectCount++)
@@ -488,7 +680,7 @@ public sealed class ProviderMirrorService(
             using var response = await mirrorClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                requestToken);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -505,12 +697,12 @@ public sealed class ProviderMirrorService(
                 var redirectUri = response.Headers.Location.IsAbsoluteUri
                     ? response.Headers.Location
                     : new Uri(currentEndpoint.Uri, response.Headers.Location);
-                currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(redirectUri.ToString(), cancellationToken);
+                currentEndpoint = await policyService.ValidateProviderArtifactUrlAsync(redirectUri.ToString(), requestToken);
                 continue;
             }
 
             response.EnsureSuccessStatusCode();
-            return await ReadArtifactToTempFileAsync(response, currentEndpoint.Uri, maxBytes, computeSha256, cancellationToken);
+            return await ReadArtifactToTempFileAsync(response, currentEndpoint.Uri, maxBytes, computeSha256, requestToken);
         }
     }
 
@@ -591,6 +783,13 @@ public sealed class ProviderMirrorService(
             or HttpStatusCode.RedirectMethod
             or HttpStatusCode.TemporaryRedirect
             or HttpStatusCode.PermanentRedirect;
+
+    private static CancellationTokenSource CreateTimeout(int timeoutSeconds, CancellationToken cancellationToken)
+    {
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        return timeout;
+    }
 
     private static ProviderMirrorIndexResponse ToNetworkMirrorIndex(UpstreamProviderVersions versions)
     {

@@ -28,6 +28,8 @@ public sealed record MirrorProviderPackage
     public string? Filename { get; init; }
     public string? PackageStoragePath { get; init; }
     public long? SizeBytes { get; init; }
+    /// <summary>Total bytes consumed by this package and its mirror sidecar artifacts.</summary>
+    public long? CacheSizeBytes { get; init; }
     public string ProtocolsJson { get; init; } = "[]";
     public string HashesJson { get; init; } = "[]";
     public string? Shasum { get; init; }
@@ -68,6 +70,8 @@ public sealed record MirrorModulePackage
     public string? Source { get; init; }
     public string? PackageStoragePath { get; init; }
     public long? SizeBytes { get; init; }
+    /// <summary>Total bytes consumed by this mirrored module package.</summary>
+    public long? CacheSizeBytes { get; init; }
     public string? MetadataJson { get; init; }
     public string State { get; init; } = "pending";
     public string? LastError { get; init; }

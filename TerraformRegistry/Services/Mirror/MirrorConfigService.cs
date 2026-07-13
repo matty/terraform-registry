@@ -18,13 +18,16 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
         var stored = await runtimeSettings.GetAsync(SettingsKey, cancellationToken);
         if (stored == null)
         {
+            MirrorConfigurationValidator.Validate(startup);
             return new MirrorConfigResponse { Effective = startup };
         }
 
         var runtime = JsonSerializer.Deserialize<MirrorConfigUpdateRequest>(stored.ValueJson, JsonOptions) ?? new();
+        var effective = Merge(startup, runtime);
+        MirrorConfigurationValidator.Validate(effective);
         return new MirrorConfigResponse
         {
-            Effective = Merge(startup, runtime),
+            Effective = effective,
             HasRuntimeOverride = true,
             UpdatedAt = stored.UpdatedAt,
             UpdatedBy = stored.UpdatedBy
@@ -36,6 +39,9 @@ public sealed class MirrorConfigService(IConfiguration configuration, IRuntimeSe
         string? updatedBy,
         CancellationToken cancellationToken)
     {
+        var startup = new MirrorOptions();
+        configuration.GetSection("Mirror").Bind(startup);
+        MirrorConfigurationValidator.Validate(Merge(startup, request));
         var json = JsonSerializer.Serialize(request, JsonOptions);
         await runtimeSettings.SetAsync(SettingsKey, json, updatedBy, cancellationToken);
         return await GetConfigAsync(cancellationToken);

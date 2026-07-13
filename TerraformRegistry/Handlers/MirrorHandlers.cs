@@ -80,6 +80,11 @@ public static class MirrorHandlers
             return Results.Problem("Provider mirror package was not found.", statusCode: StatusCodes.Status404NotFound);
         }
 
+        if (download.CacheLease is not null)
+        {
+            context.Response.RegisterForDispose(download.CacheLease);
+        }
+
         return Results.File(
             download.Content,
             download.ContentType,

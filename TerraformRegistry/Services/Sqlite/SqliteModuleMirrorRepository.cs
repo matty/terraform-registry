@@ -79,7 +79,7 @@ public sealed class SqliteModuleMirrorRepository(string connectionString) : IMod
 
         var sql = @"
             SELECT id, hostname, namespace, name, provider, version, download_url, source, package_storage_path,
-                   size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at
+                   size_bytes, cache_size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at
             FROM mirror_module_packages
             WHERE 1 = 1";
         var parameters = new List<SqliteParameter>();
@@ -130,7 +130,7 @@ public sealed class SqliteModuleMirrorRepository(string connectionString) : IMod
         await using var command = connection.CreateCommand();
         command.CommandText = @"
             SELECT id, hostname, namespace, name, provider, version, download_url, source, package_storage_path,
-                   size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at
+                   size_bytes, cache_size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at
             FROM mirror_module_packages
             WHERE hostname = $hostname AND namespace = $namespace AND name = $name
               AND provider = $provider AND version = $version";
@@ -155,15 +155,16 @@ public sealed class SqliteModuleMirrorRepository(string connectionString) : IMod
         command.CommandText = @"
             INSERT INTO mirror_module_packages (
                 id, hostname, namespace, name, provider, version, download_url, source, package_storage_path,
-                size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at)
+                size_bytes, cache_size_bytes, metadata_json, state, last_error, http_status_code, last_sync_at, created_at, updated_at)
             VALUES (
                 $id, $hostname, $namespace, $name, $provider, $version, $downloadUrl, $source, $packageStoragePath,
-                $sizeBytes, $metadataJson, $state, $lastError, $httpStatusCode, $lastSyncAt, $createdAt, $updatedAt)
+                $sizeBytes, $cacheSizeBytes, $metadataJson, $state, $lastError, $httpStatusCode, $lastSyncAt, $createdAt, $updatedAt)
             ON CONFLICT(hostname, namespace, name, provider, version) DO UPDATE SET
                 download_url = excluded.download_url,
                 source = excluded.source,
                 package_storage_path = excluded.package_storage_path,
                 size_bytes = excluded.size_bytes,
+                cache_size_bytes = excluded.cache_size_bytes,
                 metadata_json = excluded.metadata_json,
                 state = excluded.state,
                 last_error = excluded.last_error,
@@ -220,6 +221,7 @@ public sealed class SqliteModuleMirrorRepository(string connectionString) : IMod
         command.Parameters.AddWithValue("$source", DbValue(package.Source));
         command.Parameters.AddWithValue("$packageStoragePath", DbValue(package.PackageStoragePath));
         command.Parameters.AddWithValue("$sizeBytes", DbValue(package.SizeBytes));
+        command.Parameters.AddWithValue("$cacheSizeBytes", DbValue(package.CacheSizeBytes));
         command.Parameters.AddWithValue("$metadataJson", DbValue(package.MetadataJson));
         command.Parameters.AddWithValue("$state", package.State);
         command.Parameters.AddWithValue("$lastError", DbValue(package.LastError));
@@ -262,13 +264,14 @@ public sealed class SqliteModuleMirrorRepository(string connectionString) : IMod
             Source = ReadString(reader, 7),
             PackageStoragePath = ReadString(reader, 8),
             SizeBytes = reader.IsDBNull(9) ? null : reader.GetInt64(9),
-            MetadataJson = ReadString(reader, 10),
-            State = reader.GetString(11),
-            LastError = ReadString(reader, 12),
-            HttpStatusCode = reader.IsDBNull(13) ? null : reader.GetInt32(13),
-            LastSyncAt = ReadDateTime(reader, 14),
-            CreatedAt = ReadRequiredDateTime(reader, 15),
-            UpdatedAt = ReadRequiredDateTime(reader, 16)
+            CacheSizeBytes = reader.IsDBNull(10) ? null : reader.GetInt64(10),
+            MetadataJson = ReadString(reader, 11),
+            State = reader.GetString(12),
+            LastError = ReadString(reader, 13),
+            HttpStatusCode = reader.IsDBNull(14) ? null : reader.GetInt32(14),
+            LastSyncAt = ReadDateTime(reader, 15),
+            CreatedAt = ReadRequiredDateTime(reader, 16),
+            UpdatedAt = ReadRequiredDateTime(reader, 17)
         };
     }
 
