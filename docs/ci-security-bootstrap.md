@@ -36,10 +36,17 @@ It requires the protected CI/security checks, `renovate/stability-days`, a
 clean current merge state, an unchanged head SHA, and no comments, reviews, or
 unresolved review threads. A pending stability status is never mergeable.
 
-The watcher excludes vulnerability-alert updates and dashboard-approved major
-updates. It also waits for the previous `develop` CI and Security runs to
-succeed before considering another dependency PR. Human-authored PRs are never
-eligible for this automation.
+Renovate applies `automerge-candidate` only to digest, pin, patch, and minor
+updates. The watcher requires that label and rejects `security`,
+`dependency-dashboard`, and major labels, so vulnerability-alert and
+dashboard-approved major updates remain maintainer-reviewed. Human-authored
+PRs are never eligible for this automation.
+
+Before the final rebase request, the watcher verifies that the PR's `develop`
+base SHA is unchanged and that the CI and Security push runs for that exact
+SHA succeeded. This public personal repository cannot use GitHub merge queues;
+when a competing `develop` merge is in progress, the watcher defers rather than
+merging another dependency update.
 
 ## Repository settings required outside this repository
 
@@ -48,10 +55,11 @@ that requires pull requests, the checks above as applicable, at least one
 approval, resolved conversations, linear history, and no force pushes. Workflow
 filters alone do not provide branch protection.
 
-The administrator must also enable a merge queue for `develop` and configure
-the current CI and Security check names as required status checks. The queue
-must send the `merge_group` event; this repository's workflows already handle
-that event.
+For repositories eligible for GitHub merge queues, an administrator should
+enable one for `develop` and configure the current CI and Security check names
+as required status checks. GitHub does not offer merge queues to this public
+personal repository, so the Renovate watcher provides the documented
+single-update/base-recheck fallback.
 
 Protected cloud integration environments are configured separately. Their OIDC
 federated credentials must trust only the intended repository, workflow, and

@@ -85,6 +85,18 @@
     },
     {
       "matchUpdateTypes": [
+        "digest",
+        "pin",
+        "patch",
+        "minor"
+      ],
+      "labels": [
+        "dependencies",
+        "automerge-candidate"
+      ]
+    },
+    {
+      "matchUpdateTypes": [
         "major"
       ],
       "dependencyDashboardApproval": true

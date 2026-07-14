@@ -12,6 +12,8 @@
 
 - Branch and commit names must not contain `phase`.
 - Never auto-merge human, security-alert, or dashboard-approved major PRs.
+- Require Renovate's `automerge-candidate` label, configured only for digest,
+  pin, patch, and minor updates.
 - Require all eight `develop` branch-protection checks and successful Renovate stability before merging.
 - Re-query PR state, current head SHA, comments, reviews, threads, and merge state immediately before a rebase merge.
 - Process one PR per run and do not merge when prior `develop` CI/security is not successful.

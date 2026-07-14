@@ -19,10 +19,15 @@ CI and security workflows finish before another dependency update can merge.
 The script accepts a PR only when all of the following are true:
 
 - the author is `app/renovate`, the head branch starts with `renovate/`, and
-  the base branch is `develop`;
+  the base branch is `develop`; REST API evaluation uses the corresponding
+  `renovate[bot]` login;
+- Renovate applied the `automerge-candidate` label, which configuration assigns
+  only to digest, pin, patch, and minor updates; and it has no security,
+  major, or dependency-dashboard label;
 - it has no comments, reviews, or unresolved review threads;
 - its `mergeStateStatus` is `CLEAN` and the head SHA is unchanged between the
-  initial and final checks;
+  initial and final checks; its `develop` base SHA is also unchanged and the
+  CI and Security push runs for that exact base SHA succeeded;
 - each of the eight protected `develop` checks is `SUCCESS` for the current
   head commit; and
 - normal Renovate updates have `renovate/stability-days` in `success` state.
@@ -39,6 +44,11 @@ from the trusted default branch checkout. A skipped or rejected PR is reported
 as an auditable workflow summary and exits successfully. API failures, failed
 required checks, an inconclusive merge state, or a merge error fail the watcher
 without attempting another PR.
+
+GitHub merge queues are unavailable for this public personal repository. The
+last base-SHA recheck reduces, but cannot atomically eliminate, a concurrent
+human merge between the recheck and the merge API request; operators must not
+merge competing `develop` PRs while the watcher is evaluating a candidate.
 
 ## Verification
 
