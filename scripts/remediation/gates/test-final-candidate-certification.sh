@@ -51,6 +51,15 @@ job_body() {
   ' "$WORKFLOW"
 }
 
+upload_step_body() {
+  awk '
+    $0 == "      - name: Upload pre-publication candidate verification evidence" { in_step = 1 }
+    in_step && $0 ~ /^      - name: / && $0 != "      - name: Upload pre-publication candidate verification evidence" { exit }
+    in_step && $0 ~ /^  [[:alnum:]_-]+:$/ { exit }
+    in_step { print }
+  ' "$WORKFLOW"
+}
+
 workflow_dispatch_body() {
   awk '
     $0 == "  workflow_dispatch:" { in_dispatch = 1 }
@@ -62,6 +71,8 @@ workflow_dispatch_body() {
 
 job="$(job_body)"
 test -n "$job"
+upload_step="$(upload_step_body)"
+test -n "$upload_step"
 workflow_dispatch="$(workflow_dispatch_body)"
 test -n "$workflow_dispatch"
 
@@ -106,6 +117,10 @@ grep -Fxq '          env -u GITHUB_SHA -u GITHUB_REF \' <<<"$job"
 grep -Fq '.github/scripts/resolve-version.sh' <<<"$job"
 grep -Fq 'final-candidate-certification.sh' <<<"$job"
 grep -Fq 'actions/upload-artifact@' <<<"$job"
+if grep -Fxq '        if: always()' <<<"$upload_step"; then
+  echo 'Unbound pre-publication evidence must not upload after a failed provenance check.' >&2
+  exit 1
+fi
 grep -Fq 'Pre-publication candidate verification' <<<"$job"
 grep -Fq 'pre-publication-candidate-verification-evidence' <<<"$job"
 
@@ -208,6 +223,23 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
   printf '\nsentinel:\n      candidate_sha:\n' >> "$dispatch_root_escape_workflow"
   if FINAL_CANDIDATE_WORKFLOW="$dispatch_root_escape_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
     echo 'Final-candidate workflow-dispatch parser accepted a root-level escape.' >&2
+    exit 1
+  fi
+
+  upload_before_binding_workflow="$mutation_root/upload-before-binding.yaml"
+  perl -0pe '
+    s{
+      (\n      - name: Verify and bind pre-publication evidence provenance\n.*?)
+      (\n      - name: Upload pre-publication candidate verification evidence\n.*?)
+      (\n  docker:)
+    }{$2$1$3}sx
+  ' "$WORKFLOW" > "$upload_before_binding_workflow"
+  if cmp -s "$WORKFLOW" "$upload_before_binding_workflow"; then
+    echo 'Final-candidate upload-before-binding mutation did not change the workflow.' >&2
+    exit 1
+  fi
+  if FINAL_CANDIDATE_WORKFLOW="$upload_before_binding_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+    echo 'Final-candidate certification accepted evidence upload before provenance binding.' >&2
     exit 1
   fi
 
