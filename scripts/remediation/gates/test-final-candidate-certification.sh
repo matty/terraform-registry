@@ -107,7 +107,11 @@ grep -Fxq '          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          ref: ${{ steps.candidate.outputs.sha }}' <<<"$job"
 grep -Fxq '      - name: Validate candidate reference provenance' <<<"$job"
 grep -Fxq '          git check-ref-format "$CANDIDATE_REF"' <<<"$job"
-grep -Fxq '            refs/heads/*|refs/tags/*) ;;' <<<"$job"
+case_pattern_count="$(grep -Fxc '            refs/heads/*|refs/tags/*) ;;' <<<"$job" || true)"
+[[ "$case_pattern_count" == 2 ]] || {
+  echo 'Final-candidate certification must validate canonical candidate refs before fetch and evidence binding.' >&2
+  exit 1
+}
 grep -Fxq '          git fetch --no-tags origin "$CANDIDATE_REF"' <<<"$job"
 grep -Fxq "          resolved_ref_sha=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\"" <<<"$job"
 grep -Fxq "            echo 'candidate_ref does not resolve to the requested immutable candidate SHA.' >&2" <<<"$job"
@@ -141,7 +145,7 @@ grep -Fxq '      - name: Verify and bind pre-publication evidence provenance' <<
 grep -Fxq '          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}' <<<"$job"
 grep -Fxq '          CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}' <<<"$job"
 grep -Fxq '          EVIDENCE_PATH: ${{ runner.temp }}/final-candidate-certification-evidence.json' <<<"$job"
-grep -Fxq '          artifact_sha="$(jq -er '\'' .candidate_sha | strings '\'' "$EVIDENCE_PATH")"' <<<"$job"
+grep -Fxq '          artifact_sha="$(jq -er '\''.candidate_sha | strings'\'' "$EVIDENCE_PATH")"' <<<"$job"
 grep -Fxq "            echo 'Pre-publication evidence candidate_sha does not match the explicit candidate SHA.' >&2" <<<"$job"
 grep -Fxq '          stamped_evidence="$(mktemp "${EVIDENCE_PATH}.XXXXXX")"' <<<"$job"
 grep -Fxq '          jq --arg candidate_ref "$CANDIDATE_REF" '\''.candidate_ref = $candidate_ref'\'' "$EVIDENCE_PATH" > "$stamped_evidence"' <<<"$job"
@@ -178,7 +182,7 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
     'FINAL_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}' \
     'FINAL_CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}' \
     'Verify and bind pre-publication evidence provenance' \
-    'artifact_sha="$(jq -er '\'' .candidate_sha | strings '\'' "$EVIDENCE_PATH")"' \
+    'artifact_sha="$(jq -er '\''.candidate_sha | strings'\'' "$EVIDENCE_PATH")"' \
     'Pre-publication evidence candidate_sha does not match the explicit candidate SHA.' \
     'stamped_evidence="$(mktemp "${EVIDENCE_PATH}.XXXXXX")"' \
     'jq --arg candidate_ref "$CANDIDATE_REF" '\''.candidate_ref = $candidate_ref'\'' "$EVIDENCE_PATH" > "$stamped_evidence"' \
@@ -227,13 +231,8 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
   fi
 
   upload_before_binding_workflow="$mutation_root/upload-before-binding.yaml"
-  perl -0pe '
-    s{
-      (\n      - name: Verify and bind pre-publication evidence provenance\n.*?)
-      (\n      - name: Upload pre-publication candidate verification evidence\n.*?)
-      (\n  docker:)
-    }{$2$1$3}sx
-  ' "$WORKFLOW" > "$upload_before_binding_workflow"
+  perl -0pe 's{(\n      - name: Verify and bind pre-publication evidence provenance\n.*?)(\n      - name: Upload pre-publication candidate verification evidence\n.*?)(\n  docker:)}{$2$1$3}s' \
+    "$WORKFLOW" > "$upload_before_binding_workflow"
   if cmp -s "$WORKFLOW" "$upload_before_binding_workflow"; then
     echo 'Final-candidate upload-before-binding mutation did not change the workflow.' >&2
     exit 1
