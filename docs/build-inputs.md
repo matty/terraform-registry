@@ -7,6 +7,7 @@ is responsible for proposing reviewed updates.
 | Input | Pinned revision | Used by |
 | --- | --- | --- |
 | Terraform CLI | `1.14.2`, `hashicorp/terraform@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf` | Local, Azure, and S3-compatible Terraform smoke tests |
+| Terraform CLI support window | `1.12.0`, `hashicorp/terraform@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b`; `1.14.2`, `hashicorp/terraform@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf` | Release certification matrix for Local, Azurite, MinIO, signed-provider, and non-root image evidence |
 | terraform-config-inspect | `2fb54c236733ee65ee877105d595c124c993c64d` | Release Docker image |
 | Go builder | `golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2` | terraform-config-inspect build stage |
 | Node builder | `node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd` | Generated frontend build stage |
