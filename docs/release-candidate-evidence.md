@@ -8,17 +8,16 @@ been performed.
 
 | Field | Value |
 |---|---|
-| Candidate image digest | sha256:953d2d1aa6b96b51ef85a826bff8fe57bf0110815d2c4b894e960fea8303e3a6 |
-| Candidate revision | c4997fc59140d9f2903552285cb1ccc94a3c9536 |
-| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/29345431401 |
+| Candidate image digest | sha256:914d6f8621fcc1e9b49dbf0a2d02f0a660cd660aaae6d5abeb52b2cbac23e4f2 |
+| Candidate revision | 5c7702e702c2c0fbb9f2d27a0a3a52f50d746132 |
+| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/29359320935 |
 | Terraform backend matrix result | PASS |
 | Fault and load result | PASS |
 | Operability gate result | PASS |
 
 The candidate artifact from the recorded run binds
-`c4997fc59140d9f2903552285cb1ccc94a3c9536` to
-`refs/heads/release/candidate-2026-07-14` before upload. The image was
-published by [CI run 29339773534](https://github.com/matty/terraform-registry/actions/runs/29339773534);
+`5c7702e702c2c0fbb9f2d27a0a3a52f50d746132` to `refs/heads/develop`
+before upload. The image was published by [CI run 29359320935](https://github.com/matty/terraform-registry/actions/runs/29359320935);
 its OCI `org.opencontainers.image.revision` label resolves to the recorded
 candidate revision.
 
