@@ -32,7 +32,7 @@ fail() {
 
 is_routine_renovate_pr() {
   local pr="$1"
-  [[ "$(jq -r '.user.login' <<<"$pr")" == 'app/renovate' ]] || return 1
+  [[ "$(jq -r '.user.login' <<<"$pr")" == 'renovate[bot]' ]] || return 1
   [[ "$(jq -r '.head.ref' <<<"$pr")" == renovate/* ]] || return 1
   [[ "$(jq -r '.base.ref' <<<"$pr")" == 'develop' ]] || return 1
 
@@ -110,6 +110,13 @@ inspect() {
     return 0
   fi
 
+  case "$(check_state "$sha")" in
+    successful) ;;
+    pending-stability) printf 'pending-stability\n'; return 0 ;;
+    failed-required-check) printf 'failed-required-check\n'; return 0 ;;
+    *) printf 'inconclusive-check-state\n'; return 0 ;;
+  esac
+
   threads="$(review_thread_state "$number")"
   if [[ "$(jq -r '.data.repository.pullRequest.mergeStateStatus' <<<"$threads")" != 'CLEAN' ]]; then
     printf 'unclean-merge-state\n'
@@ -123,12 +130,6 @@ inspect() {
     printf 'unresolved-review-thread\n'
     return 0
   fi
-  case "$(check_state "$sha")" in
-    successful) ;;
-    pending-stability) printf 'pending-stability\n'; return 0 ;;
-    failed-required-check) printf 'failed-required-check\n'; return 0 ;;
-    *) printf 'inconclusive-check-state\n'; return 0 ;;
-  esac
 
   printf 'eligible:%s\n' "$sha"
 }
