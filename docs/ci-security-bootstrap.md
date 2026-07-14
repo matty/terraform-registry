@@ -35,6 +35,9 @@ checking out or executing their code, and can merge at most one with a rebase.
 It requires the protected CI/security checks, `renovate/stability-days`, a
 clean current merge state, an unchanged head SHA, and no comments, reviews, or
 unresolved review threads. A pending stability status is never mergeable.
+Queued, in-progress, or superseded-cancelled required checks defer the watcher
+successfully; a completed non-success check remains blocking and is reported as
+a watcher failure.
 
 Renovate applies `automerge-candidate` only to digest, pin, patch, and minor
 updates. The watcher requires that label and rejects `security`,
