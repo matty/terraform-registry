@@ -268,7 +268,8 @@ public class AzureBlobModuleServiceUploadTests
                 LogLevel.Error,
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Error publishing module")),
-                It.IsAny<RequestFailedException>(),
+                It.Is<Exception?>(exception => exception != null &&
+                    exception.Message.Contains("RequestFailedException: Upload failed", StringComparison.Ordinal)),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
