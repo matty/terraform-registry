@@ -274,7 +274,8 @@ public class LocalModuleService : ModuleService
     ///     Implementation-specific method to upload a module after validation
     /// </summary>
     protected override async Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata,
+        CancellationToken cancellationToken)
     {
         var coordinateError = ModuleIdentifierValidator.GetModuleCoordinateError(moduleNamespace, name, provider);
         if (coordinateError != null)
@@ -321,13 +322,15 @@ public class LocalModuleService : ModuleService
 
         try
         {
-            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+            cancellationToken.ThrowIfCancellationRequested();
+            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
             Directory.CreateDirectory(stagingDirectory);
             await using (var fileStream = File.Create(stagingFilePath))
             {
-                await moduleContent.CopyToAsync(fileStream);
+                await moduleContent.CopyToAsync(fileStream, cancellationToken);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(finalDirectory);
             File.Move(stagingFilePath, finalFilePath);
 
@@ -344,13 +347,23 @@ public class LocalModuleService : ModuleService
                 Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
-            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing);
+            cancellationToken.ThrowIfCancellationRequested();
+            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing, cancellationToken);
             if (committed)
                 return true;
 
             CleanupOwnedArtifact(finalDirectory, stagingFilePath);
-            await _databaseService.TryFailStagedPublicationAsync(attemptId, "Catalog changed before publication could commit.");
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, "Catalog changed before publication could commit.", CancellationToken.None);
             return false;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!committed)
+            {
+                CleanupOwnedArtifact(finalDirectory, stagingFilePath);
+                await TryFailPublicationAttemptAsync(attemptId, "Publication canceled.");
+            }
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -472,7 +485,7 @@ public class LocalModuleService : ModuleService
     {
         try
         {
-            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason);
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

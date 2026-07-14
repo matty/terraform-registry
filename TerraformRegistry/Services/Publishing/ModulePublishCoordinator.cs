@@ -34,7 +34,8 @@ public sealed class ModulePublishCoordinator(
             content,
             request.Description,
             request.Replace,
-            request.Metadata);
+            request.Metadata,
+            cancellationToken);
 
         if (!uploaded)
             return false;

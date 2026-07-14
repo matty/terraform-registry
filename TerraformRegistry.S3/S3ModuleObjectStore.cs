@@ -144,7 +144,8 @@ internal sealed class S3ModuleObjectStore(
         }
     }
 
-    public async Task<bool> UploadTemporaryObjectAsync(ModuleStorage module, Stream moduleContent, string tempKey)
+    public async Task<bool> UploadTemporaryObjectAsync(ModuleStorage module, Stream moduleContent, string tempKey,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -156,8 +157,12 @@ internal sealed class S3ModuleObjectStore(
                 AutoCloseStream = false
             };
             AddModuleMetadata(putRequest.Metadata, module);
-            await s3Client.PutObjectAsync(putRequest);
+            await s3Client.PutObjectAsync(putRequest, cancellationToken);
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -193,7 +198,8 @@ internal sealed class S3ModuleObjectStore(
         }
     }
 
-    public async Task<bool> TryPromoteTemporaryObjectAsync(string tempKey, ModuleStorage module, string operation)
+    public async Task<bool> TryPromoteTemporaryObjectAsync(string tempKey, ModuleStorage module, string operation,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -204,8 +210,12 @@ internal sealed class S3ModuleObjectStore(
                 DestinationBucket = bucketName,
                 DestinationKey = module.FilePath,
                 IfNoneMatch = "*"
-            });
+            }, cancellationToken);
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

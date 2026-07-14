@@ -127,6 +127,39 @@ public class AzureBlobModuleServiceUploadTests
     }
 
     [Fact]
+    public async Task UploadModuleAsyncKeepsCommittedBlobWhenRequestIsCanceledAfterCommit()
+    {
+        var mockBlobClient = new Mock<BlobClient>();
+        mockBlobClient.Setup(bc => bc.UploadAsync(It.IsAny<Stream>(), It.IsAny<BlobUploadOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<Response<BlobContentInfo>>());
+        mockBlobClient.Setup(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+                It.IsAny<BlobRequestConditions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>())).Returns(mockBlobClient.Object);
+        _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
+            .ReturnsAsync((ModuleStorage?)null);
+        _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService.Setup(db => db.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null, cancellation.Token))
+            .Callback(() => cancellation.Cancel())
+            .ReturnsAsync(true);
+        var service = CreateService();
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await service.UploadModuleAsync("ns", "name", "prov", "1.0.0", stream, "desc",
+            cancellationToken: cancellation.Token);
+
+        Assert.True(result);
+        mockBlobClient.Verify(bc => bc.DeleteIfExistsAsync(It.IsAny<DeleteSnapshotsOption>(),
+            It.IsAny<BlobRequestConditions>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockDatabaseService.Verify(db => db.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>(),
+            CancellationToken.None), Times.Never);
+    }
+
+    [Fact]
     public async Task UploadModuleAsyncStagesAnAttemptOwnedBlobAndCommitsTheCatalog()
     {
         var blobPaths = new List<string>();

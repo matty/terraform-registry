@@ -279,7 +279,7 @@ public static class ModuleHandlers
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
-        var form = await request.ReadFormAsync();
+        var form = await request.ReadFormAsync(context.RequestAborted);
         var moduleFile = form.Files["moduleFile"];
         var description = form["description"].ToString() ?? string.Empty;
 

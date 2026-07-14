@@ -221,7 +221,8 @@ public class AzureBlobModuleService : ModuleService
     ///     actual module content is stored in Azure Blob Storage.
     /// </remarks>
     protected override async Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata,
+        CancellationToken cancellationToken)
     {
         var existing = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
         if (!replace && existing is not null)
@@ -259,7 +260,8 @@ public class AzureBlobModuleService : ModuleService
         var committed = false;
         try
         {
-            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+            cancellationToken.ThrowIfCancellationRequested();
+            await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
             await blobClient.UploadAsync(moduleContent, new BlobUploadOptions
             {
                 Metadata = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -271,7 +273,7 @@ public class AzureBlobModuleService : ModuleService
                     { "description", description },
                     { "publishedAt", now.ToString("o", CultureInfo.InvariantCulture) }
                 }
-            });
+            }, cancellationToken);
 
             var module = new ModuleStorage
             {
@@ -286,12 +288,19 @@ public class AzureBlobModuleService : ModuleService
                 Metadata = metadata ?? new ModuleArtifactMetadata()
             };
 
-            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing);
+            cancellationToken.ThrowIfCancellationRequested();
+            committed = await _databaseService.TryCommitStagedPublicationAsync(attempt, module, existing, cancellationToken);
             if (committed)
                 return true;
 
             await CleanupFailedPublicationAsync(blobClient, attemptId, "Catalog changed before publication could commit.");
             return false;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!committed)
+                await CleanupFailedPublicationAsync(blobClient, attemptId, "Publication canceled.");
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -493,7 +502,7 @@ public class AzureBlobModuleService : ModuleService
 
         try
         {
-            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason);
+            await _databaseService.TryFailStagedPublicationAsync(attemptId, reason, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

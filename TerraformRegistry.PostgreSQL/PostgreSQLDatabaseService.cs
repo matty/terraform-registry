@@ -37,14 +37,17 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
     public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
         _modules.ListModulesAsync(request);
 
-    public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job) => _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+    public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job,
+        CancellationToken cancellationToken = default) =>
+        _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
     public Task<bool> TryCommitStagedPublicationAsync(
         ModulePublicationAttempt attempt,
         ModuleStorage newModule,
-        ModuleStorage? expectedModule) =>
-        _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule);
-    public Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason) =>
-        _publications.TryFailStagedPublicationAsync(attemptId, failureReason);
+        ModuleStorage? expectedModule, CancellationToken cancellationToken = default) =>
+        _publications.TryCommitStagedPublicationAsync(attempt, newModule, expectedModule, cancellationToken);
+    public Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason,
+        CancellationToken cancellationToken = default) =>
+        _publications.TryFailStagedPublicationAsync(attemptId, failureReason, cancellationToken);
     public Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id) => _publications.GetPublicationAttemptAsync(id);
     public Task<ModuleExtractionJob?> GetExtractionJobAsync(Guid id) => _publications.GetExtractionJobAsync(id);
 

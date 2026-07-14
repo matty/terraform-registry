@@ -268,7 +268,7 @@ public class LocalModuleServiceTests
             .Returns(Task.FromResult<ModuleStorage?>(null));
         _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
-            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => committed = module)
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) => committed = module)
             .ReturnsAsync(true);
         // Act
         var result = await service.CallUploadModuleAsyncCore(ns, name, provider, version, content, desc);
@@ -291,7 +291,7 @@ public class LocalModuleServiceTests
             .Returns(Task.FromResult<ModuleStorage?>(null));
         _mockDbService.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
-            .Callback<ModulePublicationAttempt, ModuleExtractionJob>((attempt, job) =>
+            .Callback<ModulePublicationAttempt, ModuleExtractionJob, CancellationToken>((attempt, job, _) =>
             {
                 capturedAttempt = attempt;
                 capturedJob = job;
@@ -299,7 +299,7 @@ public class LocalModuleServiceTests
             .Returns(Task.CompletedTask);
         _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
-            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => capturedModule = module)
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) => capturedModule = module)
             .ReturnsAsync(true);
 
         var result = await service.CallUploadModuleAsyncCore("ns", "name", "provider", "1.0.0", content, "desc");
@@ -313,6 +313,33 @@ public class LocalModuleServiceTests
         Assert.Contains(capturedAttempt.Id.ToString("N"), capturedAttempt.StagingKey, StringComparison.Ordinal);
         Assert.Contains(capturedAttempt.Id.ToString("N"), capturedModule!.FilePath, StringComparison.Ordinal);
         Assert.True(File.Exists(capturedModule.FilePath));
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCoreKeepsCommittedArtifactWhenRequestIsCanceledAfterCommit()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        await using var content = new MemoryStream(Encoding.UTF8.GetBytes("committed"));
+        using var cancellation = new CancellationTokenSource();
+        ModuleStorage? committedModule = null;
+
+        _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null, cancellation.Token))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) =>
+            {
+                committedModule = module;
+                cancellation.Cancel();
+            })
+            .ReturnsAsync(true);
+
+        var result = await service.CallUploadModuleAsyncCore("ns", "name", "provider", "1.0.0", content, "desc",
+            cancellationToken: cancellation.Token);
+
+        Assert.True(result);
+        Assert.NotNull(committedModule);
+        Assert.True(File.Exists(committedModule!.FilePath));
+        _mockDbService.Verify(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>(),
+            CancellationToken.None), Times.Never);
     }
 
     [Fact]
@@ -340,11 +367,11 @@ public class LocalModuleServiceTests
             .ReturnsAsync(existing);
         _mockDbService.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
-            .Callback<ModulePublicationAttempt, ModuleExtractionJob>((attempt, _) => attemptedPublication = attempt)
+            .Callback<ModulePublicationAttempt, ModuleExtractionJob, CancellationToken>((attempt, _, _) => attemptedPublication = attempt)
             .Returns(Task.CompletedTask);
         _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), existing))
-            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => attemptedModule = module)
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) => attemptedModule = module)
             .ReturnsAsync(false);
         _mockDbService.Setup(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>()))
             .ReturnsAsync(true);
@@ -462,9 +489,10 @@ public class LocalModuleServiceTests
         }
 
         public Task<bool> CallUploadModuleAsyncCore(string ns, string name, string provider, string version,
-            Stream content, string desc, bool replace = false)
+            Stream content, string desc, bool replace = false, CancellationToken cancellationToken = default)
         {
-            return base.UploadModuleAsyncCore(ns, name, provider, version, content, desc, replace, null);
+            return base.UploadModuleAsyncCore(ns, name, provider, version, content, desc, replace, null,
+                cancellationToken);
         }
     }
 
