@@ -68,11 +68,14 @@ grep -Fq 'types: [opened, synchronize, reopened, labeled]' "$WORKFLOW"
 grep -Fq "'final-candidate'" <<<"$job"
 grep -Fq "github.event_name == 'merge_group'" <<<"$job"
 grep -Fq "github.event_name == 'workflow_dispatch'" <<<"$job"
+grep -Fxq '       github.event.pull_request.head.repo.full_name == github.repository &&' <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"
 grep -Fq 'fetch-depth: 0' <<<"$job"
 grep -Fxq '      candidate_sha:' <<<"$workflow_dispatch"
 grep -Fxq '      candidate_ref:' <<<"$workflow_dispatch"
 grep -Fxq '        id: candidate' <<<"$job"
+grep -Fxq '          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}' <<<"$job"
+grep -Fxq "          CANDIDATE_REF: \${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) || github.ref }}" <<<"$job"
 grep -Fxq '          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          ref: ${{ steps.candidate.outputs.sha }}' <<<"$job"
@@ -130,6 +133,19 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
       "$WORKFLOW" > "$mutated_workflow"
     if FINAL_CANDIDATE_WORKFLOW="$mutated_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
       echo "Final-candidate version-handoff mutation was accepted: $mutation" >&2
+      exit 1
+    fi
+  done
+
+  for source_mutation in \
+    'github.event.pull_request.head.sha' \
+    'github.event.pull_request.head.ref' \
+    'github.event.pull_request.head.repo.full_name == github.repository'; do
+    mutated_workflow="$mutation_root/ci-source.yaml"
+    SOURCE_MUTATION="$source_mutation" perl -0pe 's/\Q$ENV{SOURCE_MUTATION}\E/github.sha/' \
+      "$WORKFLOW" > "$mutated_workflow"
+    if FINAL_CANDIDATE_WORKFLOW="$mutated_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+      echo "Final-candidate event-source mutation was accepted: $source_mutation" >&2
       exit 1
     fi
   done
