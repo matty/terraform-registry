@@ -7,12 +7,48 @@ DEV_DOCKERFILE="$ROOT/Dockerfile.dev"
 MANIFEST="$ROOT/docs/build-inputs.md"
 EXCEPTION="$ROOT/docs/security-exceptions/SUP-003-nuxt-ui.md"
 
+validate_dockerfile_bases() {
+  local dockerfile="$1"
+  local line remainder reference stage index
+  local -a tokens
+  local -A stages=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ ! "$line" =~ ^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(.+)$ ]]; then
+      continue
+    fi
+
+    remainder="${BASH_REMATCH[1]}"
+    read -r -a tokens <<< "$remainder"
+    index=0
+    while [[ "${tokens[$index]:-}" == --* ]]; do
+      ((index += 1))
+    done
+
+    reference="${tokens[$index]:-}"
+    if [[ -z "$reference" ]]; then
+      echo "Docker FROM instruction has no base image in $dockerfile: $line" >&2
+      return 1
+    fi
+
+    if [[ -z "${stages[$reference]:-}" && ! "$reference" =~ @sha256:[0-9a-f]{64}$ ]]; then
+      echo "External Docker base image must be pinned by digest in $dockerfile: $reference" >&2
+      return 1
+    fi
+
+    if [[ "${tokens[$((index + 1))]:-}" =~ ^[Aa][Ss]$ && -n "${tokens[$((index + 2))]:-}" ]]; then
+      stage="${tokens[$((index + 2))]}"
+      stages["$stage"]=1
+    fi
+  done < "$dockerfile"
+}
+
 test -f "$MANIFEST"
 test -f "$EXCEPTION"
 
 grep -Eq '^ARG TERRAFORM_CONFIG_INSPECT_VERSION=[0-9a-f]{40}$' "$DOCKERFILE"
-! grep -Eq '^FROM .*(latest|:[^@[:space:]]+([[:space:]]|$))' "$DOCKERFILE"
-! grep -Eq '^FROM .*(latest|:[^@[:space:]]+([[:space:]]|$))' "$DEV_DOCKERFILE"
+validate_dockerfile_bases "$DOCKERFILE"
+validate_dockerfile_bases "$DEV_DOCKERFILE"
 if grep -Eq '^[[:space:]]*RUN .*apk[[:space:]]+upgrade' "$DOCKERFILE" "$DEV_DOCKERFILE"; then
   echo 'Unpinned Alpine package upgrades are not reproducible.' >&2
   exit 1

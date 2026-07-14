@@ -45,6 +45,15 @@ if ! SUPPLY_CHAIN_ROOT="$fixture_root" bash "$ROOT/scripts/remediation/gates/sup
   exit 1
 fi
 
+sed -i '0,/^FROM node:/s|^FROM node:.* AS frontend$|FROM node AS frontend|' "$fixture_root/Dockerfile"
+expect_failure 'a bare external Docker base image'
+cp "$ROOT/Dockerfile" "$fixture_root/Dockerfile"
+
+if ! SUPPLY_CHAIN_ROOT="$fixture_root" bash "$ROOT/scripts/remediation/gates/supply-chain-pinning.sh"; then
+  echo 'A Docker build stage based on an earlier pinned stage must remain valid.' >&2
+  exit 1
+fi
+
 printf '<template><UAuthForm /></template>\n' > "$fixture_root/TerraformRegistry/web-src/affected.vue"
 expect_failure 'UAuthForm'
 rm "$fixture_root/TerraformRegistry/web-src/affected.vue"
