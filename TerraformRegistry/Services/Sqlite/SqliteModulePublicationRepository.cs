@@ -12,10 +12,11 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
 {
     public async Task CreatePublicationAttemptWithExtractionJobAsync(
         ModulePublicationAttempt attempt,
-        ModuleExtractionJob job)
+        ModuleExtractionJob job,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var transaction = connection.BeginTransaction();
 
         await using (var command = connection.CreateCommand())
@@ -30,7 +31,7 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
                     $expectedRevision, $committedRevision, $error, $createdAt, $updatedAt, $completedAt)
                 """;
             AddAttemptParameters(command, attempt);
-            await command.ExecuteNonQueryAsync();
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await using (var command = connection.CreateCommand())
@@ -44,7 +45,7 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
                     $leaseExpiresAt, $attemptCount, $lastError, $createdAt, $updatedAt, $completedAt)
                 """;
             AddJobParameters(command, job);
-            await command.ExecuteNonQueryAsync();
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
         transaction.Commit();
@@ -67,10 +68,11 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         return await reader.ReadAsync() ? ReadAttempt(reader) : null;
     }
 
-    public async Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason)
+    public async Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE module_publication_attempts
@@ -83,21 +85,22 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         command.Parameters.AddWithValue("$completedAt", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", attemptId.ToString());
         command.Parameters.AddWithValue("$staged", ModulePublicationAttemptState.Staged);
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<bool> TryCommitStagedPublicationAsync(
         ModulePublicationAttempt attempt,
         ModuleStorage newModule,
-        ModuleStorage? expectedModule)
+        ModuleStorage? expectedModule,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var transaction = connection.BeginTransaction();
 
         var catalogChanged = expectedModule is null
-            ? await TryInsertCatalogAsync(connection, transaction, newModule)
-            : await TryReplaceCatalogAsync(connection, transaction, expectedModule, newModule);
+            ? await TryInsertCatalogAsync(connection, transaction, newModule, cancellationToken)
+            : await TryReplaceCatalogAsync(connection, transaction, expectedModule, newModule, cancellationToken);
         if (!catalogChanged)
             return false;
 
@@ -122,7 +125,7 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         attemptCommand.Parameters.AddWithValue("$provider", newModule.Provider);
         attemptCommand.Parameters.AddWithValue("$version", newModule.Version);
         attemptCommand.Parameters.AddWithValue("$staged", ModulePublicationAttemptState.Staged);
-        if (await attemptCommand.ExecuteNonQueryAsync() != 1)
+        if (await attemptCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
         await using var jobCommand = connection.CreateCommand();
@@ -136,7 +139,7 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         jobCommand.Parameters.AddWithValue("$updatedAt", DateTime.UtcNow.ToString("O"));
         jobCommand.Parameters.AddWithValue("$attemptId", attempt.Id.ToString());
         jobCommand.Parameters.AddWithValue("$staged", ModuleExtractionJobState.Staged);
-        if (await jobCommand.ExecuteNonQueryAsync() != 1)
+        if (await jobCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
         transaction.Commit();
@@ -262,7 +265,8 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
     private static async Task<bool> TryInsertCatalogAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        ModuleStorage module)
+        ModuleStorage module,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -274,14 +278,15 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
             ON CONFLICT(namespace, name, provider, version) DO NOTHING
             """;
         AddModuleParameters(command, module, "");
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static async Task<bool> TryReplaceCatalogAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         ModuleStorage expected,
-        ModuleStorage replacement)
+        ModuleStorage replacement,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -305,7 +310,7 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
             """;
         AddModuleParameters(command, expected, "");
         AddModuleParameters(command, replacement, "new");
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static void AddModuleParameters(SqliteCommand command, ModuleStorage module, string prefix)

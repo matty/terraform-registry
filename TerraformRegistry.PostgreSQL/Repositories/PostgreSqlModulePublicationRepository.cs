@@ -12,11 +12,12 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
 {
     public async Task CreatePublicationAttemptWithExtractionJobAsync(
         ModulePublicationAttempt attempt,
-        ModuleExtractionJob job)
+        ModuleExtractionJob job,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken: cancellationToken);
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO module_publication_attempts (
@@ -39,8 +40,8 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         AddAttemptParameters(command, attempt);
         AddJobParameters(command, job);
 
-        await command.ExecuteNonQueryAsync();
-        await transaction.CommitAsync();
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<ModulePublicationAttempt?> GetPublicationAttemptAsync(Guid id)
@@ -61,10 +62,11 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         return await reader.ReadAsync() ? ReadAttempt(reader) : null;
     }
 
-    public async Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason)
+    public async Task<bool> TryFailStagedPublicationAsync(Guid attemptId, string failureReason,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             """
             UPDATE module_publication_attempts
@@ -78,21 +80,22 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         command.Parameters.AddWithValue("@completedAt", DateTime.UtcNow);
         command.Parameters.AddWithValue("@id", attemptId);
         command.Parameters.AddWithValue("@staged", ModulePublicationAttemptState.Staged);
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<bool> TryCommitStagedPublicationAsync(
         ModulePublicationAttempt attempt,
         ModuleStorage newModule,
-        ModuleStorage? expectedModule)
+        ModuleStorage? expectedModule,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken: cancellationToken);
 
         var catalogChanged = expectedModule is null
-            ? await TryInsertCatalogAsync(connection, transaction, newModule)
-            : await TryReplaceCatalogAsync(connection, transaction, expectedModule, newModule);
+            ? await TryInsertCatalogAsync(connection, transaction, newModule, cancellationToken)
+            : await TryReplaceCatalogAsync(connection, transaction, expectedModule, newModule, cancellationToken);
         if (!catalogChanged)
             return false;
 
@@ -118,7 +121,7 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         attemptCommand.Parameters.AddWithValue("@provider", newModule.Provider);
         attemptCommand.Parameters.AddWithValue("@version", newModule.Version);
         attemptCommand.Parameters.AddWithValue("@staged", ModulePublicationAttemptState.Staged);
-        if (await attemptCommand.ExecuteNonQueryAsync() != 1)
+        if (await attemptCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
         await using var jobCommand = new NpgsqlCommand(
@@ -133,10 +136,10 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         jobCommand.Parameters.AddWithValue("@updatedAt", DateTime.UtcNow);
         jobCommand.Parameters.AddWithValue("@attemptId", attempt.Id);
         jobCommand.Parameters.AddWithValue("@staged", ModuleExtractionJobState.Staged);
-        if (await jobCommand.ExecuteNonQueryAsync() != 1)
+        if (await jobCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
-        await transaction.CommitAsync();
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
@@ -264,7 +267,8 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
     private static async Task<bool> TryInsertCatalogAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        ModuleStorage module)
+        ModuleStorage module,
+        CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
             """
@@ -277,14 +281,15 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
             connection,
             transaction);
         AddModuleParameters(command, module, string.Empty);
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static async Task<bool> TryReplaceCatalogAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ModuleStorage expected,
-        ModuleStorage replacement)
+        ModuleStorage replacement,
+        CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
             """
@@ -309,7 +314,7 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
             transaction);
         AddModuleParameters(command, expected, string.Empty);
         AddModuleParameters(command, replacement, "new");
-        return await command.ExecuteNonQueryAsync() == 1;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static void AddModuleParameters(NpgsqlCommand command, ModuleStorage module, string prefix)

@@ -46,7 +46,8 @@ public interface IModuleService
     ///     Uploads a new module
     /// </summary>
     Task<bool> UploadModuleAsync(string moduleNamespace, string name, string provider, string version, Stream moduleContent,
-        string description, bool replace = false, ModuleArtifactMetadata? metadata = null);
+        string description, bool replace = false, ModuleArtifactMetadata? metadata = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Soft deletes a module version

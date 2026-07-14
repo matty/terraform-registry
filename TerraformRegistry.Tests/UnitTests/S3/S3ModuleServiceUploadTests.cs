@@ -83,11 +83,11 @@ public class S3ModuleServiceUploadTests
             .ReturnsAsync(new CopyObjectResponse());
         _database.Setup(x => x.CreatePublicationAttemptWithExtractionJobAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()))
-            .Callback<ModulePublicationAttempt, ModuleExtractionJob>((value, _) => attempt = value)
+            .Callback<ModulePublicationAttempt, ModuleExtractionJob, CancellationToken>((value, _, _) => attempt = value)
             .Returns(Task.CompletedTask);
         _database.Setup(x => x.TryCommitStagedPublicationAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null))
-            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?>((_, module, _) => committed = module)
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) => committed = module)
             .ReturnsAsync(true);
         using var content = new MemoryStream([1]);
 
@@ -104,6 +104,35 @@ public class S3ModuleServiceUploadTests
         Assert.Equal(promotion.DestinationKey, committed!.FilePath);
         _database.Verify(x => x.AddModuleAsync(It.IsAny<ModuleStorage>()), Times.Never);
         _database.Verify(x => x.ReplaceModuleExactAsync(It.IsAny<ModuleStorage>(), It.IsAny<ModuleStorage>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UploadModuleAsyncCancelsBeforeCatalogCommitAndRemovesAttemptObjects()
+    {
+        using var cancellation = new CancellationTokenSource();
+        _s3.Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), cancellation.Token))
+            .ReturnsAsync(new PutObjectResponse());
+        _s3.Setup(x => x.CopyObjectAsync(It.IsAny<CopyObjectRequest>(), cancellation.Token))
+            .Callback(() => cancellation.Cancel())
+            .ReturnsAsync(new CopyObjectResponse());
+        _s3.Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteObjectResponse());
+        _database.Setup(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>(),
+                CancellationToken.None))
+            .ReturnsAsync(true);
+        using var content = new MemoryStream([1]);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            CreateService().UploadModuleAsync("ns", "name", "aws", "1.0.0", content, "desc",
+                cancellationToken: cancellation.Token));
+
+        _database.Verify(x => x.TryCommitStagedPublicationAsync(
+            It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), It.IsAny<ModuleStorage?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _database.Verify(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), "Publication canceled.",
+            CancellationToken.None), Times.Once);
+        _s3.Verify(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), It.IsAny<CancellationToken>()),
+            Times.AtLeastOnce);
     }
 
     [Fact]

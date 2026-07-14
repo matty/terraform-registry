@@ -77,7 +77,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
             CreatedAt = now,
             UpdatedAt = now
         };
-        await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+        await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
         await MarkPendingAsync(request);
         return true;
     }

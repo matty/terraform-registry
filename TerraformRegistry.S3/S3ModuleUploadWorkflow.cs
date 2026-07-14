@@ -18,7 +18,8 @@ internal sealed class S3ModuleUploadWorkflow(
         Stream moduleContent,
         string description,
         bool replace,
-        ModuleArtifactMetadata? metadata)
+        ModuleArtifactMetadata? metadata,
+        CancellationToken cancellationToken)
     {
         ModuleStorage? existingModule;
         try
@@ -98,7 +99,8 @@ internal sealed class S3ModuleUploadWorkflow(
         };
         try
         {
-            await databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job);
+            cancellationToken.ThrowIfCancellationRequested();
+            await databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -108,13 +110,31 @@ internal sealed class S3ModuleUploadWorkflow(
             return false;
         }
 
-        if (!await objectStore.UploadTemporaryObjectAsync(newModule, moduleContent, tempKey))
+        try
         {
-            await TryFailPublicationAsync(attemptId, "Temporary S3 upload failed.");
-            return false;
+            if (!await objectStore.UploadTemporaryObjectAsync(newModule, moduleContent, tempKey, cancellationToken))
+            {
+                await TryFailPublicationAsync(attemptId, "Temporary S3 upload failed.");
+                return false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await CleanupFailedPublicationAsync(newModule, tempKey, attemptId, "Publication canceled.");
+            throw;
         }
 
-        return await FinalizeUploadAsync(existingModule, newModule, tempKey, attempt, replace && existingModule != null);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return await FinalizeUploadAsync(existingModule, newModule, tempKey, attempt, replace && existingModule != null,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            await CleanupFailedPublicationAsync(newModule, tempKey, attemptId, "Publication canceled.");
+            throw;
+        }
     }
 
     private async Task<bool> EnsureNoDeletedModuleBlocksUploadAsync(
@@ -158,9 +178,11 @@ internal sealed class S3ModuleUploadWorkflow(
         ModuleStorage newModule,
         string tempKey,
         ModulePublicationAttempt attempt,
-        bool replacingExisting)
+        bool replacingExisting,
+        CancellationToken cancellationToken)
     {
-        if (!await objectStore.TryPromoteTemporaryObjectAsync(tempKey, newModule, replacingExisting ? "replace" : "create"))
+        if (!await objectStore.TryPromoteTemporaryObjectAsync(tempKey, newModule, replacingExisting ? "replace" : "create",
+                cancellationToken))
         {
             await CleanupFailedPublicationAsync(newModule, tempKey, attempt.Id, "S3 finalization failed.");
             return false;
@@ -169,7 +191,9 @@ internal sealed class S3ModuleUploadWorkflow(
         bool committed;
         try
         {
-            committed = await databaseService.TryCommitStagedPublicationAsync(attempt, newModule, existingModule);
+            cancellationToken.ThrowIfCancellationRequested();
+            committed = await databaseService.TryCommitStagedPublicationAsync(attempt, newModule, existingModule,
+                cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -208,7 +232,7 @@ internal sealed class S3ModuleUploadWorkflow(
 
     private async Task TryFailPublicationAsync(Guid attemptId, string reason)
     {
-        try { await databaseService.TryFailStagedPublicationAsync(attemptId, reason); }
+        try { await databaseService.TryFailStagedPublicationAsync(attemptId, reason, CancellationToken.None); }
         catch (Exception ex) when (ex is not OperationCanceledException) { RegistryLog.Error(logger, ex, "Failed to mark staged S3 publication {AttemptId} as failed.", attemptId); }
     }
 }

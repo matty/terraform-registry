@@ -104,10 +104,11 @@ public class S3ModuleService : ModuleService
     }
 
     protected override Task<bool> UploadModuleAsyncCore(string moduleNamespace, string name, string provider,
-        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata)
+        string version, Stream moduleContent, string description, bool replace, ModuleArtifactMetadata? metadata,
+        CancellationToken cancellationToken)
     {
         return _uploadWorkflow.UploadModuleAsync(moduleNamespace, name, provider, version, moduleContent, description,
-            replace, metadata);
+            replace, metadata, cancellationToken);
     }
 
     public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider,

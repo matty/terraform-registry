@@ -126,6 +126,46 @@ public class ModulePublishCoordinatorTests
     }
 
     [Fact]
+    public async Task PublishAsyncPassesCancellationTokenToModuleStorageBeforePublicationCommits()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var moduleService = new Mock<IModuleService>();
+        moduleService
+            .Setup(x => x.UploadModuleAsync(
+                "acme",
+                "network",
+                "aws",
+                "1.2.3",
+                It.IsAny<Stream>(),
+                "VPC module",
+                false,
+                It.IsAny<ModuleArtifactMetadata>(),
+                cancellation.Token))
+            .ReturnsAsync(true);
+
+        var coordinator = new ModulePublishCoordinator(
+            moduleService.Object,
+            Mock.Of<IModuleExtractionService>(),
+            CreateWebhookDispatcher(),
+            Mock.Of<IAuditService>(),
+            NullLogger<ModulePublishCoordinator>.Instance);
+        await using var content = new MemoryStream([1, 2, 3]);
+
+        await coordinator.PublishAsync(new ModulePublishRequest
+        {
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.2.3",
+            Description = "VPC module",
+            ModuleContent = content,
+            Metadata = new ModuleArtifactMetadata { Source = new ModuleSourceInfo { Kind = "api-upload" } }
+        }, cancellation.Token);
+
+        moduleService.VerifyAll();
+    }
+
+    [Fact]
     public async Task PublishAsyncReturnsFalseWhenStorageRejectsDuplicate()
     {
         var moduleService = new Mock<IModuleService>();
