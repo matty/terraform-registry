@@ -9,7 +9,8 @@ public sealed class BrowserSecurityHeaderTests
     [Fact]
     public async Task ApiResponseIncludesBaselineBrowserSecurityHeaders()
     {
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        using var baseFactory = new WebApplicationFactory<Program>();
+        using var factory = baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
