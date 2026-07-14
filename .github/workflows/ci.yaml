@@ -172,6 +172,24 @@ jobs:
           bash scripts/remediation/gates/release-runbooks.sh
           bash scripts/remediation/gates/test-release-runbooks-gate.sh
 
+  requirement-evidence:
+    name: Remediation requirement evidence
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate remediation ledger and mutation coverage
+        run: bash scripts/remediation/test-requirement-evidence.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   storage-emulator-contract:
     name: Storage emulator Terraform contract
     runs-on: ubuntu-latest
@@ -241,6 +259,25 @@ jobs:
           --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.12.0" || true;
           bash scripts/remediation/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.14.2" || true
+
+  migration-safety-gate:
+    name: Migration safety gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p0-migration-matrix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Run migration safety gate
+        run: bash scripts/remediation/gates/phase-0.sh
 
   phase-1-deployment-gate:
     name: Phase 1 deployment gate
