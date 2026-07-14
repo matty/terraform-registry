@@ -9,6 +9,11 @@ merge record reachable from the checked-out candidate, an executable automation
 gate, and a checked-in evidence path. It intentionally does not infer a release
 certification from historical records.
 
+The listed gates document merged-work automation; their branch-specific CI
+invocations are not treated as current-candidate evidence. A completed candidate
+must instead be tied to one successful CI run for its exact revision, with the
+Terraform backend, fault/load, and operability jobs all successful.
+
 ## Requirement evidence
 
 | Requirement | State | Pull request | Merge record | Automation gate | Checked-in evidence |

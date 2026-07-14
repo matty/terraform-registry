@@ -115,13 +115,26 @@ sed -i \
 fake_gh="$copy/fake-gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
+  'if [[ "$*" == *"/jobs"* ]]; then' \
+  "  printf '%s\\n' $'Terraform backend certification matrix\\tsuccess' $'Fault and load certification\\tsuccess' $'Operability certification gate\\tsuccess'" \
+  '  exit 0' \
+  'fi' \
   'case "${*: -1}" in' \
   "  .conclusion) printf '%s\\n' success ;;" \
   "  .head_sha) printf '%s\\n' \"\${FAKE_HEAD_SHA:?}\" ;;" \
-  "  .name) printf '%s\\n' CI ;;" \
+  "  .name) printf '%s\\n' \"\${FAKE_RUN_NAME:-CI}\" ;;" \
   '  *) exit 2 ;;' \
   'esac' > "$fake_gh"
 chmod +x "$fake_gh"
 GH_BIN="$fake_gh" FAKE_HEAD_SHA="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
+
+if GH_BIN="$fake_gh" FAKE_HEAD_SHA="$(printf '%040d' 0)" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted a verification run for a different revision' >&2
+  exit 1
+fi
+if GH_BIN="$fake_gh" FAKE_HEAD_SHA="$revision" FAKE_RUN_NAME=other "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted a non-CI workflow as candidate verification' >&2
+  exit 1
+fi
 
 echo 'Requirement evidence validator tests passed.'

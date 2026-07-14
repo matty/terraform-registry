@@ -44,7 +44,7 @@ while IFS=$'\t' read -r id state pull_request merge_record gate evidence extra; 
   commit_message="$(git -C "$ROOT" show -s --format=%B "$merge_record")"
   grep -Eq "Merge pull request #${pull_request}([[:space:]]|$)|\\(#${pull_request}\\)" <<<"$commit_message" || fail "$id pull request #$pull_request is not bound to its merge record"
   [[ -x "$ROOT/$gate" ]] || fail "$id gate is absent or not executable: $gate"
-  rg -F --glob '*.yaml' --glob '*.yml' --quiet -- "$gate" "$ROOT/.github/workflows" || fail "$id gate is not wired into CI: $gate"
+  grep -R --include='*.yaml' --include='*.yml' --fixed-strings --quiet -- "$gate" "$ROOT/.github/workflows" || fail "$id gate is not wired into CI: $gate"
   [[ -e "$ROOT/$evidence" ]] || fail "$id evidence is absent: $evidence"
 done < "$MANIFEST"
 
@@ -85,6 +85,10 @@ if (( pending_count == 0 )); then
   [[ "$run_conclusion" == success ]] || fail "candidate verification run did not succeed"
   [[ "$run_head_sha" == "$candidate_revision" ]] || fail "candidate verification run does not verify the candidate revision"
   [[ "$run_name" == CI ]] || fail "candidate verification run is not the CI workflow"
+  run_jobs="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id/jobs" --paginate --jq '.jobs[] | [.name, .conclusion] | @tsv' 2>/dev/null)" || fail "candidate verification jobs cannot be read"
+  for required_job in 'Terraform backend certification matrix' 'Fault and load certification' 'Operability certification gate'; do
+    grep -Fqx "$required_job"$'\t''success' <<<"$run_jobs" || fail "candidate verification lacks successful '$required_job' evidence"
+  done
   for index in 3 4 5; do [[ "${candidate_values[$index]}" == PASS ]] || fail "candidate gate result must be PASS"; done
 fi
 
@@ -100,6 +104,11 @@ The validator confirms every requirement in the specification has an immutable
 merge record reachable from the checked-out candidate, an executable automation
 gate, and a checked-in evidence path. It intentionally does not infer a release
 certification from historical records.
+
+The listed gates document merged-work automation; their branch-specific CI
+invocations are not treated as current-candidate evidence. A completed candidate
+must instead be tied to one successful CI run for its exact revision, with the
+Terraform backend, fault/load, and operability jobs all successful.
 
 ## Requirement evidence
 
