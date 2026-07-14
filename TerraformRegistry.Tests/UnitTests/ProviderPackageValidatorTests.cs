@@ -77,7 +77,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public async Task ValidatePackageAsyncVerifiesDetachedSignatureWhenGpgIsAvailable()
+    public async Task ValidatePackageAsyncVerifiesDetachedSignatureFromNonSeekableStorageStreamWhenGpgIsAvailable()
     {
         if (!await CommandSucceedsAsync("gpg", "--version", null))
         {
@@ -108,7 +108,7 @@ public class ProviderPackageValidatorTests
         var publicKey = await CaptureCommandAsync("gpg", $"--homedir \"{gpgHome}\" --armor --export provider@example.com", temp.Path);
         await using var package = new MemoryStream(packageBytes);
         await using var shasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
-        await using var signature = File.OpenRead(signaturePath);
+        await using var signature = new NonSeekableReadStream(await File.ReadAllBytesAsync(signaturePath));
         var validator = new ProviderPackageValidator();
 
         var result = await validator.ValidatePackageAsync(
@@ -169,6 +169,25 @@ public class ProviderPackageValidatorTests
     }
 
     private sealed record CommandResult(int ExitCode, string StandardOutput, string StandardError);
+
+    private sealed class NonSeekableReadStream(byte[] content) : Stream
+    {
+        private readonly MemoryStream _inner = new(content);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     private sealed class TempDirectory : IDisposable
     {

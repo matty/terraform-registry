@@ -29,7 +29,7 @@ public sealed class ProviderPackageValidator : IProviderPackageValidator
         if (!string.Equals(actualShasum, expectedShasum, StringComparison.OrdinalIgnoreCase))
             return new ProviderPackageValidationResult(false, "Provider package SHA256 does not match platform shasum.");
 
-        if (!VerifyDetachedSignature(shasumsText, shasumsSignature, asciiArmorPublicKey))
+        if (!await VerifyDetachedSignatureAsync(shasumsText, shasumsSignature, asciiArmorPublicKey, cancellationToken))
             return new ProviderPackageValidationResult(false, "SHA256SUMS signature could not be verified with the selected GPG key.");
 
         return new ProviderPackageValidationResult(true, null);
@@ -81,17 +81,23 @@ public sealed class ProviderPackageValidator : IProviderPackageValidator
         return new ProviderPackageValidationResult(true, null);
     }
 
-    private static bool VerifyDetachedSignature(string shasumsText, Stream signatureStream, string asciiArmorPublicKey)
+    private static async Task<bool> VerifyDetachedSignatureAsync(
+        string shasumsText,
+        Stream signatureStream,
+        string asciiArmorPublicKey,
+        CancellationToken cancellationToken)
     {
         try
         {
-            if (signatureStream.CanSeek) signatureStream.Position = 0;
+            await using var bufferedSignature = new MemoryStream();
+            await signatureStream.CopyToAsync(bufferedSignature, cancellationToken);
+            bufferedSignature.Position = 0;
 
             using var keyInput = new MemoryStream(Encoding.UTF8.GetBytes(asciiArmorPublicKey));
             using var decodedKeyInput = PgpUtilities.GetDecoderStream(keyInput);
             var publicKeys = new PgpPublicKeyRingBundle(decodedKeyInput);
 
-            using var decodedSignatureInput = PgpUtilities.GetDecoderStream(signatureStream);
+            using var decodedSignatureInput = PgpUtilities.GetDecoderStream(bufferedSignature);
             var signatureFactory = new PgpObjectFactory(decodedSignatureInput);
             var signatureObject = signatureFactory.NextPgpObject();
             if (signatureObject is PgpCompressedData compressedData)
