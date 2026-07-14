@@ -55,6 +55,14 @@ public sealed class MirrorCacheBudgetService(
         return false;
     }
 
+    /// <summary>Records the cache size after a successful cache lifecycle change.</summary>
+    public async Task RecordCacheBytesAsync(CancellationToken cancellationToken)
+    {
+        var providers = await ListProviderPackagesAsync(cancellationToken);
+        var modules = await ListModulePackagesAsync(cancellationToken);
+        metrics?.RecordMirrorCacheBytes(providers.Sum(CacheBytes) + modules.Sum(CacheBytes));
+    }
+
     public async Task<MirrorCachePurgeResult> PurgeProviderAsync(
         string hostname,
         string providerNamespace,
@@ -76,9 +84,13 @@ public sealed class MirrorCacheBudgetService(
             return MirrorCachePurgeResult.InUse;
         }
 
-        return await EvictAsync(new EvictionCandidate(package, null), cancellationToken)
-            ? MirrorCachePurgeResult.Purged
-            : MirrorCachePurgeResult.Failed;
+        if (!await EvictAsync(new EvictionCandidate(package, null), cancellationToken))
+        {
+            return MirrorCachePurgeResult.Failed;
+        }
+
+        await RecordCacheBytesAsync(cancellationToken);
+        return MirrorCachePurgeResult.Purged;
     }
 
     public async Task<MirrorCachePurgeResult> PurgeModuleAsync(
@@ -101,9 +113,13 @@ public sealed class MirrorCacheBudgetService(
             return MirrorCachePurgeResult.InUse;
         }
 
-        return await EvictAsync(new EvictionCandidate(null, package), cancellationToken)
-            ? MirrorCachePurgeResult.Purged
-            : MirrorCachePurgeResult.Failed;
+        if (!await EvictAsync(new EvictionCandidate(null, package), cancellationToken))
+        {
+            return MirrorCachePurgeResult.Failed;
+        }
+
+        await RecordCacheBytesAsync(cancellationToken);
+        return MirrorCachePurgeResult.Purged;
     }
 
     private async Task<bool> EvictAsync(EvictionCandidate candidate, CancellationToken cancellationToken)

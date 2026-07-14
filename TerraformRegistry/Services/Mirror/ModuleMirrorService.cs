@@ -471,6 +471,11 @@ public sealed class ModuleMirrorService(
                 LastSyncAt = DateTime.UtcNow
             });
 
+            if (cacheBudget is not null)
+            {
+                await cacheBudget.RecordCacheBytesAsync(cancellationToken);
+            }
+
             RegisterModuleTokenPath(localPath, hostname, moduleNamespace, name, provider, version);
             return AppendPreservedHints(localPath, source);
         }

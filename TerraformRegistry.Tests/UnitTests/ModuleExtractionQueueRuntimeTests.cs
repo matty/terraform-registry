@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics.Metrics;
 using Moq;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
@@ -216,6 +217,63 @@ public class ModuleExtractionQueueRuntimeTests
         Assert.False(queued);
         database.Verify(x => x.CreatePublicationAttemptWithExtractionJobAsync(
             It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsyncRefreshesQueueDepthAfterClaimingAJob()
+    {
+        using var listener = new MeterListener();
+        var queueDepths = new List<long>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "terraform_registry.extraction.queue_depth")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "terraform_registry.extraction.queue_depth")
+                queueDepths.Add(value);
+        });
+        listener.Start();
+
+        var config = new Mock<IModuleExtractionConfigService>();
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.TryClaimNextExtractionJobAsync("worker", It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ModuleExtractionJob
+            {
+                Id = Guid.NewGuid(),
+                PublicationAttemptId = Guid.NewGuid(),
+                Namespace = "acme",
+                Name = "network",
+                Provider = "aws",
+                Version = "1.0.0",
+                State = ModuleExtractionJobState.Pending,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            });
+        database.Setup(x => x.CountPendingExtractionJobsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(0);
+        database.Setup(x => x.TryFailExtractionJobAsync(It.IsAny<Guid>(), "worker", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var moduleService = new Mock<IModuleService>();
+        moduleService.Setup(x => x.OpenModulePackageStreamAsync("acme", "network", "aws", "1.0.0"))
+            .ReturnsAsync((Stream?)null);
+        using var metrics = new OperationalMetrics();
+        var service = new ModuleExtractionService(
+            moduleService.Object,
+            database.Object,
+            Mock.Of<IArchiveWorkspaceFactory>(),
+            Mock.Of<ITerraformModuleInspector>(),
+            Mock.Of<IModuleLlmContextGenerator>(),
+            config.Object,
+            NullLogger<ModuleExtractionService>.Instance,
+            new ModuleExtractionOptions { JobLeaseSeconds = 1 },
+            metrics);
+
+        Assert.True(await service.ProcessNextAsync("worker", CancellationToken.None));
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(0, queueDepths);
     }
 
     private static ModuleExtractionService CreateService(

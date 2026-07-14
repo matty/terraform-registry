@@ -593,6 +593,10 @@ public sealed class ProviderMirrorService(
 
             heartbeat.ThrowIfOwnershipLost();
             await repository.UpsertProviderPackageAsync(package);
+            if (cacheBudget is not null)
+            {
+                await cacheBudget.RecordCacheBytesAsync(cancellationToken);
+            }
             return package;
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException or IOException)

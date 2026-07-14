@@ -121,6 +121,8 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         if (job is null)
             return false;
 
+        _metrics?.RecordExtractionQueueDepth(
+            await _databaseService.CountPendingExtractionJobsAsync(cancellationToken));
         _metrics?.RecordExtractionClaim(job.CreatedAt);
         _metrics?.RecordExtractionAttempt();
 
