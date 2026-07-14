@@ -308,6 +308,30 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
         Assert.Equal(HttpStatusCode.NoContent, signatureResponse.StatusCode);
     }
 
+    [Theory]
+    [InlineData("shasums")]
+    [InlineData("shasums.sig")]
+    public async Task UploadProviderSidecarWithoutContentLengthReturnsLengthRequired(string sidecar)
+    {
+        var client = await CreatePublisherClientAsync("provider-length-required@example.com", "provider-length-required");
+        var ns = NewNamespace();
+        await CreateProviderVersionAsync(client, ns);
+
+        await using var body = new NonSeekableReadStream([1, 2, 3]);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/api/providers/{ns}/example/versions/1.0.0/{sidecar}")
+        {
+            Content = new StreamContent(body)
+        };
+
+        Assert.Null(request.Content.Headers.ContentLength);
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.LengthRequired, response.StatusCode);
+    }
+
     [Fact]
     public async Task UpdateAndDeleteProviderEnforcesDedicatedPermissions()
     {
@@ -409,4 +433,28 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
     };
 
     private static string NewNamespace() => $"acme{Guid.NewGuid():N}";
+
+    private sealed class NonSeekableReadStream(byte[] bytes) : Stream
+    {
+        private readonly MemoryStream _inner = new(bytes);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override int Read(Span<byte> buffer) => _inner.Read(buffer);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

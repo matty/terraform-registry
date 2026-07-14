@@ -10,3 +10,5 @@ if grep -Eq 'docker logs .*\| grep -q' "$SMOKE"; then
 fi
 
 grep -Fq '[[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]' "$SMOKE"
+grep -Fq 'run_s3_provider_sidecar_contract' "$SMOKE"
+grep -Fq 'providers/${provider_namespace}/example/1.0.0/${sidecar}' "$SMOKE"

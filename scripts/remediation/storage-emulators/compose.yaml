@@ -40,6 +40,7 @@ services:
       dockerfile: Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      TF_REG_DevAuthBypass: "true"
       TF_REG_DatabaseProvider: postgres
       TF_REG_PostgreSQL__ConnectionString: Host=postgres;Database=terraform_registry;Username=terraform_reg_user;Password=terraform_reg_password
       TF_REG_BaseUrl: https://registry.local

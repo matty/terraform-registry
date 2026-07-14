@@ -27,6 +27,54 @@ project_for() {
   printf 'tfregstorage%s' "$(printf '%s' "$1" | sha256sum | cut -c1-12)"
 }
 
+run_s3_provider_sidecar_contract() {
+  local project="$1" home_dir="$2" network="$3" fixture="$4"
+  local provider_namespace shasums_name signature_name
+  provider_namespace="e2esidecar$(date +%s)"
+  shasums_name='terraform-provider-example_1.0.0_SHA256SUMS'
+  signature_name='terraform-provider-example_1.0.0_SHA256SUMS.sig'
+
+  printf '%s  terraform-provider-example_1.0.0_linux_amd64.zip\n' \
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' > "$fixture/$shasums_name"
+  printf '%s\n' 'fabricated provider sidecar signature' > "$fixture/$signature_name"
+
+  docker compose --project-name "$project" --project-directory "$home_dir" -f "$home_dir/compose.yaml" \
+    exec -T postgres psql -U terraform_reg_user -d terraform_registry -v ON_ERROR_STOP=1 -c \
+    "INSERT INTO users (id, email, provider, provider_id) VALUES ('dev-user-001', 'dev@localhost', 'emulator', 'dev-user-001') ON CONFLICT (id) DO NOTHING; INSERT INTO user_roles (user_id, role_id, assigned_by) SELECT 'dev-user-001', id, 'storage-emulator-contract' FROM roles WHERE name = 'admin' ON CONFLICT (user_id, role_id) DO NOTHING;"
+
+  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data "{\"namespace\":\"${provider_namespace}\",\"type\":\"example\",\"display_name\":\"Example\"}" \
+    'http://app:5131/api/providers' | grep -qx '201'
+  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data '{"key_id":"test-key","ascii_armor":"-----BEGIN PGP PUBLIC KEY BLOCK-----\\n\\nmock\\n-----END PGP PUBLIC KEY BLOCK-----","source":"emulator"}' \
+    "http://app:5131/api/providers/${provider_namespace}/example/gpg-keys" | grep -qx '201'
+  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data '{"version":"1.0.0","protocols":["5.0"],"key_id":"test-key"}' \
+    "http://app:5131/api/providers/${provider_namespace}/example/versions" | grep -qx '201'
+
+  for sidecar in "$shasums_name" "$signature_name"; do
+    local destination='shasums'
+    [[ "$sidecar" = "$signature_name" ]] && destination='shasums.sig'
+    docker run --rm --network "$network" \
+      -v "$fixture/$sidecar:/fixture/$sidecar:ro" \
+      curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+      --upload-file "/fixture/$sidecar" \
+      "http://app:5131/api/providers/${provider_namespace}/example/versions/1.0.0/${destination}" | grep -qx '204'
+  done
+
+  for sidecar in "$shasums_name" "$signature_name"; do
+    docker compose --project-name "$project" --project-directory "$home_dir" -f "$home_dir/compose.yaml" \
+      run --rm --no-deps --entrypoint /bin/sh minio-init -c \
+      "mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null && mc cat local/modules/providers/${provider_namespace}/example/1.0.0/${sidecar}" \
+      | cmp - "$fixture/$sidecar"
+  done
+
+  printf 'MinIO S3 provider sidecar upload/read contract passed.\n'
+}
+
 run_provider() {
   local storage_provider="$1"
   local project app caddy network fixture workspace caddy_ip module_namespace
@@ -55,10 +103,14 @@ run_provider() {
   done
   [[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]
 
+  network="${project}_default"
+  if [[ "$storage_provider" = s3 ]]; then
+    run_s3_provider_sidecar_contract "$project" "$HOME_DIR" "$network" "$fixture"
+  fi
+
   unzip -q "$ROOT/TerraformRegistry.Tests/TestData/test-module.zip" -d "$fixture/module"
   tar -C "$fixture/module" -czf "$fixture/test-module.tar.gz" .
 
-  network="${project}_default"
   for archive in zip tar.gz; do
     local version archive_file content_type
     if [[ "$archive" = zip ]]; then
