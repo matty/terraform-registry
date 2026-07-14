@@ -109,6 +109,46 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         Assert.Equal(first.Id, second.Id);
     }
 
+    [Theory]
+    [InlineData("/\\\\evil.example")]
+    [InlineData("/%5Cevil.example")]
+    [InlineData("/account\u0001settings")]
+    [InlineData("/account%0Dsettings")]
+    [InlineData("//evil.example/account")]
+    [InlineData("/%2Fevil.example/account")]
+    [InlineData("https://evil.example/account")]
+    public async Task LoginDoesNotStoreUnsafeReturnPath(string returnTo)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var oauthService = CreateGitHubOAuthService(
+            scope.ServiceProvider.GetRequiredService<IConfiguration>(),
+            new QueuedResponseHandler());
+        var context = CreateLoginHttpContext(scope.ServiceProvider);
+
+        var result = AuthHandlers.Login("github", returnTo, oauthService, context);
+        await result.ExecuteAsync(context);
+
+        Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
+        Assert.DoesNotContain(context.Response.Headers.SetCookie,
+            value => value?.Contains("oauth-return-to=", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public async Task LoginStoresValidLocalReturnPath()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var oauthService = CreateGitHubOAuthService(
+            scope.ServiceProvider.GetRequiredService<IConfiguration>(),
+            new QueuedResponseHandler());
+        var context = CreateLoginHttpContext(scope.ServiceProvider);
+
+        var result = AuthHandlers.Login("github", "/account/settings?tab=security", oauthService, context);
+        await result.ExecuteAsync(context);
+
+        Assert.Contains(context.Response.Headers.SetCookie,
+            value => value?.StartsWith("oauth-return-to=%2Faccount%2Fsettings%3Ftab%3Dsecurity", StringComparison.Ordinal) == true);
+    }
+
     [Fact]
     public async Task CallbackOnAccountCollisionRedirectsWithoutSessionCookie()
     {
@@ -344,6 +384,16 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         var context = new DefaultHttpContext();
         context.Request.Headers.Cookie = $"oauth-state={state}";
         context.RequestServices = services;
+        context.Response.Body = new MemoryStream();
+        return context;
+    }
+
+    private static DefaultHttpContext CreateLoginHttpContext(IServiceProvider services)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services
+        };
         context.Response.Body = new MemoryStream();
         return context;
     }

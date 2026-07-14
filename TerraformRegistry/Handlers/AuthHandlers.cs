@@ -482,8 +482,16 @@ public static class AuthHandlers
 
     private static bool IsSafeReturnPath(string path)
     {
-        return path.StartsWith('/') &&
-               !path.StartsWith("//", StringComparison.Ordinal);
+        if (path.Length == 0 || path[0] != '/')
+        {
+            return false;
+        }
+
+        var decodedPath = Uri.UnescapeDataString(path);
+        return decodedPath.Length > 0 &&
+               decodedPath[0] == '/' &&
+               !decodedPath.StartsWith("//", StringComparison.Ordinal) &&
+               !decodedPath.Any(static character => character == '\\' || char.IsControl(character));
     }
 
     private static bool IsValidTerraformAuthorizeRequest(string clientId, string redirectUri, string responseType,
