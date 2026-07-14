@@ -96,11 +96,11 @@ public sealed class PostgreSqlMirrorRepositoryTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _postgresContainer = new PostgreSqlBuilder()
+        _postgresContainer = new PostgreSqlBuilder("postgres:15.1")
             .WithDatabase("mirror_repository_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(5432))
             .Build();
 
         await _postgresContainer.StartAsync();

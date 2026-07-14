@@ -98,4 +98,49 @@ public class AzureBlobModuleServiceDelegationTests
         Assert.Equal(expected, result);
         _mockDatabaseService.Verify(x => x.GetModuleVersionsAsync("ns", "name", "provider"), Times.Once);
     }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncUsesDelegationKeyOptionsWhenAccountKeyIsUnavailable()
+    {
+        var moduleStorage = new ModuleStorage
+        {
+            Namespace = "ns",
+            Name = "name",
+            Provider = "provider",
+            Version = "1.0.0",
+            Description = "description",
+            FilePath = "path/to/module.zip",
+            Dependencies = []
+        };
+        var blobClient = new Mock<BlobClient>();
+        var expectedUri = new Uri("https://example.test/path/to/module.zip?sig=test");
+
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0"))
+            .ReturnsAsync(moduleStorage);
+        _mockContainerClient.Setup(x => x.GetBlobClient(moduleStorage.FilePath)).Returns(blobClient.Object);
+        blobClient.Setup(x => x.ExistsAsync(default)).ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        blobClient.SetupGet(x => x.CanGenerateSasUri).Returns(false);
+        _mockBlobServiceClient
+            .Setup(x => x.GetUserDelegationKeyAsync(
+                It.Is<BlobGetUserDelegationKeyOptions>(options =>
+                    options.StartsOn <= DateTimeOffset.UtcNow &&
+                    options.StartsOn >= DateTimeOffset.UtcNow.AddMinutes(-6) &&
+                    options.ExpiresOn > DateTimeOffset.UtcNow),
+                CancellationToken.None))
+            .ReturnsAsync(Response.FromValue<UserDelegationKey>(null!, Mock.Of<Response>()));
+        blobClient.Setup(x => x.GenerateUserDelegationSasUri(
+                It.IsAny<Azure.Storage.Sas.BlobSasBuilder>(), It.IsAny<UserDelegationKey>()))
+            .Returns(expectedUri);
+
+        var result = await CreateService().GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0");
+
+        Assert.Equal(expectedUri.ToString(), result);
+        _mockBlobServiceClient.Verify(x => x.GetUserDelegationKeyAsync(
+            It.Is<BlobGetUserDelegationKeyOptions>(options =>
+                options.StartsOn <= DateTimeOffset.UtcNow &&
+                options.StartsOn >= DateTimeOffset.UtcNow.AddMinutes(-6) &&
+                options.ExpiresOn > DateTimeOffset.UtcNow),
+            CancellationToken.None), Times.Once);
+    }
 }

@@ -179,7 +179,12 @@ public class AzureBlobModuleService : ModuleService
             }
 
             var startsOn = DateTimeOffset.UtcNow.AddMinutes(-5);
-            var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(startsOn, sasBuilder.ExpiresOn);
+            var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+                new BlobGetUserDelegationKeyOptions(sasBuilder.ExpiresOn)
+                {
+                    StartsOn = startsOn
+                },
+                CancellationToken.None);
             return blobClient.GenerateUserDelegationSasUri(sasBuilder, delegationKey.Value).ToString();
         }
         catch (Exception ex)
