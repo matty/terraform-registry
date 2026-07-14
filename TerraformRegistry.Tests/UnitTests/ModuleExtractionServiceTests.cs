@@ -224,4 +224,57 @@ public class ModuleExtractionServiceTests
                 Assert.Equal("tool missing", failed.Extraction.Error);
             });
     }
+
+    [Fact]
+    public async Task ExtractAsyncDoesNotPersistResultsWhenCancellationIsRequestedDuringInspection()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var moduleService = new Mock<IModuleService>(MockBehavior.Strict);
+        moduleService
+            .Setup(x => x.OpenModulePackageStreamAsync("acme", "network", "aws", "1.2.3"))
+            .ReturnsAsync(new MemoryStream([1, 2, 3]));
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"module-extraction-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+
+        var workspaceFactory = new Mock<IArchiveWorkspaceFactory>(MockBehavior.Strict);
+        workspaceFactory
+            .Setup(x => x.CreateAsync(It.IsAny<Stream>(), cancellation.Token))
+            .ReturnsAsync(new ArchiveWorkspace(tempRoot, tempRoot));
+
+        var inspector = new Mock<ITerraformModuleInspector>(MockBehavior.Strict);
+        inspector
+            .Setup(x => x.InspectAsync(tempRoot, cancellation.Token))
+            .Callback(() => cancellation.Cancel())
+            .ReturnsAsync(new ModuleExtractionDocument());
+
+        var database = new Mock<IDatabaseService>(MockBehavior.Strict);
+        database
+            .Setup(x => x.UpdateModuleMetadataAsync(
+                "acme",
+                "network",
+                "aws",
+                "1.2.3",
+                It.IsAny<Action<ModuleArtifactMetadata>>()))
+            .Returns(Task.CompletedTask);
+        var service = new ModuleExtractionService(
+            moduleService.Object,
+            database.Object,
+            workspaceFactory.Object,
+            inspector.Object,
+            Mock.Of<IModuleLlmContextGenerator>(),
+            Mock.Of<IModuleExtractionConfigService>(),
+            NullLogger<ModuleExtractionService>.Instance);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            service.ExtractAsync(new ModuleExtractionRequest("acme", "network", "aws", "1.2.3"), cancellation.Token));
+
+        database.Verify(x => x.UpdateModuleMetadataAsync(
+            "acme",
+            "network",
+            "aws",
+            "1.2.3",
+            It.IsAny<Action<ModuleArtifactMetadata>>()), Times.Once);
+        Assert.False(Directory.Exists(tempRoot));
+    }
 }

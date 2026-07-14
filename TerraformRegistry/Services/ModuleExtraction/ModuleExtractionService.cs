@@ -183,6 +183,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
 
             await using var workspace = await _workspaceFactory.CreateAsync(packageStream, cancellationToken);
             var document = await _inspector.InspectAsync(workspace.RootPath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             var module = await _databaseService.GetModuleAsync(
                 request.Namespace,
                 request.Name,
