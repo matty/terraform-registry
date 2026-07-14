@@ -180,6 +180,24 @@ public sealed class MirrorCacheBudgetServiceTests
         Assert.Contains(0, cacheBytes);
     }
 
+    [Fact]
+    public async Task RecordCacheBytesTreatsMissingRepositoryPagesAsEmpty()
+    {
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync((IReadOnlyList<MirrorProviderPackage>)null!);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync((IReadOnlyList<MirrorModulePackage>)null!);
+        var service = new MirrorCacheBudgetService(providers.Object, modules.Object, Mock.Of<IProviderArtifactStorage>(),
+            Mock.Of<IModuleService>(), new MirrorCacheUsage());
+
+        await service.RecordCacheBytesAsync(CancellationToken.None);
+
+        providers.Verify(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0), Times.Once);
+        modules.Verify(x => x.ListModulePackagesAsync(null, "ready", 1000, 0), Times.Once);
+    }
+
     private static MirrorProviderPackage ProviderPackage(string path, long size, DateTime updatedAt) => new()
     {
         Hostname = "registry.example.com",

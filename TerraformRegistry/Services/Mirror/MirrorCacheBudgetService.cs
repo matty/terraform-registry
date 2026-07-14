@@ -178,6 +178,8 @@ public sealed class MirrorCacheBudgetService(
         for (var offset = 0; ; offset += PageSize)
         {
             var page = await providerRepository.ListProviderPackagesAsync(null, "ready", PageSize, offset);
+            if (page is null || page.Count == 0) return packages;
+
             packages.AddRange(page);
             if (page.Count < PageSize) return packages;
             cancellationToken.ThrowIfCancellationRequested();
@@ -190,6 +192,8 @@ public sealed class MirrorCacheBudgetService(
         for (var offset = 0; ; offset += PageSize)
         {
             var page = await moduleRepository.ListModulePackagesAsync(null, "ready", PageSize, offset);
+            if (page is null || page.Count == 0) return packages;
+
             packages.AddRange(page);
             if (page.Count < PageSize) return packages;
             cancellationToken.ThrowIfCancellationRequested();
