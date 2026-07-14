@@ -307,6 +307,11 @@ jobs:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/fault-load-certification'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+  operability-certification:
+    name: Operability certification gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/operability-certification'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -324,6 +329,9 @@ jobs:
 
       - name: Run fault and load certification
         run: bash scripts/remediation/gates/fault-load-certification.sh
+
+      - name: Run operability certification gate
+        run: bash scripts/remediation/gates/operability-certification.sh
 
   docker:
     name: Docker build and scan
