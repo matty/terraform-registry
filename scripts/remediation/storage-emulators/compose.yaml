@@ -60,7 +60,7 @@ services:
       - "5131"
 
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:2.11-alpine
     depends_on:
       - app
     volumes:
