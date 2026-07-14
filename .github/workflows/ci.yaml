@@ -18,6 +18,14 @@ on:
     types: [checks_requested]
   workflow_dispatch:
     inputs:
+      candidate_sha:
+        description: "Immutable 40-character commit SHA to certify"
+        required: true
+        type: string
+      candidate_ref:
+        description: "Candidate branch, tag, or source reference for evidence"
+        required: true
+        type: string
       version:
         description: "Optional version override"
         required: false
@@ -391,6 +399,7 @@ jobs:
     # candidates are always certified. This is intentionally not tied to a
     # historical remediation branch name.
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'final-candidate'))
@@ -400,10 +409,43 @@ jobs:
       contents: read
 
     steps:
+      - name: Validate immutable candidate inputs
+        id: candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref || github.event.pull_request.head.label || github.ref }}
+        run: |
+          # shellcheck disable=SC2153 # supplied through the step-level env map
+          candidate_sha="$CANDIDATE_SHA"
+          # shellcheck disable=SC2153 # supplied through the step-level env map
+          candidate_ref="$CANDIDATE_REF"
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'candidate_sha must be an immutable 40-character lowercase commit SHA.' >&2
+            exit 1
+          }
+          test -n "$candidate_ref" || {
+            echo 'candidate_ref must identify the candidate source.' >&2
+            exit 1
+          }
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          ref: ${{ steps.candidate.outputs.sha }}
+
+      - name: Verify immutable candidate checkout
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          checked_out_sha="$(git rev-parse HEAD)"
+          git cat-file -e "$CANDIDATE_SHA^{commit}"
+          [[ "$checked_out_sha" == "$CANDIDATE_SHA" ]] || {
+            echo 'checkout did not resolve the requested immutable candidate SHA.' >&2
+            exit 1
+          }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -414,7 +456,7 @@ jobs:
         id: candidate-version
         env:
           GITHUB_REF_TYPE: branch
-          GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
+          GITHUB_REF_NAME: ${{ steps.candidate.outputs.ref }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           version="$(.github/scripts/resolve-version.sh)"
@@ -427,8 +469,11 @@ jobs:
       - name: Run pre-publication candidate verification
         env:
           FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}
-        run: >-
-          FINAL_CANDIDATE_EVIDENCE_PATH="$RUNNER_TEMP/final-candidate-certification-evidence.json"
+          FINAL_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          FINAL_CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
+        run: |
+          FINAL_CANDIDATE_EVIDENCE_PATH="$RUNNER_TEMP/final-candidate-certification-evidence.json" \
+          env -u GITHUB_SHA -u GITHUB_REF \
           bash scripts/remediation/gates/final-candidate-certification.sh
 
       - name: Upload pre-publication candidate verification evidence
