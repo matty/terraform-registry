@@ -14,8 +14,9 @@ public sealed class SqliteModuleRepository(
     string baseUrl,
     ILogger logger) : IModuleRepository
 {
-    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
         var (whereClause, parameters) = BuildListFilter(request);
@@ -114,8 +115,10 @@ public sealed class SqliteModuleRepository(
         return rows;
     }
 
-    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
@@ -135,7 +138,7 @@ public sealed class SqliteModuleRepository(
         if (!await reader.ReadAsync()) return null;
 
         var publishedAtIso = reader.GetString(6);
-        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new TerraformModule
         {
@@ -157,12 +160,14 @@ public sealed class SqliteModuleRepository(
         };
     }
 
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
-        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider, cancellationToken);
         return new ModuleVersions
         {
             Modules = new List<ModuleVersionInfo>
@@ -176,8 +181,9 @@ public sealed class SqliteModuleRepository(
     }
 
     public async Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
 
@@ -640,7 +646,7 @@ public sealed class SqliteModuleRepository(
         }
     }
     private static async Task<List<string>> GetVersionsInternal(SqliteConnection connection, string moduleNamespace,
-        string name, string provider)
+        string name, string provider, CancellationToken cancellationToken)
     {
         var versions = new List<string>();
         await using var cmd = connection.CreateCommand();
@@ -649,8 +655,8 @@ public sealed class SqliteModuleRepository(
         cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
-        await using var r = await cmd.ExecuteReaderAsync();
-        while (await r.ReadAsync()) versions.Add(r.GetString(0));
+        await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await r.ReadAsync(cancellationToken)) versions.Add(r.GetString(0));
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
     }
 

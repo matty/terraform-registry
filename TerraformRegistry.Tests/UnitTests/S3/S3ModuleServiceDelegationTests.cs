@@ -52,6 +52,49 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
+    public async Task ListModulesAsyncPassesCancellationToDatabaseService()
+    {
+        var request = new ModuleSearchRequest();
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.ListModulesAsync(request, cancellation.Token))
+            .ReturnsAsync(new ModuleList { Modules = [], Meta = [] });
+
+        var service = CreateService();
+        await service.ListModulesAsync(request, cancellation.Token);
+
+        _mockDatabaseService.Verify(x => x.ListModulesAsync(request, cancellation.Token), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetModuleAsyncPassesCancellationToDatabaseService()
+    {
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.GetModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
+            .ReturnsAsync((TerraformModule?)null);
+
+        await CreateService().GetModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token);
+
+        _mockDatabaseService.Verify(
+            x => x.GetModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetModuleVersionsAsyncPassesCancellationToDatabaseService()
+    {
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.GetModuleVersionsAsync("ns", "name", "aws", cancellation.Token))
+            .ReturnsAsync(new ModuleVersions { Modules = [] });
+
+        await CreateService().GetModuleVersionsAsync("ns", "name", "aws", cancellation.Token);
+
+        _mockDatabaseService.Verify(
+            x => x.GetModuleVersionsAsync("ns", "name", "aws", cancellation.Token), Times.Once);
+    }
+
+    [Fact]
     public async Task GetModuleAsyncDelegatesToDatabaseService()
     {
         var expected = new TerraformModule

@@ -13,8 +13,8 @@ public class ModuleHandlersPaginationTests
     {
         ModuleSearchRequest? captured = null;
         var service = new Mock<IModuleService>();
-        service.Setup(x => x.ListModulesAsync(It.IsAny<ModuleSearchRequest>()))
-            .Callback<ModuleSearchRequest>(request => captured = request)
+        service.Setup(x => x.ListModulesAsync(It.IsAny<ModuleSearchRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ModuleSearchRequest, CancellationToken>((request, _) => captured = request)
             .ReturnsAsync(new ModuleList { Modules = [], Meta = [] });
 
         await ModuleHandlers.ListModules(
@@ -26,6 +26,23 @@ public class ModuleHandlersPaginationTests
         Assert.NotNull(captured);
         Assert.Equal(0, captured.Offset);
         Assert.Equal(100, captured.Limit);
+    }
+
+    [Fact]
+    public async Task ListModulesPassesRequestAbortedToModuleService()
+    {
+        var cancellation = new CancellationTokenSource();
+        CancellationToken captured = default;
+        var context = new DefaultHttpContext();
+        context.RequestAborted = cancellation.Token;
+        var service = new Mock<IModuleService>();
+        service.Setup(x => x.ListModulesAsync(It.IsAny<ModuleSearchRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ModuleSearchRequest, CancellationToken>((_, token) => captured = token)
+            .ReturnsAsync(new ModuleList { Modules = [], Meta = [] });
+
+        await ModuleHandlers.ListModules(service.Object, context);
+
+        Assert.Equal(cancellation.Token, captured);
     }
 
     [Fact]

@@ -15,8 +15,9 @@ public sealed class PostgreSqlModuleRepository(
     string baseUrl,
     ILogger logger) : IModuleRepository
 {
-    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         var (whereClause, parameters) = BuildListFilter(request);
@@ -116,8 +117,10 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             SELECT 
                 namespace,
@@ -156,7 +159,7 @@ public sealed class PostgreSqlModuleRepository(
         var publishedAt = reader.GetDateTime(6);
         await reader.DisposeAsync();
 
-        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new TerraformModule
         {
@@ -185,12 +188,14 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
-        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new ModuleVersions
         {
@@ -208,8 +213,9 @@ public sealed class PostgreSqlModuleRepository(
     ///     Gets the storage path information for a specific module version
     /// </summary>
     public async Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             SELECT
                 namespace,
@@ -740,7 +746,7 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
     private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string moduleNamespace,
-        string name, string provider)
+        string name, string provider, CancellationToken cancellationToken)
     {
         const string sql = @"
             SELECT version
@@ -756,8 +762,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
 
         var versions = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) versions.Add(reader.GetString(0));
 
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
     }

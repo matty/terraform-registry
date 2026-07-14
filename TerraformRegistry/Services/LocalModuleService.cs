@@ -184,34 +184,37 @@ public class LocalModuleService : ModuleService
     /// <summary>
     ///     Lists all modules based on search criteria
     /// </summary>
-    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListModulesAsync(request);
+        return _databaseService.ListModulesAsync(request, cancellationToken);
     }
 
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider, cancellationToken);
     }
 
     /// <summary>
     ///     Gets the download path for a specific module version
     /// </summary>
     public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+        cancellationToken.ThrowIfCancellationRequested();
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version, cancellationToken);
         if (moduleStorage == null)
             return null;
         if (!IsInsideStorageRoot(moduleStorage.FilePath))
