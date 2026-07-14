@@ -27,6 +27,20 @@ only for `push` events or an explicitly requested `workflow_dispatch` with
 `push_image=true`. Consequently, a `merge_group` build cannot log into GHCR,
 push an image, create a tag, or receive registry/OIDC write permissions.
 
+## Renovate merge watcher
+
+`Renovate merge watcher` runs only from the trusted `develop` revision on an
+hourly schedule or by manual dispatch. It examines routine Renovate PRs without
+checking out or executing their code, and can merge at most one with a rebase.
+It requires the protected CI/security checks, `renovate/stability-days`, a
+clean current merge state, an unchanged head SHA, and no comments, reviews, or
+unresolved review threads. A pending stability status is never mergeable.
+
+The watcher excludes vulnerability-alert updates and dashboard-approved major
+updates. It also waits for the previous `develop` CI and Security runs to
+succeed before considering another dependency PR. Human-authored PRs are never
+eligible for this automation.
+
 ## Repository settings required outside this repository
 
 An administrator must create a branch ruleset matching `remediation/phase/**`
