@@ -98,6 +98,9 @@ if [[ "$args" == *"/commits/"*"/check-runs?"* ]]; then
   if [[ "$fixture" == "queued-required-check" ]]; then
     required='[{"name":".NET build, test, coverage","status":"queued","conclusion":null},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
   fi
+  if [[ "$fixture" == "cancelled-required-check" ]]; then
+    required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"success"},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"cancelled"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
+  fi
   printf '{"check_runs":%s}' "$required"
   exit 0
 fi
@@ -145,7 +148,8 @@ run_fixture pending-stability 0 skipped-pending-stability
 run_fixture comments 0 skipped-comments-or-reviews
 run_fixture unresolved-threads 0 skipped-unresolved-review-thread
 run_fixture failed-required-check 1 failed-required-check
-run_fixture queued-required-check 1 failed-required-check
+run_fixture queued-required-check 0 skipped-pending-required-check
+run_fixture cancelled-required-check 0 skipped-pending-required-check
 run_fixture changed-head 1 changed-head
 run_fixture changed-base 1 changed-base
 run_fixture unclean-merge-state 1 unclean-merge-state
@@ -162,4 +166,4 @@ PATH="$tmp/bin:$PATH" GH_REPO=example/registry WATCHER_FIXTURE=eligible WATCHER_
 test "$(wc -l <"$eligible_state/calls")" -eq 1
 grep -Fqx 'decision=merged pr=42' "$eligible_state/output"
 
-echo 'merge-renovate-pr tests: 10 fixtures passed'
+echo 'merge-renovate-pr tests: 11 fixtures passed'

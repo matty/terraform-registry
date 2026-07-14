@@ -77,9 +77,22 @@ check_state() {
   for required in "${REQUIRED_CHECKS[@]}"; do
     if ! jq -e --arg required "$required" '
       [.check_runs[] | select(.name == $required)] as $matching |
-      ($matching | length) > 0 and
-      all($matching[]; .status == "completed" and .conclusion == "success")
+      ($matching | length) > 0 and all($matching[]; .status == "completed")
     ' <<<"$checks" >/dev/null; then
+      printf 'pending-required-check\n'
+      return 0
+    fi
+    if ! jq -e --arg required "$required" '
+      [.check_runs[] | select(.name == $required)] as $matching |
+      all($matching[]; .conclusion == "success")
+    ' <<<"$checks" >/dev/null; then
+      if jq -e --arg required "$required" '
+        [.check_runs[] | select(.name == $required)] |
+        any(.[]; .conclusion == "cancelled")
+      ' <<<"$checks" >/dev/null; then
+        printf 'pending-required-check\n'
+        return 0
+      fi
       printf 'failed-required-check\n'
       return 0
     fi
@@ -110,6 +123,7 @@ inspect() {
 
   case "$(check_state "$sha")" in
     successful) ;;
+    pending-required-check) printf 'pending-required-check\n'; return 0 ;;
     pending-stability) printf 'pending-stability\n'; return 0 ;;
     failed-required-check) printf 'failed-required-check\n'; return 0 ;;
     *) printf 'inconclusive-check-state\n'; return 0 ;;
@@ -169,6 +183,7 @@ fi
 initial_result="$(inspect "$number" "$initial_pr")"
 case "$initial_result" in
   eligible:*) initial_sha="${initial_result#eligible:}" ;;
+  pending-required-check) report 'skipped-pending-required-check' "$number"; exit 0 ;;
   comments-or-reviews) report 'skipped-comments-or-reviews' "$number"; exit 0 ;;
   unresolved-review-thread) report 'skipped-unresolved-review-thread' "$number"; exit 0 ;;
   pending-stability) report 'skipped-pending-stability' "$number"; exit 0 ;;
@@ -197,6 +212,7 @@ fi
 final_result="$(inspect "$number" "$final_pr")"
 case "$final_result" in
   "eligible:$initial_sha") ;;
+  pending-required-check) report 'skipped-pending-required-check' "$number"; exit 0 ;;
   comments-or-reviews) report 'skipped-comments-or-reviews' "$number"; exit 0 ;;
   unresolved-review-thread) report 'skipped-unresolved-review-thread' "$number"; exit 0 ;;
   pending-stability) report 'skipped-pending-stability' "$number"; exit 0 ;;
