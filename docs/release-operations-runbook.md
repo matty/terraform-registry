@@ -26,6 +26,15 @@ docker buildx imagetools inspect "$IMAGE:$VERSION"
 # Copy the reported sha256 digest into the change record.
 ```
 
+## Pre-publication candidate verification
+
+The labelled-candidate CI artifact verifies the portable P5/P6 gates before an
+image is published. This artifact is not release certification until immutable post-publication digest evidence is recorded: its `image_digest` is deliberately null and its release-certification status remains incomplete.
+After publication, create the explicit post-publication evidence record with
+the immutable registry digest for the exact candidate SHA and version before
+approving rollout. A local Docker image ID or a mutable tag is not acceptable
+digest evidence.
+
 The image is designed to run as the non-root `app` user. Retain the existing
 writable mounts for `/app/modules`, `/app/providers`, and `/data` when using
 local storage; the Phase 1 deployment gate verifies those paths.
