@@ -112,9 +112,77 @@ sed -i \
   -e 's#| Fault and load result | REQUIRED |#| Fault and load result | PASS |#' \
   -e 's#| Operability gate result | REQUIRED |#| Operability gate result | PASS |#' \
   "$copy/docs/release-candidate-evidence.md"
+
+create_evidence_artifact() {
+  local archive="$1"
+  local artifact_sha="$2"
+  local artifact_ref="$3"
+  local gates_json="$4"
+  local pre_publication_passed="${5:-true}"
+  local artifact_dir
+  artifact_dir="$(mktemp -d)"
+  jq -n \
+    --arg candidate_sha "$artifact_sha" \
+    --arg candidate_ref "$artifact_ref" \
+    --argjson gates "$gates_json" \
+    --argjson pre_publication_passed "$pre_publication_passed" \
+    '{
+      schema_version: 1,
+      candidate_sha: $candidate_sha,
+      candidate_ref: $candidate_ref,
+      candidate_version: "0.0.0-test",
+      event_name: "workflow_dispatch",
+      dotnet_sdk_version: "10.0.301",
+      terraform_versions: ["1.12.0", "1.14.2"],
+      gates: $gates,
+      pre_publication_verification_passed: $pre_publication_passed,
+      verification_status: "pre-publication-verification",
+      release_certification_complete: false,
+      release_certification_status: "incomplete-requires-immutable-registry-digest",
+      image_digest: null,
+      required_post_publication_evidence: true,
+      required_post_publication_evidence_kinds: ["immutable-registry-digest"],
+      generated_at_utc: "2026-07-14T00:00:00Z"
+    }' > "$artifact_dir/final-candidate-certification-evidence.json"
+  # GitHub exposes action artifacts as ZIP archives. The portable test fixture
+  # uses the Python standard library because the development image supplies
+  # unzip (needed by the validator) but not the optional zip CLI.
+  python3 - "$artifact_dir" "$archive" <<'PY'
+import sys
+import zipfile
+
+source_dir, archive = sys.argv[1:]
+with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
+    output.write(
+        f"{source_dir}/final-candidate-certification-evidence.json",
+        "final-candidate-certification-evidence.json",
+    )
+PY
+  rm -rf "$artifact_dir"
+}
+
+required_gates='[
+  {"name":"operability-contract","result":"passed"},
+  {"name":"operability","result":"passed"},
+  {"name":"fault-load-contract","result":"passed"},
+  {"name":"fault-load","result":"passed"},
+  {"name":"terraform-backend-contract","result":"passed"},
+  {"name":"terraform-backend-matrix","result":"passed"},
+  {"name":"release-runbooks","result":"passed"},
+  {"name":"release-runbooks-contract","result":"passed"}
+]'
+
 fake_gh="$copy/fake-gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
+  'if [[ "$*" == *"/artifacts/"*"/zip"* ]]; then' \
+  '  cat "${FAKE_ARTIFACT_ARCHIVE:?}"' \
+  '  exit 0' \
+  'fi' \
+  'if [[ "$*" == *"/artifacts"* ]]; then' \
+  '  printf "%s\\n" "${FAKE_ARTIFACT_ID-123}"' \
+  '  exit 0' \
+  'fi' \
   'if [[ "$*" == *"/jobs"* ]]; then' \
   "  printf '%s\\n' $'Pre-publication candidate verification\\tsuccess'" \
   '  exit 0' \
@@ -129,17 +197,66 @@ chmod +x "$fake_gh"
 fake_oci="$copy/fake-oci"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\t%s\\n" "$1" "${FAKE_OCI_REVISION:?}"' > "$fake_oci"
 chmod +x "$fake_oci"
-GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
+artifact_archive="$copy/evidence.zip"
+create_evidence_artifact "$artifact_archive" "$revision" refs/heads/develop "$required_gates"
 
-if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
-  echo 'validator accepted a verification run for a different revision' >&2
+# A workflow_dispatch run is recorded at the workflow ref (develop), while its
+# uploaded evidence binds the explicitly checked-out release candidate. The
+# validator must accept that authoritative, bound artifact.
+GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$artifact_archive" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
+
+mismatched_artifact="$copy/mismatched-evidence.zip"
+create_evidence_artifact "$mismatched_artifact" "$(printf '%040d' 0)" refs/heads/develop "$required_gates"
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$mismatched_artifact" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted evidence for a different candidate revision' >&2
   exit 1
 fi
-if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$revision" FAKE_RUN_NAME=other "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ID= FAKE_ARTIFACT_ARCHIVE="$artifact_archive" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted a missing candidate evidence artifact' >&2
+  exit 1
+fi
+
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$copy/unreadable-evidence.zip" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted an unreadable candidate evidence artifact' >&2
+  exit 1
+fi
+
+missing_gate_artifact="$copy/missing-gate-evidence.zip"
+missing_gate_json='[
+  {"name":"operability-contract","result":"passed"},
+  {"name":"operability","result":"passed"},
+  {"name":"fault-load-contract","result":"passed"},
+  {"name":"fault-load","result":"passed"},
+  {"name":"terraform-backend-contract","result":"passed"},
+  {"name":"terraform-backend-matrix","result":"passed"},
+  {"name":"release-runbooks","result":"passed"}
+]'
+create_evidence_artifact "$missing_gate_artifact" "$revision" refs/heads/develop "$missing_gate_json"
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$missing_gate_artifact" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted evidence with a missing required gate' >&2
+  exit 1
+fi
+
+failed_verification_artifact="$copy/failed-verification-evidence.zip"
+create_evidence_artifact "$failed_verification_artifact" "$revision" refs/heads/develop "$required_gates" false
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$failed_verification_artifact" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted evidence whose pre-publication verification failed' >&2
+  exit 1
+fi
+
+noncanonical_ref_artifact="$copy/noncanonical-ref-evidence.zip"
+create_evidence_artifact "$noncanonical_ref_artifact" "$revision" refs/pull/1/head "$required_gates"
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$noncanonical_ref_artifact" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted evidence with a non-canonical candidate reference' >&2
+  exit 1
+fi
+
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$artifact_archive" FAKE_RUN_NAME=other "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a non-CI workflow as candidate verification' >&2
   exit 1
 fi
-if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$(printf '%040d' 0)" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$(printf '%040d' 0)" FAKE_ARTIFACT_ARCHIVE="$artifact_archive" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a digest whose OCI revision label is unrelated' >&2
   exit 1
 fi
