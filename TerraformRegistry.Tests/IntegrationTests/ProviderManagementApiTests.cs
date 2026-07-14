@@ -326,6 +326,7 @@ public class ProviderManagementApiTests(ITestOutputHelper output) : IntegrationT
         };
 
         Assert.Null(request.Content.Headers.ContentLength);
+        request.Headers.TransferEncodingChunked = true;
 
         var response = await client.SendAsync(request);
 
