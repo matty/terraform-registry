@@ -47,6 +47,8 @@ services:
       TF_REG_BaseUrl: https://registry.local
       TF_REG_StorageProvider: ${STORAGE_PROVIDER}
       TF_REG_AuthorizationToken: MY_TOKEN_123
+      TF_REG_DevAuthBypass: "true"
+      TF_REG_AdminEmails: dev@localhost
       TF_REG_AzureStorage__ContainerName: modules
       TF_REG_AzureStorage__ConnectionString: DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;
       TF_REG_S3__BucketName: modules

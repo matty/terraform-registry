@@ -4,6 +4,9 @@ set -euo pipefail
 repo_root="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 app_port="${TF_REG_SMOKE_APP_PORT:-$((15000 + RANDOM % 10000))}"
 registry_port="${TF_REG_SMOKE_REGISTRY_PORT:-$((25000 + RANDOM % 10000))}"
+remote_app_base_url="${TF_REG_SMOKE_REMOTE_APP_BASE_URL:-}"
+remote_public_base_url="${TF_REG_SMOKE_REMOTE_PUBLIC_BASE_URL:-}"
+remote_tls_cert="${TF_REG_SMOKE_SSL_CERT_FILE:-}"
 registry_host="localhost:${registry_port}"
 app_base_url="http://localhost:${app_port}"
 public_base_url="https://${registry_host}"
@@ -87,17 +90,31 @@ require_command openssl
 require_command python3
 ensure_terraform
 
+if [[ -n "${remote_app_base_url}" || -n "${remote_public_base_url}" || -n "${remote_tls_cert}" ]]; then
+    [[ -n "${remote_app_base_url}" && -n "${remote_public_base_url}" && -n "${remote_tls_cert}" ]] || {
+        echo "Remote provider smoke requires TF_REG_SMOKE_REMOTE_APP_BASE_URL, TF_REG_SMOKE_REMOTE_PUBLIC_BASE_URL, and TF_REG_SMOKE_SSL_CERT_FILE" >&2
+        exit 2
+    }
+    app_base_url="${remote_app_base_url}"
+    public_base_url="${remote_public_base_url}"
+    registry_host="${public_base_url#https://}"
+    tls_cert="${remote_tls_cert}"
+else
+    tls_cert="${work_dir}/localhost.crt"
+fi
+
 release_dir="${work_dir}/release"
 mkdir -p "${release_dir}"
 bash "${repo_root}/TerraformRegistry.Tests/TestData/provider-release/create-test-provider-release.sh" "${release_dir}"
 
-tls_cert="${work_dir}/localhost.crt"
 tls_key="${work_dir}/localhost.key"
-openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
-    -subj "/CN=localhost" \
-    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
-    -keyout "${tls_key}" \
-    -out "${tls_cert}" >/dev/null 2>&1
+if [[ -z "${remote_app_base_url}" ]]; then
+    openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+        -subj "/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+        -keyout "${tls_key}" \
+        -out "${tls_cert}" >/dev/null 2>&1
+fi
 
 tls_proxy="${work_dir}/tls-proxy.py"
 cat > "${tls_proxy}" <<'PY'
@@ -187,21 +204,23 @@ main()
 PY
 
 server_log="${work_dir}/registry.log"
-ASPNETCORE_ENVIRONMENT=Development \
-ASPNETCORE_URLS="${app_base_url}" \
-TF_REG_BaseUrl="${public_base_url}" \
-TF_REG_Port="${app_port}" \
-TF_REG_AuthorizationToken="${auth_token}" \
-TF_REG_DevAuthBypass=true \
-TF_REG_AdminEmails=dev@localhost \
-TF_REG_DatabaseProvider=sqlite \
-TF_REG_Sqlite__ConnectionString="Data Source=${work_dir}/terraform-registry.db" \
-TF_REG_StorageProvider=local \
-TF_REG_ModuleStoragePath="${work_dir}/modules" \
-TF_REG_ProviderStoragePath="${work_dir}/providers" \
-TF_REG_Oidc__JwtSecretKey=provider-smoke-jwt-secret-key-32-chars \
-    dotnet run --project "${repo_root}/TerraformRegistry/TerraformRegistry.csproj" --no-launch-profile >"${server_log}" 2>&1 &
-app_pid="$!"
+if [[ -z "${remote_app_base_url}" ]]; then
+    ASPNETCORE_ENVIRONMENT=Development \
+    ASPNETCORE_URLS="${app_base_url}" \
+    TF_REG_BaseUrl="${public_base_url}" \
+    TF_REG_Port="${app_port}" \
+    TF_REG_AuthorizationToken="${auth_token}" \
+    TF_REG_DevAuthBypass=true \
+    TF_REG_AdminEmails=dev@localhost \
+    TF_REG_DatabaseProvider=sqlite \
+    TF_REG_Sqlite__ConnectionString="Data Source=${work_dir}/terraform-registry.db" \
+    TF_REG_StorageProvider=local \
+    TF_REG_ModuleStoragePath="${work_dir}/modules" \
+    TF_REG_ProviderStoragePath="${work_dir}/providers" \
+    TF_REG_Oidc__JwtSecretKey=provider-smoke-jwt-secret-key-32-chars \
+        dotnet run --project "${repo_root}/TerraformRegistry/TerraformRegistry.csproj" --no-launch-profile >"${server_log}" 2>&1 &
+    app_pid="$!"
+fi
 
 for _ in {1..90}; do
     if curl -fsS "${app_base_url}/.well-known/terraform.json" >/dev/null 2>&1; then
@@ -222,9 +241,11 @@ if ! curl -fsS "${app_base_url}/.well-known/terraform.json" >/dev/null; then
     exit 1
 fi
 
-APP_PORT="${app_port}" REGISTRY_PORT="${registry_port}" TLS_CERT="${tls_cert}" TLS_KEY="${tls_key}" \
-    python3 "${tls_proxy}" >"${work_dir}/tls-proxy.log" 2>&1 &
-proxy_pid="$!"
+if [[ -z "${remote_app_base_url}" ]]; then
+    APP_PORT="${app_port}" REGISTRY_PORT="${registry_port}" TLS_CERT="${tls_cert}" TLS_KEY="${tls_key}" \
+        python3 "${tls_proxy}" >"${work_dir}/tls-proxy.log" 2>&1 &
+    proxy_pid="$!"
+fi
 
 for _ in {1..30}; do
     if curl --cacert "${tls_cert}" -fsS "${public_base_url}/.well-known/terraform.json" >/dev/null 2>&1; then

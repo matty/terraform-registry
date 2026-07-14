@@ -35,27 +35,53 @@ run_version() {
   container="$(docker create "$image")"
   trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$terraform_dir"' RETURN
   docker cp "$container:/bin/terraform" "$terraform_dir/terraform"
-  chmod +x "$terraform_dir/terraform"
+  # The signed-provider helper deliberately runs as the image's non-root app
+  # user, so the ephemeral host directory must be traversable without granting
+  # it write access.
+  chmod 755 "$terraform_dir"
+  chmod 755 "$terraform_dir/terraform"
 
-  printf 'Running Terraform %s Local/Azurite/MinIO module matrix.\n' "$label"
+  printf 'Running Terraform %s Local module evidence.\n' "$label"
   TF_REGISTRY_TERRAFORM_IMAGE="$image" \
     bash "$ROOT/scripts/remediation/phase-1-local-terraform-smoke.sh"
-  TF_REGISTRY_TERRAFORM_IMAGE="$image" \
-    bash "$ROOT/scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh" \
-      --provider all --home "$HOME_DIR/$label"
 
-  # The provider smoke creates a signed fabricated provider and performs a
-  # real Terraform installation. It is intentionally local: the emulator
-  # module matrix above covers backend protocol behavior, while provider
-  # storage implementations are exercised in the dedicated backend tests.
-  printf 'Running Terraform %s signed-provider Local registry evidence.\n' "$label"
+  # Build once per supported Terraform version. The helper runs as its declared
+  # non-root user and talks to the final registry image over the emulator
+  # network, so the provider path exercises the same Azure/S3 storage backend
+  # as modules rather than a Local-only development host.
   docker build -f "$ROOT/scripts/remediation/terraform-provider-smoke.Dockerfile" \
     -t "terraform-registry-provider-smoke:$label" "$ROOT" >/dev/null
-  docker run --rm -v "$ROOT:/src" -v "$terraform_dir:/tools:ro" -w /src \
-    -e PATH='/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
-    -e TF_REG_SMOKE_TERRAFORM_VERSION="${label#terraform-}" \
-    "terraform-registry-provider-smoke:$label" \
-    bash /src/devutils/provider-registry-terraform-smoke-test.sh
+
+  run_emulator_provider() {
+    local storage_provider="$1" project network caddy caddy_ip
+    project="tfregstorage$(printf '%s' "$HOME_DIR/$label" | sha256sum | cut -c1-12)"
+    network="${project}_default"
+    printf 'Running Terraform %s %s module and signed-provider evidence.\n' "$label" "$storage_provider"
+    TF_REGISTRY_TERRAFORM_IMAGE="$image" \
+      bash "$ROOT/scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh" \
+        --provider "$storage_provider" --keep-running --home "$HOME_DIR/$label"
+
+    caddy="$(docker compose --project-name "$project" --project-directory "$HOME_DIR/$label" -f "$HOME_DIR/$label/compose.yaml" ps -q caddy)"
+    caddy_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$caddy")"
+    # Caddy stores its private CA hierarchy as root-only. Copy only its public
+    # root certificate into the read-only tool mount so the non-root provider
+    # helper can verify the registry TLS endpoint without gaining volume access.
+    docker cp "$caddy:/data/caddy/pki/authorities/local/root.crt" "$terraform_dir/caddy-root.crt"
+    chmod 644 "$terraform_dir/caddy-root.crt"
+    docker run --rm --network "$network" --add-host "registry.local:${caddy_ip}" \
+      -v "$terraform_dir:/tools:ro" \
+      -e PATH='/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+      -e TF_REG_SMOKE_TERRAFORM_VERSION="${label#terraform-}" \
+      -e TF_REG_SMOKE_REMOTE_APP_BASE_URL='http://app:5131' \
+      -e TF_REG_SMOKE_REMOTE_PUBLIC_BASE_URL='https://registry.local' \
+      -e TF_REG_SMOKE_SSL_CERT_FILE='/tools/caddy-root.crt' \
+      "terraform-registry-provider-smoke:$label" \
+      bash /src/devutils/provider-registry-terraform-smoke-test.sh
+    "$ROOT/scripts/remediation/storage-emulators/storage-emulators.sh" clean --home "$HOME_DIR/$label"
+  }
+
+  run_emulator_provider azure
+  run_emulator_provider s3
   docker image rm -f "terraform-registry-provider-smoke:$label" >/dev/null
 
   docker build -t "terraform-registry-matrix:$label" "$ROOT" >/dev/null

@@ -6,9 +6,10 @@ LIFECYCLE="$ROOT/scripts/remediation/storage-emulators/storage-emulators.sh"
 HOME_DIR="$HOME/.terraform-registry-storage-test"
 PROVIDER="all"
 TERRAFORM_IMAGE="${TF_REGISTRY_TERRAFORM_IMAGE:-hashicorp/terraform:1.14.2@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf}"
+KEEP_RUNNING=false
 
 usage() {
-  printf 'Usage: %s [--provider azure|s3|all] [--home ABSOLUTE_PATH]\n' "$0" >&2
+  printf 'Usage: %s [--provider azure|s3|all] [--home ABSOLUTE_PATH] [--keep-running]\n' "$0" >&2
   exit 2
 }
 
@@ -16,6 +17,7 @@ while (($#)); do
   case "$1" in
     --provider) PROVIDER="${2:-}"; shift ;;
     --home) HOME_DIR="${2:-}"; shift ;;
+    --keep-running) KEEP_RUNNING=true ;;
     *) usage ;;
   esac
   shift
@@ -165,9 +167,9 @@ EOF
 
 if [[ "$PROVIDER" = all ]]; then
   run_provider azure
-  "$LIFECYCLE" clean --home "$HOME_DIR"
+  if [[ "$KEEP_RUNNING" = false ]]; then "$LIFECYCLE" clean --home "$HOME_DIR"; fi
   run_provider s3
-  "$LIFECYCLE" clean --home "$HOME_DIR"
+  if [[ "$KEEP_RUNNING" = false ]]; then "$LIFECYCLE" clean --home "$HOME_DIR"; fi
 else
   run_provider "$PROVIDER"
 fi
