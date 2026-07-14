@@ -137,7 +137,7 @@ public class AzureBlobModuleServiceUploadTests
             .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
         _mockContainerClient.Setup(cc => cc.GetBlobClient(It.IsAny<string>())).Returns(mockBlobClient.Object);
         _mockDatabaseService.Setup(db => db.GetModuleStorageAsync("ns", "name", "prov", "1.0.0"))
-            .ReturnsAsync(null);
+            .ReturnsAsync((ModuleStorage?)null);
         _mockDatabaseService.Setup(db => db.CreatePublicationAttemptWithExtractionJobAsync(
                 It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleExtractionJob>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
