@@ -502,7 +502,7 @@ public static class ModuleHandlers
             Limit = Math.Clamp(limit, 1, 100)
         };
 
-        var result = await moduleService.ListDeletedModulesAsync(request);
+        var result = await moduleService.ListDeletedModulesAsync(request, context.RequestAborted);
         return Ok(result);
     }
 

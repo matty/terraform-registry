@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Moq;
+using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
@@ -129,8 +130,8 @@ public class ModuleHandlersPaginationTests
     {
         ModuleSearchRequest? captured = null;
         var service = new Mock<IModuleService>();
-        service.Setup(x => x.ListDeletedModulesAsync(It.IsAny<ModuleSearchRequest>()))
-            .Callback<ModuleSearchRequest>(request => captured = request)
+        service.Setup(x => x.ListDeletedModulesAsync(It.IsAny<ModuleSearchRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ModuleSearchRequest, CancellationToken>((request, _) => captured = request)
             .ReturnsAsync(new ModuleList { Modules = [], Meta = [] });
 
         await ModuleHandlers.ListDeletedModules(
@@ -142,6 +143,22 @@ public class ModuleHandlersPaginationTests
         Assert.NotNull(captured);
         Assert.Equal(0, captured.Offset);
         Assert.Equal(100, captured.Limit);
+    }
+
+    [Fact]
+    public async Task ListDeletedModulesPassesRequestAbortedToModuleService()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var context = new DefaultHttpContext { RequestAborted = cancellation.Token };
+        context.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+            [new System.Security.Claims.Claim("permission", Permissions.ModulesDelete)], "test"));
+        var service = new Mock<IModuleService>();
+        service.Setup(x => x.ListDeletedModulesAsync(It.IsAny<ModuleSearchRequest>(), cancellation.Token))
+            .ReturnsAsync(new ModuleList { Modules = [], Meta = [] });
+
+        await ModuleHandlers.ListDeletedModules(service.Object, context);
+
+        service.Verify(x => x.ListDeletedModulesAsync(It.IsAny<ModuleSearchRequest>(), cancellation.Token), Times.Once);
     }
 
     private static ModuleVersions CreateVersions(string version) => new()

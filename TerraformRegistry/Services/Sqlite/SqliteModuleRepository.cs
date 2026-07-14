@@ -512,12 +512,13 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
         var modules = new List<ModuleListItem>();
 
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         var sql = @"SELECT namespace, name, provider, version, description, published_at
             FROM modules WHERE deleted_at IS NOT NULL";
@@ -552,8 +553,8 @@ public sealed class SqliteModuleRepository(
         command.CommandText = sql;
         foreach (var p in parameters) command.Parameters.Add(p);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             modules.Add(new ModuleListItem
             {

@@ -73,7 +73,7 @@ public interface IModuleRepository
     /// <summary>
     ///     Lists all soft-deleted modules.
     /// </summary>
-    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets a module including soft-deleted ones.

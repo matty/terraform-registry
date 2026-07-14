@@ -25,7 +25,8 @@ public interface IModuleExtractionRepository
         string moduleNamespace,
         string name,
         string provider,
-        string version);
+        string version,
+        CancellationToken cancellationToken = default);
 
     Task UpsertModuleLlmContextAsync(
         string moduleNamespace,

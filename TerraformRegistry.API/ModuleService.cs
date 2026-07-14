@@ -100,7 +100,8 @@ public abstract class ModuleService : IModuleService
     /// <summary>
     ///     Lists all soft-deleted modules
     /// </summary>
-    public abstract Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+    public abstract Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Updates the description for all active versions of a module

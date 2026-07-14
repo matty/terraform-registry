@@ -70,7 +70,7 @@ public interface IModuleService
     /// <summary>
     ///     Lists all soft-deleted modules
     /// </summary>
-    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Updates the description for all active versions of a module

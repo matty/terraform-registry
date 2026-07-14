@@ -423,9 +423,10 @@ public class LocalModuleService : ModuleService
         return await _databaseService.RemoveModuleAsync(moduleStorage);
     }
 
-    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListDeletedModulesAsync(request);
+        return _databaseService.ListDeletedModulesAsync(request, cancellationToken);
     }
 
     public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,

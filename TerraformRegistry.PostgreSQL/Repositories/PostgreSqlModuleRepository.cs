@@ -611,7 +611,8 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
         var modules = new List<ModuleListItem>();
         var conditions = new List<string>();
@@ -648,13 +649,13 @@ public sealed class PostgreSqlModuleRepository(
         parameters.Add(new NpgsqlParameter($"@p{paramCounter + 1}", request.Offset));
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddRange(parameters.ToArray());
 
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var ns = reader.GetString(0);
             var n = reader.GetString(1);

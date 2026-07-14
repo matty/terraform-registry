@@ -116,8 +116,8 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
     public Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version) =>
         _modules.RestoreModuleAsync(moduleNamespace, name, provider, version);
 
-    public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request) =>
-        _modules.ListDeletedModulesAsync(request);
+    public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
+        _modules.ListDeletedModulesAsync(request, cancellationToken);
 
     public Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(
         string moduleNamespace,
@@ -149,8 +149,9 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
         string moduleNamespace,
         string name,
         string provider,
-        string version) =>
-        _moduleExtractions.GetModuleLlmContextAsync(moduleNamespace, name, provider, version);
+        string version,
+        CancellationToken cancellationToken = default) =>
+        _moduleExtractions.GetModuleLlmContextAsync(moduleNamespace, name, provider, version, cancellationToken);
 
     public Task UpsertModuleLlmContextAsync(
         string moduleNamespace,
