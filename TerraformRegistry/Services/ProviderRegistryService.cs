@@ -240,6 +240,15 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         return await _repository.SetVersionShasumsPathAsync(providerVersion.Id, saveResult.StoragePath);
     }
 
+    public async Task<bool> UploadShasumsAsync(string providerNamespace, string type, string version, Stream content,
+        long contentLength, CancellationToken cancellationToken)
+    {
+        var providerVersion = await RequireProviderVersionAsync(providerNamespace, type, version);
+        var saveResult = await _storage.SaveAsync(
+            ShasumsPath(providerNamespace, type, version), content, contentLength, cancellationToken);
+        return await _repository.SetVersionShasumsPathAsync(providerVersion.Id, saveResult.StoragePath);
+    }
+
     public async Task<bool> UploadShasumsSignatureAsync(string providerNamespace, string type, string version, Stream content,
         CancellationToken cancellationToken)
     {
@@ -247,6 +256,15 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         await using var bufferedContent = await CopyToReplayableFileAsync(content, _uploadOptions.MaxChecksumBytes,
             "SHA256SUMS signature", cancellationToken);
         var saveResult = await _storage.SaveAsync(SignaturePath(providerNamespace, type, version), bufferedContent, cancellationToken);
+        return await _repository.SetVersionShasumsSignaturePathAsync(providerVersion.Id, saveResult.StoragePath);
+    }
+
+    public async Task<bool> UploadShasumsSignatureAsync(string providerNamespace, string type, string version, Stream content,
+        long contentLength, CancellationToken cancellationToken)
+    {
+        var providerVersion = await RequireProviderVersionAsync(providerNamespace, type, version);
+        var saveResult = await _storage.SaveAsync(
+            SignaturePath(providerNamespace, type, version), content, contentLength, cancellationToken);
         return await _repository.SetVersionShasumsSignaturePathAsync(providerVersion.Id, saveResult.StoragePath);
     }
 

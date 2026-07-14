@@ -41,6 +41,32 @@ public class S3ProviderArtifactStorageTests
     }
 
     [Fact]
+    public async Task SaveAsyncSetsContentLengthForNonSeekableRequestStream()
+    {
+        PutObjectRequest? capturedRequest = null;
+        _s3Client
+            .Setup(x => x.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<PutObjectRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+        _s3Client
+            .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GetObjectMetadataResponse { ContentLength = 3 });
+
+        var storage = CreateStorage();
+        await using var content = new NonSeekableReadStream([1, 2, 3]);
+
+        await storage.SaveAsync(
+            "acme/example/1.0.0/terraform-provider-example_1.0.0_SHA256SUMS",
+            content,
+            contentLength: 3,
+            CancellationToken.None);
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(3, capturedRequest!.Headers.ContentLength);
+        Assert.False(capturedRequest.AutoResetStreamPosition);
+    }
+
+    [Fact]
     public async Task CreateDownloadUrlAsyncReturnsPresignedUrlForStoredArtifact()
     {
         const string expectedUrl = "https://example.invalid/provider.zip";
@@ -268,5 +294,29 @@ public class S3ProviderArtifactStorageTests
                 ["S3:PresignedUrlExpiryMinutes"] = "17"
             })
             .Build();
+    }
+
+    private sealed class NonSeekableReadStream(byte[] bytes) : Stream
+    {
+        private readonly MemoryStream _inner = new(bytes);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override int Read(Span<byte> buffer) => _inner.Read(buffer);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

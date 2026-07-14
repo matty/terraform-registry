@@ -23,7 +23,21 @@ public interface IProviderRegistryService
 
     Task<ProviderVersion> CreateVersionAsync(string providerNamespace, string type, CreateProviderVersionRequest request);
     Task<bool> UploadShasumsAsync(string providerNamespace, string type, string version, Stream content, CancellationToken cancellationToken);
+    Task<bool> UploadShasumsAsync(
+        string providerNamespace,
+        string type,
+        string version,
+        Stream content,
+        long contentLength,
+        CancellationToken cancellationToken) => UploadShasumsAsync(providerNamespace, type, version, content, cancellationToken);
     Task<bool> UploadShasumsSignatureAsync(string providerNamespace, string type, string version, Stream content, CancellationToken cancellationToken);
+    Task<bool> UploadShasumsSignatureAsync(
+        string providerNamespace,
+        string type,
+        string version,
+        Stream content,
+        long contentLength,
+        CancellationToken cancellationToken) => UploadShasumsSignatureAsync(providerNamespace, type, version, content, cancellationToken);
     Task<bool> DeleteVersionAsync(string providerNamespace, string type, string version);
 
     Task<ProviderPlatform> CreatePlatformAsync(string providerNamespace, string type, string version, CreateProviderPlatformRequest request);

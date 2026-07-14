@@ -367,10 +367,12 @@ public static class ProviderHandlers
         if (denied != null) return denied;
 
         if (request.ContentLength == 0) return ErrorResponseExtensions.BadRequest("SHA256SUMS content is required.");
+        if (request.ContentLength is null) return Results.StatusCode(StatusCodes.Status411LengthRequired);
 
         try
         {
-            var uploaded = await providerService.UploadShasumsAsync(@namespace, type, version, request.Body, context.RequestAborted);
+            var uploaded = await providerService.UploadShasumsAsync(
+                @namespace, type, version, request.Body, request.ContentLength.Value, context.RequestAborted);
             return uploaded ? Results.NoContent() : ErrorResponseExtensions.NotFound("Provider version not found");
         }
         catch (ArgumentException ex)
@@ -395,10 +397,12 @@ public static class ProviderHandlers
         if (denied != null) return denied;
 
         if (request.ContentLength == 0) return ErrorResponseExtensions.BadRequest("SHA256SUMS signature content is required.");
+        if (request.ContentLength is null) return Results.StatusCode(StatusCodes.Status411LengthRequired);
 
         try
         {
-            var uploaded = await providerService.UploadShasumsSignatureAsync(@namespace, type, version, request.Body, context.RequestAborted);
+            var uploaded = await providerService.UploadShasumsSignatureAsync(
+                @namespace, type, version, request.Body, request.ContentLength.Value, context.RequestAborted);
             return uploaded ? Results.NoContent() : ErrorResponseExtensions.NotFound("Provider version not found");
         }
         catch (ArgumentException ex)
