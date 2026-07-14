@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Portable acceptance evidence for the completed mirror-containment package and
-# module-list SQL pagination. The selected fixtures map directly to the Phase
-# 2B gate in the remediation delivery plan.
+# module-list SQL pagination. The selected fixtures cover the production
+# mirror-containment and pagination contracts.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 

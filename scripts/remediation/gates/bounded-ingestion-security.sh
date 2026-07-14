@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Acceptance evidence for bounded archive/provider/webhook ingestion and the
-# identity controls that authorize it. Keep the filter explicit: each selected
-# fixture maps to a gate requirement in the remediation delivery plan.
+# identity controls that authorize it. Keep the filter explicit so the
+# production security contracts remain covered.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
