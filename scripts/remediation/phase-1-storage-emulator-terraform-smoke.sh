@@ -38,9 +38,11 @@ run_s3_provider_sidecar_contract() {
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' > "$fixture/$shasums_name"
   printf '%s\n' 'fabricated provider sidecar signature' > "$fixture/$signature_name"
 
-  docker compose --project-name "$project" --project-directory "$home_dir" -f "$home_dir/compose.yaml" \
-    exec -T postgres psql -U terraform_reg_user -d terraform_registry -v ON_ERROR_STOP=1 -c \
-    "INSERT INTO users (id, email, provider, provider_id) VALUES ('dev-user-001', 'dev@localhost', 'emulator', 'dev-user-001') ON CONFLICT (id) DO NOTHING; INSERT INTO user_roles (user_id, role_id, assigned_by) SELECT 'dev-user-001', id, 'storage-emulator-contract' FROM roles WHERE name = 'admin' ON CONFLICT (user_id, role_id) DO NOTHING;"
+  # Establish the configured DevAuthBypass identity through the application's
+  # development-only login endpoint. This creates the user and assigns the
+  # configured admin role before protected provider routes load RBAC claims.
+  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+    -X POST 'http://app:5131/api/auth/dev-login' | grep -qx '200'
 
   docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
     -H 'Content-Type: application/json' \
