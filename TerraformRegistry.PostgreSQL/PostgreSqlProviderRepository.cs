@@ -251,9 +251,10 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         return await reader.ReadAsync() ? MapVersion(reader) : null;
     }
 
-    public async Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version, string os, string arch)
+    public async Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version,
+        string os, string arch, CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(@"
             SELECT p.id, pv.protocols::text, pv.key_id, pv.shasums_storage_path, pv.shasums_signature_storage_path,
                    pp.os, pp.arch, pp.filename, pp.shasum, pp.package_storage_path,
@@ -270,8 +271,8 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         command.Parameters.AddWithValue("@os", os);
         command.Parameters.AddWithValue("@arch", arch);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
         if (reader.IsDBNull(3) || reader.IsDBNull(4) || reader.IsDBNull(9)) return null;
         return new ProviderPackageDetails(reader.GetGuid(0), DeserializeProtocols(reader.GetString(1)), reader.GetString(2),
             reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7), reader.GetString(8),
@@ -604,9 +605,9 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
     }
 
     public async Task RecordProviderDownloadAsync(Guid? providerId, string providerNamespace, string type, string version, string os,
-        string arch, string? clientIp, string? userAgent)
+        string arch, string? clientIp, string? userAgent, CancellationToken cancellationToken)
     {
-        await using var connection = await OpenConnectionAsync();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(@"
             INSERT INTO provider_downloads (provider_id, namespace, type, version, os, arch, download_time, client_ip, user_agent)
             VALUES (@providerId, @providerNamespace, @type, @version, @os, @arch, @downloadTime, @clientIp, @userAgent)", connection);
@@ -619,7 +620,7 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
         command.Parameters.AddWithValue("@downloadTime", DateTime.UtcNow);
         command.Parameters.AddWithValue("@clientIp", DbValue(clientIp));
         command.Parameters.AddWithValue("@userAgent", DbValue(userAgent));
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<bool> UpdateSinglePathAsync(string table, string column, string idColumn, Guid id, string storagePath)
@@ -678,6 +679,13 @@ public sealed class PostgreSqlProviderRepository : IProviderRepository
     {
         var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
+        return connection;
+    }
+
+    private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    {
+        var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
         return connection;
     }
 

@@ -77,7 +77,8 @@ public sealed class ProviderRegistryService : IProviderRegistryService
     {
         ValidateCoordinate(providerNamespace, type);
 
-        var details = await _repository.GetProviderPackageDetailsAsync(providerNamespace, type, version, os, arch);
+        var details = await _repository.GetProviderPackageDetailsAsync(providerNamespace, type, version, os, arch,
+            cancellationToken);
         if (details is null)
             return null;
 
@@ -88,7 +89,8 @@ public sealed class ProviderRegistryService : IProviderRegistryService
             var signatureUrlTask = _storage.CreateDownloadUrlAsync(details.ShasumsSignatureStoragePath, cancellationToken);
             await Task.WhenAll(packageUrlTask, shasumsUrlTask, signatureUrlTask);
 
-            await _repository.RecordProviderDownloadAsync(details.ProviderId, providerNamespace, type, version, os, arch, clientIp, userAgent);
+            await _repository.RecordProviderDownloadAsync(details.ProviderId, providerNamespace, type, version, os, arch,
+                clientIp, userAgent, cancellationToken);
 
             return new ProviderPackageResponse
             {

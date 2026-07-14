@@ -14,7 +14,8 @@ public interface IProviderRepository
     Task<IReadOnlyList<ProviderVersionEntry>> GetProviderVersionsAsync(string providerNamespace, string type);
     Task<IReadOnlyList<ProviderManagementVersionEntry>> GetProviderManagementVersionsAsync(string providerNamespace, string type);
     Task<ProviderVersion?> GetProviderVersionAsync(string providerNamespace, string type, string version);
-    Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version, string os, string arch);
+    Task<ProviderPackageDetails?> GetProviderPackageDetailsAsync(string providerNamespace, string type, string version, string os,
+        string arch, CancellationToken cancellationToken);
     Task<ProviderVersion> CreateProviderVersionAsync(Guid providerId, string version, string[] protocols, string keyId);
     Task<bool> SetVersionShasumsPathAsync(Guid versionId, string storagePath);
     Task<bool> SetVersionShasumsSignaturePathAsync(Guid versionId, string storagePath);
@@ -34,5 +35,5 @@ public interface IProviderRepository
     Task<bool> RevokeGpgKeyAsync(string providerNamespace, string keyId);
 
     Task RecordProviderDownloadAsync(Guid? providerId, string providerNamespace, string type, string version, string os,
-        string arch, string? clientIp, string? userAgent);
+        string arch, string? clientIp, string? userAgent, CancellationToken cancellationToken);
 }
