@@ -38,10 +38,10 @@ TF_REG_DevAuthBypass=true TF_REG_AdminEmails=dev@localhost \
 APP="$(docker compose -f "$ROOT/docker-compose.dev.yml" -f "$COMPOSE_OVERRIDE" -p "$PROJECT" ps -q app)"
 
 for _ in $(seq 1 45); do
-  if docker logs "$APP" 2>&1 | grep -q 'Application started'; then break; fi
+  if [[ "$(docker logs "$APP" 2>&1)" == *"Application started"* ]]; then break; fi
   sleep 1
 done
-docker logs "$APP" 2>&1 | grep -q 'Application started'
+[[ "$(docker logs "$APP" 2>&1)" == *"Application started"* ]]
 
 docker volume create "$CADDY_CONFIG" >/dev/null
 docker volume create "$CADDY_DATA" >/dev/null

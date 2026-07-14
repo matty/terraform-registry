@@ -6,6 +6,7 @@ MATRIX="$ROOT/scripts/remediation/terraform-backend-matrix.sh"
 WORKFLOW="$ROOT/.github/workflows/ci.yaml"
 BUILD_INPUTS="$ROOT/docs/build-inputs.md"
 EMULATOR_COMPOSE="$ROOT/scripts/remediation/storage-emulators/compose.yaml"
+LOCAL_SMOKE="$ROOT/scripts/remediation/phase-1-local-terraform-smoke.sh"
 
 test -x "$MATRIX"
 grep -Fq 'hashicorp/terraform:1.12.0@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b' "$MATRIX"
@@ -28,6 +29,14 @@ grep -Fq "docker image inspect --format '{{.Config.User}}'" "$MATRIX"
 grep -Eq '^  terraform-backend-matrix:' "$WORKFLOW"
 grep -Fq 'scripts/remediation/test-terraform-backend-matrix.sh' "$WORKFLOW"
 grep -Fq 'scripts/remediation/terraform-backend-matrix.sh' "$WORKFLOW"
+
+# A grep -q consumer can close the pipe before docker logs finishes writing;
+# under pipefail that makes the readiness probe fail with SIGPIPE (141).
+if grep -Eq 'docker logs .*[|] grep -q' "$LOCAL_SMOKE"; then
+  echo 'Local Terraform readiness checks must not pipe docker logs into grep under pipefail.' >&2
+  exit 1
+fi
+grep -Fq '[[ "$(docker logs "$APP" 2>&1)" == *"Application started"* ]]' "$LOCAL_SMOKE"
 
 # The matrix starts the emulator compose stack for each provider. Validate its
 # rendered YAML so an overlapping remediation change cannot introduce duplicate
