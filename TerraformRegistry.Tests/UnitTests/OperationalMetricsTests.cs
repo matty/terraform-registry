@@ -1,5 +1,13 @@
 using System.Diagnostics.Metrics;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Telemetry;
+using TerraformRegistry.Middleware;
+using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 
 namespace TerraformRegistry.Tests.UnitTests;
@@ -95,6 +103,72 @@ public sealed class OperationalMetricsTests
         Assert.Contains(measurements, measurement =>
             measurement.Name == "terraform_registry.outbox.failures" &&
             measurement.Outcome == "delivery_failed" && measurement.Secret is null);
+    }
+
+    [Fact]
+    public async Task AuthenticationMiddlewareRecordsAdmittedAndDeniedDecisionsFromRealRequestPaths()
+    {
+        using var listener = new MeterListener();
+        var measurements = new List<(string Name, IReadOnlyDictionary<string, string?> Tags)>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == OperationalMetrics.MeterName)
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+            measurements.Add((instrument.Name, tags.ToArray().ToDictionary(
+                tag => tag.Key,
+                tag => tag.Value?.ToString(),
+                StringComparer.Ordinal))));
+        listener.Start();
+
+        using var metrics = new OperationalMetrics();
+        var environment = Mock.Of<IHostEnvironment>(host => host.EnvironmentName == "Test");
+        var jwtService = new JwtService(new OidcOptions
+        {
+            JwtSecretKey = "operational-metrics-authentication-test-secret-key",
+            JwtExpiryHours = 1
+        }, NullLogger<JwtService>.Instance, environment);
+        var middleware = new AuthenticationMiddleware(
+            context =>
+            {
+                context.Items["next-called"] = true;
+                return Task.CompletedTask;
+            },
+            "static-test-token",
+            jwtService,
+            NullLogger<AuthenticationMiddleware>.Instance,
+            environment,
+            new ConfigurationBuilder().Build(),
+            Mock.Of<IMirrorConfigService>(),
+            metrics);
+
+        var admitted = new DefaultHttpContext();
+        admitted.Request.Path = "/v1/modules";
+        admitted.Request.Headers.Authorization = "Bearer static-test-token";
+        await middleware.InvokeAsync(admitted);
+
+        var denied = new DefaultHttpContext();
+        denied.Request.Path = "/v1/modules";
+        // Two dots make this exercise the JWT denial path rather than API-key lookup.
+        denied.Request.Headers.Authorization = "Bearer invalid.token.value";
+        await middleware.InvokeAsync(denied);
+
+        Assert.True((bool)admitted.Items["next-called"]!);
+        Assert.Equal(StatusCodes.Status401Unauthorized, denied.Response.StatusCode);
+        AssertAuthenticationOutcome(measurements, "admitted_static_token");
+        AssertAuthenticationOutcome(measurements, "denied_invalid_token");
+    }
+
+    private static void AssertAuthenticationOutcome(
+        IEnumerable<(string Name, IReadOnlyDictionary<string, string?> Tags)> measurements,
+        string expectedOutcome)
+    {
+        var measurement = Assert.Single(measurements, measurement =>
+            measurement.Name == "terraform_registry.authentication.decisions" &&
+            measurement.Tags.TryGetValue("outcome", out var outcome) && outcome == expectedOutcome);
+
+        Assert.Equal(["outcome"], measurement.Tags.Keys.OrderBy(key => key, StringComparer.Ordinal));
     }
 }
 
