@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GATE="$ROOT/scripts/remediation/gates/final-candidate-certification.sh"
-WORKFLOW="$ROOT/.github/workflows/ci.yaml"
+WORKFLOW="${FINAL_CANDIDATE_WORKFLOW:-$ROOT/.github/workflows/ci.yaml}"
 
 test -x "$GATE"
 
@@ -47,7 +47,31 @@ grep -Fq "github.event_name == 'merge_group'" <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"
 grep -Fq 'fetch-depth: 0' <<<"$job"
 grep -Fq '.github/scripts/resolve-version.sh' <<<"$job"
-grep -Fq 'FINAL_CANDIDATE_VERSION' <<<"$job"
 grep -Fq 'final-candidate-certification.sh' <<<"$job"
 grep -Fq 'actions/upload-artifact@' <<<"$job"
 grep -Fq 'final-candidate-certification-evidence' <<<"$job"
+
+# Version evidence is meaningful only if the resolver's named step writes a
+# checked, nonempty value and the gate consumes that exact output.
+grep -Fxq '        id: candidate-version' <<<"$job"
+grep -Fxq '          test -n "$version"' <<<"$job"
+grep -Fxq '          echo "version=$version" >> "$GITHUB_OUTPUT"' <<<"$job"
+grep -Fxq '          FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}' <<<"$job"
+
+if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
+  mutation_root="$(mktemp -d)"
+  trap 'rm -rf "$mutation_root"' EXIT
+
+  for mutation in \
+    'id: candidate-version' \
+    'test -n "$version"' \
+    'echo "version=$version" >> "$GITHUB_OUTPUT"' \
+    'FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}'; do
+    mutated_workflow="$mutation_root/ci.yaml"
+    sed "0,/$mutation/s//$mutation removed/" "$WORKFLOW" > "$mutated_workflow"
+    if FINAL_CANDIDATE_WORKFLOW="$mutated_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+      echo "Final-candidate version-handoff mutation was accepted: $mutation" >&2
+      exit 1
+    fi
+  done
+fi
