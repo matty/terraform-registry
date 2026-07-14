@@ -10,6 +10,24 @@ copy="$(mktemp -d)"
 trap 'rm -rf "$copy"' EXIT
 cp -a "$ROOT/." "$copy"
 
+sed -i \
+  -e 's#^| Candidate image digest | .* |$#| Candidate image digest | REQUIRED |#' \
+  -e 's#^| Candidate revision | .* |$#| Candidate revision | REQUIRED |#' \
+  -e 's#^| Verification run URL | .* |$#| Verification run URL | REQUIRED |#' \
+  -e 's#^| Terraform backend matrix result | .* |$#| Terraform backend matrix result | REQUIRED |#' \
+  -e 's#^| Fault and load result | .* |$#| Fault and load result | REQUIRED |#' \
+  -e 's#^| Operability gate result | .* |$#| Operability gate result | REQUIRED |#' \
+  "$copy/docs/release-candidate-evidence.md"
+"$copy/scripts/remediation/validate-requirement-evidence.sh" --write-status
+grep -Fqx 'Final certification is **pending** while the candidate evidence uses `REQUIRED`.' "$copy/docs/remediation-status.md" || {
+  echo 'status ledger did not render all-required candidate evidence as pending' >&2
+  exit 1
+}
+if grep -Fq 'Final certification is **certified**' "$copy/docs/remediation-status.md"; then
+  echo 'status ledger rendered all-required candidate evidence as certified' >&2
+  exit 1
+fi
+
 sed -i '0,/^DB-001\t/s//DB-000\t/' "$copy/scripts/remediation/requirement-evidence.tsv"
 if "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a manifest that omits a specification requirement' >&2
@@ -204,6 +222,16 @@ create_evidence_artifact "$artifact_archive" "$revision" refs/heads/develop "$re
 # uploaded evidence binds the explicitly checked-out release candidate. The
 # validator must accept that authoritative, bound artifact.
 GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$artifact_archive" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
+
+GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" FAKE_ARTIFACT_ARCHIVE="$artifact_archive" "$copy/scripts/remediation/validate-requirement-evidence.sh" --write-status
+grep -Fqx 'Final certification is **certified** with complete candidate evidence.' "$copy/docs/remediation-status.md" || {
+  echo 'status ledger did not render completed candidate evidence as certified' >&2
+  exit 1
+}
+if grep -Fq 'Final certification is **pending**' "$copy/docs/remediation-status.md"; then
+  echo 'status ledger rendered completed candidate evidence as pending' >&2
+  exit 1
+fi
 
 mismatched_artifact="$copy/mismatched-evidence.zip"
 create_evidence_artifact "$mismatched_artifact" "$(printf '%040d' 0)" refs/heads/develop "$required_gates"

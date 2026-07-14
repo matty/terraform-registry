@@ -87,9 +87,6 @@ because a workflow-dispatch run itself is recorded at the workflow ref.
 
 ## Current release candidate
 
-Final certification is **pending** while the candidate evidence uses `REQUIRED`.
-The required fields are declared, rather than fabricated, in
-[`release-candidate-evidence.md`](release-candidate-evidence.md): image digest,
-source revision, verification-run URL, Terraform backend matrix, fault/load, and
-operability results. The validator rejects absent fields and rejects a mixture of
-pending and completed values.
+Final certification is **certified** with complete candidate evidence.
+The image digest, source revision, verification-run URL, Terraform backend matrix,
+fault/load, and operability results have been validated against published evidence.
