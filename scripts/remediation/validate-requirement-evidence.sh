@@ -7,6 +7,7 @@ MANIFEST="$ROOT/scripts/remediation/requirement-evidence.tsv"
 STATUS="$ROOT/docs/remediation-status.md"
 CANDIDATE="$ROOT/docs/release-candidate-evidence.md"
 GH_BIN="${GH_BIN:-gh}"
+OCI_INSPECT_BIN="${OCI_INSPECT_BIN:-$ROOT/scripts/remediation/inspect-oci-candidate.sh}"
 MODE="${1:---check}"
 
 case "$MODE" in
@@ -77,6 +78,10 @@ if (( pending_count == 0 )); then
   candidate_revision="${candidate_values[1]}"
   git -C "$ROOT" cat-file -e "$candidate_revision^{commit}" 2>/dev/null || fail "candidate revision is not an existing commit"
   git -C "$ROOT" merge-base --is-ancestor "$candidate_revision" HEAD || fail "candidate revision is not reachable from the current target"
+  oci_evidence="$("$OCI_INSPECT_BIN" "${candidate_values[0]}" 2>/dev/null)" || fail "candidate digest cannot be verified from published OCI evidence"
+  IFS=$'\t' read -r oci_digest oci_revision <<<"$oci_evidence"
+  [[ "$oci_digest" == "${candidate_values[0]}" ]] || fail "OCI evidence does not identify the candidate digest"
+  [[ "$oci_revision" == "$candidate_revision" ]] || fail "OCI image revision label does not match the candidate revision"
   [[ "${candidate_values[2]}" =~ ^https://github\.com/matty/terraform-registry/actions/runs/([1-9][0-9]*)$ ]] || fail "candidate verification is not an authoritative repository run URL"
   run_id="${BASH_REMATCH[1]}"
   run_conclusion="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.conclusion' 2>/dev/null)" || fail "candidate verification run cannot be read"

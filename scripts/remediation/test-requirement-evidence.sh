@@ -126,14 +126,21 @@ printf '%s\n' \
   '  *) exit 2 ;;' \
   'esac' > "$fake_gh"
 chmod +x "$fake_gh"
-GH_BIN="$fake_gh" FAKE_HEAD_SHA="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
+fake_oci="$copy/fake-oci"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\\t%s\\n" "$1" "${FAKE_OCI_REVISION:?}"' > "$fake_oci"
+chmod +x "$fake_oci"
+GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check
 
-if GH_BIN="$fake_gh" FAKE_HEAD_SHA="$(printf '%040d' 0)" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$(printf '%040d' 0)" FAKE_OCI_REVISION="$revision" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a verification run for a different revision' >&2
   exit 1
 fi
-if GH_BIN="$fake_gh" FAKE_HEAD_SHA="$revision" FAKE_RUN_NAME=other "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$revision" FAKE_RUN_NAME=other "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a non-CI workflow as candidate verification' >&2
+  exit 1
+fi
+if GH_BIN="$fake_gh" OCI_INSPECT_BIN="$fake_oci" FAKE_HEAD_SHA="$revision" FAKE_OCI_REVISION="$(printf '%040d' 0)" "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
+  echo 'validator accepted a digest whose OCI revision label is unrelated' >&2
   exit 1
 fi
 
