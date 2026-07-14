@@ -220,7 +220,7 @@ public sealed class MirrorCacheBudgetServiceTests
     {
         var providers = new Mock<IProviderMirrorRepository>();
         providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
-            .ReturnsAsync((IReadOnlyList<MirrorProviderPackage>)null!);
+            .ReturnsAsync(() => null!);
         var service = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(),
             Mock.Of<IProviderArtifactStorage>(), Mock.Of<IModuleService>(), new MirrorCacheUsage());
 
