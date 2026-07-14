@@ -54,6 +54,6 @@ docker run --rm --network "$NETWORK" --add-host "registry.local:$caddy_ip" \
   -e SSL_CERT_FILE=/certs/caddy/pki/authorities/local/root.crt \
   -e TF_CLI_CONFIG_FILE=/work/terraform.rc \
   -v "$CADDY_DATA:/certs:ro" -v "$SMOKE_VOLUME:/work" -w /work \
-  hashicorp/terraform:1.14.2 init -input=false -no-color
+  hashicorp/terraform:1.14.2@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf init -input=false -no-color
 
 printf 'Phase 1 Local Terraform smoke passed.\n'
