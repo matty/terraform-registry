@@ -215,6 +215,32 @@ jobs:
           bash scripts/remediation/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-storage-test" || true
 
+  terraform-backend-matrix:
+    name: Terraform backend certification matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Verify Terraform backend matrix contract
+        run: bash scripts/remediation/test-terraform-backend-matrix.sh
+
+      - name: Run pinned Terraform backend matrix
+        run: >-
+          bash scripts/remediation/terraform-backend-matrix.sh
+          --home "$RUNNER_TEMP/terraform-registry-terraform-matrix"
+
+      - name: Clean Terraform backend matrix harness
+        if: always()
+        run: >-
+          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.12.0" || true;
+          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.14.2" || true
+
   phase-1-deployment-gate:
     name: Phase 1 deployment gate
     if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p1-terraform-deployment-gate'
