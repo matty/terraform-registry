@@ -116,7 +116,7 @@ fake_gh="$copy/fake-gh"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'if [[ "$*" == *"/jobs"* ]]; then' \
-  "  printf '%s\\n' $'Terraform backend certification matrix\\tsuccess' $'Fault and load certification\\tsuccess' $'Operability certification gate\\tsuccess'" \
+  "  printf '%s\\n' $'Pre-publication candidate verification\\tsuccess'" \
   '  exit 0' \
   'fi' \
   'case "${*: -1}" in' \

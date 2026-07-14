@@ -86,7 +86,7 @@ if (( pending_count == 0 )); then
   [[ "$run_head_sha" == "$candidate_revision" ]] || fail "candidate verification run does not verify the candidate revision"
   [[ "$run_name" == CI ]] || fail "candidate verification run is not the CI workflow"
   run_jobs="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id/jobs" --paginate --jq '.jobs[] | [.name, .conclusion] | @tsv' 2>/dev/null)" || fail "candidate verification jobs cannot be read"
-  for required_job in 'Terraform backend certification matrix' 'Fault and load certification' 'Operability certification gate'; do
+  for required_job in 'Pre-publication candidate verification'; do
     grep -Fqx "$required_job"$'\t''success' <<<"$run_jobs" || fail "candidate verification lacks successful '$required_job' evidence"
   done
   for index in 3 4 5; do [[ "${candidate_values[$index]}" == PASS ]] || fail "candidate gate result must be PASS"; done
@@ -108,7 +108,7 @@ certification from historical records.
 The listed gates document merged-work automation; their branch-specific CI
 invocations are not treated as current-candidate evidence. A completed candidate
 must instead be tied to one successful CI run for its exact revision, with the
-Terraform backend, fault/load, and operability jobs all successful.
+combined `Pre-publication candidate verification` job successful.
 
 ## Requirement evidence
 
