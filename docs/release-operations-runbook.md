@@ -156,12 +156,14 @@ curl --fail --silent --show-error "${auth[@]}" \
   "$REGISTRY_URL/api/admin/module-docs/modules?status=failed&limit=50&offset=0"
 ```
 
-For one known module version, requeue its extraction; this is auditable and
-returns `202 Accepted` when queued:
+For one known module version, requeue its extraction with a
+`module_docs.manage` principal. This is auditable and returns `202 Accepted`.
+Treat it as successful only when its JSON body says `queued: true`:
 
 ```bash
-curl --fail --silent --show-error -X POST "${auth[@]}" \
-  "$REGISTRY_URL/api/admin/module-docs/modules/<namespace>/<name>/<provider>/<version>/requeue"
+requeue_response="$(curl --fail --silent --show-error -X POST "${auth[@]}" \
+  "$REGISTRY_URL/api/admin/module-docs/modules/<namespace>/<name>/<provider>/<version>/requeue")"
+jq -e '.queued == true' <<<"$requeue_response"
 ```
 
 Do not repeatedly requeue a failing job without preserving its error and
@@ -170,6 +172,15 @@ are a 15-second extraction timeout, a 1,000 pending-job maximum, a 60-second
 lease, three retries, and a 500-ms poll interval; deployment configuration can
 override these values. Use the module-docs summary and module detail endpoint
 to confirm the job reaches its expected terminal state.
+
+If the response is `202` but `jq -e '.queued == false'` succeeds, the pending
+backlog is full (or extraction was disabled between the precheck and request);
+the request did not create a new job. Capture the summary, failed-job detail,
+and response in the incident record. Retry only after queue capacity is
+available: let workers drain or correct the documented extraction configuration,
+then verify the summary shows pending work below its configured maximum. Retry
+once and require `jq -e '.queued == true'` before treating the requeue as
+accepted; finally verify the module detail reaches its expected terminal state.
 
 Inspect mirror cache and live leases before purge:
 
@@ -199,6 +210,20 @@ current JSON first, make the smallest reviewed change, apply it with a
 `mirror.configure` principal, then verify it with the GET endpoint and audit
 log. Do not bulk-delete storage objects outside these APIs: cache accounting,
 lease protection, and audit records would be bypassed.
+
+The request body is the reviewed replacement configuration. Preserve the GET
+response as the rollback input, and verify the returned effective configuration
+after the `PUT` succeeds:
+
+```bash
+current_mirror_config="$(curl --fail --silent --show-error "${auth[@]}" \
+  "$REGISTRY_URL/api/admin/mirror/config")"
+printf '%s' "$reviewed_mirror_config" | curl --fail --silent --show-error \
+  -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data-binary @- \
+  "$REGISTRY_URL/api/admin/mirror/config" | jq -e '.effective != null'
+curl --fail --silent --show-error "${auth[@]}" \
+  "$REGISTRY_URL/api/admin/mirror/config" | jq -e '.effective != null'
+```
 
 An `admin.audit` principal can retrieve the audit record for an operational
 change without inspecting the database directly:
