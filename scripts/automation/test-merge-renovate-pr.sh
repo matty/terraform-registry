@@ -38,7 +38,7 @@ if [[ "$args" == *"/pulls/42 "* ]]; then
   if [[ "$fixture" == "changed-head" && "$count" -gt 1 ]]; then
     head_sha="head-b"
   fi
-  printf '{"number":42,"user":{"login":"app/renovate"},"head":{"ref":"renovate/pin-postgres","sha":"%s"},"base":{"ref":"develop"},"title":"chore(deps): pin postgres","body":"Routine update","labels":[]}' "$head_sha"
+  printf '{"number":42,"user":{"login":"renovate[bot]"},"head":{"ref":"renovate/pin-postgres","sha":"%s"},"base":{"ref":"develop"},"title":"chore(deps): pin postgres","body":"Routine update","labels":[]}' "$head_sha"
   exit 0
 fi
 
@@ -59,6 +59,8 @@ fi
 if [[ "$args" == *" graphql "* ]]; then
   if [[ "$fixture" == "unresolved-threads" ]]; then
     printf '%s\n' '{"data":{"repository":{"pullRequest":{"mergeStateStatus":"CLEAN","reviewThreads":{"nodes":[{"isResolved":false}],"pageInfo":{"hasNextPage":false}}}}}}'
+  elif [[ "$fixture" == "pending-stability" ]]; then
+    printf '%s\n' '{"data":{"repository":{"pullRequest":{"mergeStateStatus":"BLOCKED","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}'
   elif [[ "$fixture" == "unclean-merge-state" ]]; then
     printf '%s\n' '{"data":{"repository":{"pullRequest":{"mergeStateStatus":"DIRTY","reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}'
   else
