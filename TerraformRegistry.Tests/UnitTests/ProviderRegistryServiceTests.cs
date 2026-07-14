@@ -512,6 +512,38 @@ public class ProviderRegistryServiceTests
         Assert.Empty(Directory.EnumerateFiles(tempDir.FullName));
     }
 
+    [Fact]
+    public async Task UploadShasumsSignatureAsyncRejectsOversizedNonSeekableUploadBody()
+    {
+        var repository = new Mock<IProviderRepository>();
+        var storage = new Mock<IProviderArtifactStorage>(MockBehavior.Strict);
+        var tempDir = Directory.CreateTempSubdirectory();
+        using var signature = new NonSeekableReadStream([1, 2, 3, 4, 5]);
+        var service = CreateService(repository, storage, uploadOptions: new ProviderUploadOptions
+        {
+            MaxPackageBytes = 10,
+            MaxChecksumBytes = 4,
+            TempRoot = tempDir.FullName
+        });
+        var version = new ProviderVersion
+        {
+            Id = Guid.NewGuid(),
+            ProviderId = Guid.NewGuid(),
+            Version = "1.0.0",
+            Protocols = ["5.0"],
+            KeyId = "ABCDEF",
+            PublishedAt = DateTime.UtcNow
+        };
+        repository.Setup(x => x.GetProviderVersionAsync("acme", "example", "1.0.0")).ReturnsAsync(version);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.UploadShasumsSignatureAsync("acme", "example", "1.0.0", signature, CancellationToken.None));
+
+        Assert.Contains("configured limit", exception.Message, StringComparison.OrdinalIgnoreCase);
+        storage.VerifyNoOtherCalls();
+        Assert.Empty(Directory.EnumerateFiles(tempDir.FullName));
+    }
+
     private static ProviderRegistryService CreateService(
         Mock<IProviderRepository>? repository = null,
         Mock<IProviderArtifactStorage>? storage = null,

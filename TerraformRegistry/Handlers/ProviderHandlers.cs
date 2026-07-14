@@ -52,6 +52,9 @@ public static class ProviderHandlers
         if (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
             return ErrorResponseExtensions.NotFound(ex.Message);
 
+        if (ex.Message.Contains("exceeds the configured limit", StringComparison.OrdinalIgnoreCase))
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
         return null;
     }
 

@@ -7,6 +7,17 @@ namespace TerraformRegistry.Services;
 
 public sealed class ProviderPackageValidator : IProviderPackageValidator
 {
+    public const long DefaultMaxSignatureBytes = 5_242_880;
+    private readonly long _maxSignatureBytes;
+
+    public ProviderPackageValidator(long maxSignatureBytes = DefaultMaxSignatureBytes)
+    {
+        if (maxSignatureBytes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxSignatureBytes));
+
+        _maxSignatureBytes = maxSignatureBytes;
+    }
+
     public async Task<ProviderPackageValidationResult> ValidatePackageAsync(
         string providerType,
         string version,
@@ -29,8 +40,9 @@ public sealed class ProviderPackageValidator : IProviderPackageValidator
         if (!string.Equals(actualShasum, expectedShasum, StringComparison.OrdinalIgnoreCase))
             return new ProviderPackageValidationResult(false, "Provider package SHA256 does not match platform shasum.");
 
-        if (!VerifyDetachedSignature(shasumsText, shasumsSignature, asciiArmorPublicKey))
-            return new ProviderPackageValidationResult(false, "SHA256SUMS signature could not be verified with the selected GPG key.");
+        var signatureResult = await VerifyDetachedSignatureAsync(shasumsText, shasumsSignature, asciiArmorPublicKey, cancellationToken);
+        if (!signatureResult.Valid)
+            return new ProviderPackageValidationResult(false, signatureResult.Error ?? "SHA256SUMS signature could not be verified with the selected GPG key.");
 
         return new ProviderPackageValidationResult(true, null);
     }
@@ -81,17 +93,38 @@ public sealed class ProviderPackageValidator : IProviderPackageValidator
         return new ProviderPackageValidationResult(true, null);
     }
 
-    private static bool VerifyDetachedSignature(string shasumsText, Stream signatureStream, string asciiArmorPublicKey)
+    private async Task<SignatureVerificationResult> VerifyDetachedSignatureAsync(
+        string shasumsText,
+        Stream signatureStream,
+        string asciiArmorPublicKey,
+        CancellationToken cancellationToken)
     {
         try
         {
-            if (signatureStream.CanSeek) signatureStream.Position = 0;
+            await using var bufferedSignature = new MemoryStream();
+            var buffer = new byte[81_920];
+            long copied = 0;
+            while (true)
+            {
+                var read = await signatureStream.ReadAsync(buffer, cancellationToken);
+                if (read == 0) break;
+
+                copied = checked(copied + read);
+                if (copied > _maxSignatureBytes)
+                {
+                    return new SignatureVerificationResult(false,
+                        $"SHA256SUMS signature exceeds the configured limit of {_maxSignatureBytes} bytes.");
+                }
+
+                await bufferedSignature.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+            bufferedSignature.Position = 0;
 
             using var keyInput = new MemoryStream(Encoding.UTF8.GetBytes(asciiArmorPublicKey));
             using var decodedKeyInput = PgpUtilities.GetDecoderStream(keyInput);
             var publicKeys = new PgpPublicKeyRingBundle(decodedKeyInput);
 
-            using var decodedSignatureInput = PgpUtilities.GetDecoderStream(signatureStream);
+            using var decodedSignatureInput = PgpUtilities.GetDecoderStream(bufferedSignature);
             var signatureFactory = new PgpObjectFactory(decodedSignatureInput);
             var signatureObject = signatureFactory.NextPgpObject();
             if (signatureObject is PgpCompressedData compressedData)
@@ -101,21 +134,27 @@ public sealed class ProviderPackageValidator : IProviderPackageValidator
             }
 
             var signatureList = signatureObject as PgpSignatureList;
-            if (signatureList == null || signatureList.Count == 0) return false;
+            if (signatureList == null || signatureList.Count == 0) return new SignatureVerificationResult(false, null);
 
             var signature = signatureList[0];
             var publicKey = publicKeys.GetPublicKey(signature.KeyId);
-            if (publicKey == null) return false;
+            if (publicKey == null) return new SignatureVerificationResult(false, null);
 
             signature.InitVerify(publicKey);
             var shasumsBytes = Encoding.UTF8.GetBytes(shasumsText);
             signature.Update(shasumsBytes, 0, shasumsBytes.Length);
 
-            return signature.Verify();
+            return new SignatureVerificationResult(signature.Verify(), null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
-            return false;
+            return new SignatureVerificationResult(false, null);
         }
     }
+
+    private sealed record SignatureVerificationResult(bool Valid, string? Error);
 }

@@ -234,7 +234,9 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         CancellationToken cancellationToken)
     {
         var providerVersion = await RequireProviderVersionAsync(providerNamespace, type, version);
-        var saveResult = await _storage.SaveAsync(ShasumsPath(providerNamespace, type, version), content, cancellationToken);
+        await using var bufferedContent = await CopyToReplayableFileAsync(content, _uploadOptions.MaxChecksumBytes,
+            "SHA256SUMS", cancellationToken);
+        var saveResult = await _storage.SaveAsync(ShasumsPath(providerNamespace, type, version), bufferedContent, cancellationToken);
         return await _repository.SetVersionShasumsPathAsync(providerVersion.Id, saveResult.StoragePath);
     }
 
@@ -242,7 +244,9 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         CancellationToken cancellationToken)
     {
         var providerVersion = await RequireProviderVersionAsync(providerNamespace, type, version);
-        var saveResult = await _storage.SaveAsync(SignaturePath(providerNamespace, type, version), content, cancellationToken);
+        await using var bufferedContent = await CopyToReplayableFileAsync(content, _uploadOptions.MaxChecksumBytes,
+            "SHA256SUMS signature", cancellationToken);
+        var saveResult = await _storage.SaveAsync(SignaturePath(providerNamespace, type, version), bufferedContent, cancellationToken);
         return await _repository.SetVersionShasumsSignaturePathAsync(providerVersion.Id, saveResult.StoragePath);
     }
 
@@ -297,7 +301,8 @@ public sealed class ProviderRegistryService : IProviderRegistryService
             return false;
         }
 
-        await using var packageBuffer = await CopyToReplayableFileAsync(package, cancellationToken);
+        await using var packageBuffer = await CopyToReplayableFileAsync(package, _uploadOptions.MaxPackageBytes,
+            "Provider package", cancellationToken);
         await using var shasums = await _storage.OpenReadAsync(providerVersion.ShasumsStoragePath, cancellationToken);
         if (shasums == null)
         {
@@ -333,7 +338,8 @@ public sealed class ProviderRegistryService : IProviderRegistryService
         return DeletePlatformAndArtifactsAsync(providerNamespace, type, version, os, arch);
     }
 
-    private async Task<FileStream> CopyToReplayableFileAsync(Stream source, CancellationToken cancellationToken)
+    private async Task<FileStream> CopyToReplayableFileAsync(Stream source, long maxBytes, string artifactName,
+        CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_uploadOptions.TempRoot);
         var path = Path.Join(_uploadOptions.TempRoot, $".{Guid.NewGuid():N}.provider-upload");
@@ -348,10 +354,10 @@ public sealed class ProviderRegistryService : IProviderRegistryService
                 var read = await source.ReadAsync(buffer, cancellationToken);
                 if (read == 0) break;
                 copied = checked(copied + read);
-                if (copied > _uploadOptions.MaxPackageBytes)
+                if (copied > maxBytes)
                 {
                     await output.DisposeAsync();
-                    throw new InvalidOperationException($"Provider package exceeds the configured limit of {_uploadOptions.MaxPackageBytes} bytes.");
+                    throw new InvalidOperationException($"{artifactName} exceeds the configured limit of {maxBytes} bytes.");
                 }
                 await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
             }

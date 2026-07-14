@@ -77,7 +77,7 @@ public class ProviderPackageValidatorTests
     }
 
     [Fact]
-    public async Task ValidatePackageAsyncVerifiesDetachedSignatureWhenGpgIsAvailable()
+    public async Task ValidatePackageAsyncVerifiesDetachedSignatureFromNonSeekableStorageStreamWhenGpgIsAvailable()
     {
         if (!await CommandSucceedsAsync("gpg", "--version", null))
         {
@@ -106,9 +106,10 @@ public class ProviderPackageValidatorTests
         Assert.True(await CommandSucceedsAsync("gpg", $"{commonArgs} --detach-sign --output \"{signaturePath}\" \"{shasumsPath}\"", temp.Path));
 
         var publicKey = await CaptureCommandAsync("gpg", $"--homedir \"{gpgHome}\" --armor --export provider@example.com", temp.Path);
+        var signatureBytes = await File.ReadAllBytesAsync(signaturePath);
         await using var package = new MemoryStream(packageBytes);
         await using var shasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
-        await using var signature = File.OpenRead(signaturePath);
+        await using var signature = new NonSeekableReadStream(signatureBytes);
         var validator = new ProviderPackageValidator();
 
         var result = await validator.ValidatePackageAsync(
@@ -125,6 +126,83 @@ public class ProviderPackageValidatorTests
             CancellationToken.None);
 
         Assert.True(result.Valid, result.Error);
+
+        signatureBytes[^1] ^= 0x01;
+        await using var tamperedPackage = new MemoryStream(packageBytes);
+        await using var tamperedShasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
+        await using var tamperedSignature = new NonSeekableReadStream(signatureBytes);
+
+        var tamperedResult = await validator.ValidatePackageAsync(
+            "example",
+            "1.0.0",
+            "linux",
+            "amd64",
+            filename,
+            shasum,
+            tamperedPackage,
+            tamperedShasums,
+            tamperedSignature,
+            publicKey,
+            CancellationToken.None);
+
+        Assert.False(tamperedResult.Valid);
+    }
+
+    [Fact]
+    public async Task ValidatePackageAsyncPropagatesCallerCancellationWhileReadingSignature()
+    {
+        var packageBytes = Encoding.UTF8.GetBytes("provider package");
+        var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+        const string filename = "terraform-provider-example_1.0.0_linux_amd64.zip";
+        var shasumsText = $"{shasum}  {filename}\n";
+        using var cancellation = new CancellationTokenSource();
+        await using var package = new MemoryStream(packageBytes);
+        await using var shasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
+        await using var signature = new CancellationAwareReadStream(cancellation);
+        var validator = new ProviderPackageValidator();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => validator.ValidatePackageAsync(
+            "example", "1.0.0", "linux", "amd64", filename, shasum, package, shasums, signature,
+            "not-reached", cancellation.Token));
+    }
+
+    [Fact]
+    public async Task ValidatePackageAsyncRejectsSignatureLargerThanConfiguredLimit()
+    {
+        var packageBytes = Encoding.UTF8.GetBytes("provider package");
+        var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+        const string filename = "terraform-provider-example_1.0.0_linux_amd64.zip";
+        var shasumsText = $"{shasum}  {filename}\n";
+        await using var package = new MemoryStream(packageBytes);
+        await using var shasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
+        await using var signature = new NonSeekableReadStream([1, 2, 3, 4, 5]);
+        var validator = new ProviderPackageValidator(maxSignatureBytes: 4);
+
+        var result = await validator.ValidatePackageAsync(
+            "example", "1.0.0", "linux", "amd64", filename, shasum, package, shasums, signature,
+            "not-reached", CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains("configured limit", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ValidatePackageAsyncRejectsTamperedNonSeekableSignature()
+    {
+        var packageBytes = Encoding.UTF8.GetBytes("provider package");
+        var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+        const string filename = "terraform-provider-example_1.0.0_linux_amd64.zip";
+        var shasumsText = $"{shasum}  {filename}\n";
+        await using var package = new MemoryStream(packageBytes);
+        await using var shasums = new MemoryStream(Encoding.UTF8.GetBytes(shasumsText));
+        await using var signature = new NonSeekableReadStream([1, 2, 3, 4]);
+        var validator = new ProviderPackageValidator();
+
+        var result = await validator.ValidatePackageAsync(
+            "example", "1.0.0", "linux", "amd64", filename, shasum, package, shasums, signature,
+            "not-a-public-key", CancellationToken.None);
+
+        Assert.False(result.Valid);
     }
 
     private static async Task<bool> CommandSucceedsAsync(string fileName, string arguments, string? workingDirectory)
@@ -169,6 +247,45 @@ public class ProviderPackageValidatorTests
     }
 
     private sealed record CommandResult(int ExitCode, string StandardOutput, string StandardError);
+
+    private sealed class NonSeekableReadStream(byte[] content) : Stream
+    {
+        private readonly MemoryStream _inner = new(content);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer, cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class CancellationAwareReadStream(CancellationTokenSource cancellation) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellation.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(0);
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     private sealed class TempDirectory : IDisposable
     {
