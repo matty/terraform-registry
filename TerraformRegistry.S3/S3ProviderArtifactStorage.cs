@@ -80,6 +80,19 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
     public async Task<ProviderArtifactSaveResult> SaveAsync(string relativePath, Stream content,
         CancellationToken cancellationToken)
     {
+        if (!content.CanSeek)
+        {
+            throw new InvalidOperationException("S3 provider artifact uploads require a known content length.");
+        }
+
+        return await SaveAsync(relativePath, content, content.Length - content.Position, cancellationToken);
+    }
+
+    public async Task<ProviderArtifactSaveResult> SaveAsync(string relativePath, Stream content, long contentLength,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(contentLength);
+
         var objectKey = GetObjectKey(relativePath);
 
         await _s3Client.PutObjectAsync(new PutObjectRequest
@@ -87,7 +100,9 @@ public sealed partial class S3ProviderArtifactStorage : IProviderArtifactStorage
             BucketName = _bucketName,
             Key = objectKey,
             InputStream = content,
-            AutoCloseStream = false
+            AutoCloseStream = false,
+            AutoResetStreamPosition = false,
+            Headers = { ContentLength = contentLength }
         }, cancellationToken);
 
         var metadata = await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
