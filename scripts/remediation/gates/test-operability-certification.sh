@@ -39,6 +39,14 @@ for fixture in \
   ModuleExtractionQueueRuntimeTests \
   SqliteMirrorRepositoryTests \
   ModuleDownloadAnalyticsQueueTests \
+  OperationalMetricsStartupTests \
+  OperationalMetricsTests \
+  OperationalDatabaseMetricsFacadeTests \
+  SensitiveDataRedactorTests \
+  MirrorCacheBudgetServiceTests \
+  MirrorDownloadAdmissionTests \
+  MirrorLeaseHeartbeatTests \
+  ProviderMirrorServiceTests \
   ArchiveWorkspaceFactoryTests \
   ModuleExtractionServiceTests \
   TerraformConfigInspectRunnerTests \
@@ -55,7 +63,10 @@ for fixture in \
   HttpDeliveryPolicyTests \
   BrowserSecurityHeaderTests \
   ApiKeyServiceSecurityTests; do
-  grep -Fq "$fixture" "$GATE"
+  if ! grep -Fq "$fixture" "$GATE"; then
+    echo "Operability gate is missing required fixture: $fixture" >&2
+    exit 1
+  fi
 done
 
 grep -Fq 'test-supply-chain-pinning.sh' "$GATE"
