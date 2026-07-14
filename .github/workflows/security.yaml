@@ -7,12 +7,10 @@ on:
       - develop
       - "release/**"
       - "hotfix/**"
-      - "remediation/phase/**"
   pull_request:
     branches:
       - main
       - develop
-      - "remediation/phase/**"
   merge_group:
     types: [checks_requested]
   schedule:

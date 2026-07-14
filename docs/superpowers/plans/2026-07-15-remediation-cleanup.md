@@ -21,14 +21,14 @@
 **Files:**
 
 - Move retained gate scripts to `scripts/verification/gates/`.
-- Move storage emulators and Terraform smoke/matrix tooling to `scripts/verification/`.
+- Move storage emulators, Terraform smoke/matrix tooling, and the backup/restore evidence helper to `scripts/verification/`.
 - Modify relocated scripts to refer only to `scripts/verification/` paths.
 
 **Interfaces:** Produces the same executable command-line entry points under `scripts/verification/`.
 
 - [ ] **Step 1: Move the retained files with `git mv`.**
 
-Run `git mv scripts/remediation/storage-emulators scripts/verification/storage-emulators`; move supply-chain, release-runbook, and final-candidate scripts from `scripts/remediation/gates/` to `scripts/verification/gates/`; then move `terraform-backend-matrix.sh`, `test-terraform-backend-matrix.sh`, `terraform-provider-smoke.Dockerfile`, `phase-1-storage-emulator-terraform-smoke.sh`, and `phase-1-local-terraform-smoke.sh` into `scripts/verification/`.
+Run `git mv scripts/remediation/storage-emulators scripts/verification/storage-emulators`; move supply-chain, release-runbook, and final-candidate scripts from `scripts/remediation/gates/` to `scripts/verification/gates/`; then move `terraform-backend-matrix.sh`, `test-terraform-backend-matrix.sh`, `terraform-provider-smoke.Dockerfile`, `phase-1-storage-emulator-terraform-smoke.sh`, `phase-1-local-terraform-smoke.sh`, and `phase-0-backup-restore-evidence.sh` into `scripts/verification/`.
 
 - [ ] **Step 2: Replace internal `scripts/remediation/` references in the moved scripts with `scripts/verification/`.**
 
@@ -50,7 +50,7 @@ Run `git mv scripts/remediation/storage-emulators scripts/verification/storage-e
 
 - [ ] **Step 2: Remove `remediation/phase/**` trigger branches from CI and security workflows, then replace retained workflow paths with `scripts/verification/` equivalents.**
 
-- [ ] **Step 3: Delete the real-Azure phase-1 workflow and the no-longer-referenced scripts.**
+- [ ] **Step 3: Delete the real-Azure phase-1 workflow and the no-longer-referenced scripts. Update final-candidate certification to run only retained verification contracts and checks; remove audit-only operability and fault/load calls.**
 
 - [ ] **Step 4: Run `ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' .github/workflows/*.yaml`; expect exit status 0.**
 

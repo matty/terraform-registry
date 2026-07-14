@@ -2,19 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GATE="${FINAL_CANDIDATE_GATE:-$ROOT/scripts/remediation/gates/final-candidate-certification.sh}"
+GATE="${FINAL_CANDIDATE_GATE:-$ROOT/scripts/verification/gates/final-candidate-certification.sh}"
 WORKFLOW="${FINAL_CANDIDATE_WORKFLOW:-$ROOT/.github/workflows/ci.yaml}"
 RUNBOOK="${FINAL_CANDIDATE_RUNBOOK:-$ROOT/docs/release-operations-runbook.md}"
 
 test -x "$GATE"
 
-# The certificate must run the executable P5/P6 evidence rather than merely
-# describe the historical certification jobs.
+# The certificate must run durable release verification, not merely describe it.
 for gate in \
-  'test-operability-certification.sh' \
-  'operability-certification.sh' \
-  'test-fault-load-certification.sh' \
-  'fault-load-certification.sh' \
   'test-terraform-backend-matrix.sh' \
   'terraform-backend-matrix.sh' \
   'release-runbooks.sh' \

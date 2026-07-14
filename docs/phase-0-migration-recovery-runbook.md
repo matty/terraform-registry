@@ -78,7 +78,7 @@ backup, restores it to a separate file, compares all user-table row counts and
 the DbUp journal, and runs `foreign_key_check`:
 
 ```bash
-scripts/remediation/phase-0-backup-restore-evidence.sh sqlite \
+scripts/verification/phase-0-backup-restore-evidence.sh sqlite \
   /path/to/disposable-registry.db ./artifacts/phase-0-sqlite-restore
 ```
 
