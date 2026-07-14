@@ -20,6 +20,103 @@ fail() {
   return 1
 }
 
+verify_candidate_evidence_artifact() {
+  local run_id="$1"
+  local candidate_revision="$2"
+  local artifact_ids artifact_id artifact_dir artifact_archive artifact_evidence artifact_ref
+  local required_gate gate_count
+
+  mapfile -t artifact_ids < <("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id/artifacts" --paginate --jq \
+    '.artifacts[] | select(.name == "pre-publication-candidate-verification-evidence" and .expired == false) | .id' 2>/dev/null) || {
+    fail "candidate verification artifacts cannot be read"
+    return 1
+  }
+  (( ${#artifact_ids[@]} == 1 )) || {
+    fail "candidate verification must have exactly one readable pre-publication evidence artifact"
+    return 1
+  }
+  artifact_id="${artifact_ids[0]}"
+  [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]] || {
+    fail "candidate verification evidence artifact has an invalid identifier"
+    return 1
+  }
+
+  artifact_dir="$(mktemp -d)" || {
+    fail "candidate verification evidence cannot be staged"
+    return 1
+  }
+  artifact_archive="$artifact_dir/evidence.zip"
+  artifact_evidence="$artifact_dir/final-candidate-certification-evidence.json"
+  if ! "$GH_BIN" api "repos/matty/terraform-registry/actions/artifacts/$artifact_id/zip" > "$artifact_archive" 2>/dev/null; then
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact cannot be downloaded"
+    return 1
+  fi
+  if [[ "$(unzip -Z1 "$artifact_archive" 2>/dev/null)" != 'final-candidate-certification-evidence.json' ]] ||
+     ! unzip -p "$artifact_archive" final-candidate-certification-evidence.json > "$artifact_evidence" 2>/dev/null; then
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact is unreadable or has an unexpected layout"
+    return 1
+  fi
+
+  if ! jq -e --arg candidate_sha "$candidate_revision" '
+      .schema_version == 1 and
+      (.candidate_sha == $candidate_sha) and
+      (.candidate_ref | type == "string" and length > 0) and
+      (.candidate_version | type == "string" and length > 0) and
+      (.event_name | type == "string" and (. == "workflow_dispatch" or . == "pull_request")) and
+      (.dotnet_sdk_version | type == "string" and length > 0) and
+      (.terraform_versions == ["1.12.0", "1.14.2"]) and
+      (.gates | type == "array" and length > 0 and all(.[]; type == "object" and (.name | type == "string" and length > 0) and (.result | type == "string"))) and
+      (.pre_publication_verification_passed == true) and
+      (.verification_status == "pre-publication-verification") and
+      (.release_certification_complete == false) and
+      (.release_certification_status == "incomplete-requires-immutable-registry-digest") and
+      (.image_digest == null) and
+      (.required_post_publication_evidence == true) and
+      (.required_post_publication_evidence_kinds | type == "array" and index("immutable-registry-digest")) and
+      (.generated_at_utc | type == "string" and length > 0)
+    ' "$artifact_evidence" >/dev/null 2>&1; then
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact has an invalid schema, identity, or status"
+    return 1
+  fi
+
+  artifact_ref="$(jq -er '.candidate_ref | strings' "$artifact_evidence" 2>/dev/null)" || {
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact lacks a canonical candidate reference"
+    return 1
+  }
+  case "$artifact_ref" in refs/heads/*|refs/tags/*) ;; *)
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact has a non-canonical candidate reference"
+    return 1
+  esac
+  if ! git check-ref-format "$artifact_ref"; then
+    rm -rf "$artifact_dir"
+    fail "candidate verification evidence artifact has an invalid candidate reference"
+    return 1
+  fi
+
+  for required_gate in \
+    operability-contract operability fault-load-contract fault-load \
+    terraform-backend-contract terraform-backend-matrix \
+    release-runbooks release-runbooks-contract; do
+    gate_count="$(jq -er --arg name "$required_gate" '[.gates[] | select(.name == $name and .result == "passed")] | length' "$artifact_evidence" 2>/dev/null)" || {
+      rm -rf "$artifact_dir"
+      fail "candidate verification evidence artifact has unreadable gate results"
+      return 1
+    }
+    [[ "$gate_count" == 1 ]] || {
+      rm -rf "$artifact_dir"
+      fail "candidate verification evidence artifact lacks one successful '$required_gate' gate result"
+      return 1
+    }
+  done
+
+  rm -rf "$artifact_dir"
+}
+
 test -f "$SPEC" || fail "missing specification: $SPEC"
 test -f "$MANIFEST" || fail "missing manifest: $MANIFEST"
 test -f "$CANDIDATE" || fail "missing candidate evidence: $CANDIDATE"
@@ -88,12 +185,13 @@ if (( pending_count == 0 )); then
   run_head_sha="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.head_sha' 2>/dev/null)" || fail "candidate verification run head cannot be read"
   run_name="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.name' 2>/dev/null)" || fail "candidate verification run name cannot be read"
   [[ "$run_conclusion" == success ]] || fail "candidate verification run did not succeed"
-  [[ "$run_head_sha" == "$candidate_revision" ]] || fail "candidate verification run does not verify the candidate revision"
+  [[ "$run_head_sha" =~ ^[0-9a-f]{40}$ ]] || fail "candidate verification run does not identify an immutable workflow revision"
   [[ "$run_name" == CI ]] || fail "candidate verification run is not the CI workflow"
   run_jobs="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id/jobs" --paginate --jq '.jobs[] | [.name, .conclusion] | @tsv' 2>/dev/null)" || fail "candidate verification jobs cannot be read"
   for required_job in 'Pre-publication candidate verification'; do
     grep -Fqx "$required_job"$'\t''success' <<<"$run_jobs" || fail "candidate verification lacks successful '$required_job' evidence"
   done
+  verify_candidate_evidence_artifact "$run_id" "$candidate_revision"
   for index in 3 4 5; do [[ "${candidate_values[$index]}" == PASS ]] || fail "candidate gate result must be PASS"; done
 fi
 
@@ -112,8 +210,10 @@ certification from historical records.
 
 The listed gates document merged-work automation; their branch-specific CI
 invocations are not treated as current-candidate evidence. A completed candidate
-must instead be tied to one successful CI run for its exact revision, with the
-combined `Pre-publication candidate verification` job successful.
+must instead be tied to one successful CI run with the combined
+`Pre-publication candidate verification` job successful. Its immutable candidate
+identity is verified from that run's bound pre-publication evidence artifact,
+because a workflow-dispatch run itself is recorded at the workflow ref.
 
 ## Requirement evidence
 

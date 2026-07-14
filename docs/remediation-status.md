@@ -11,8 +11,10 @@ certification from historical records.
 
 The listed gates document merged-work automation; their branch-specific CI
 invocations are not treated as current-candidate evidence. A completed candidate
-must instead be tied to one successful CI run for its exact revision, with the
-combined `Pre-publication candidate verification` job successful.
+must instead be tied to one successful CI run with the combined
+`Pre-publication candidate verification` job successful. Its immutable candidate
+identity is verified from that run's bound pre-publication evidence artifact,
+because a workflow-dispatch run itself is recorded at the workflow ref.
 
 ## Requirement evidence
 
