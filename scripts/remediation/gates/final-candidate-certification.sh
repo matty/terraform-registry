@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs the portable P5/P6 release evidence for a labelled final-candidate PR
-# or merge-queue candidate.  This script deliberately records a null digest:
-# certification builds local disposable images but does not publish an image,
-# so no immutable registry digest exists at this point.
+# Runs portable pre-publication verification for a labelled final-candidate PR
+# or merge-queue candidate. It deliberately cannot complete release
+# certification: this job does not publish an image, so no immutable registry
+# digest exists until the explicit post-publication evidence step.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
@@ -51,7 +51,8 @@ write_evidence() {
     --arg candidate_version "$CANDIDATE_VERSION" \
     --arg event_name "$EVENT_NAME" \
     --arg dotnet_sdk_version "$DOTNET_SDK_VERSION" \
-    --arg image_digest_status 'not-published-by-certification' \
+    --arg verification_status 'pre-publication-verification' \
+    --arg release_certification_status 'incomplete-requires-immutable-registry-digest' \
     --argjson terraform_versions "$TERRAFORM_VERSIONS" \
     --argjson gates "$gates_json" \
     --argjson passed "$([[ "$status" -eq 0 ]] && echo true || echo false)" \
@@ -64,10 +65,14 @@ write_evidence() {
       dotnet_sdk_version: $dotnet_sdk_version,
       terraform_versions: $terraform_versions,
       gates: $gates,
-      passed: $passed,
+      pre_publication_verification_passed: $passed,
+      verification_status: $verification_status,
+      release_certification_complete: false,
+      release_certification_status: $release_certification_status,
       image_digest: null,
-      image_digest_status: $image_digest_status,
-      image_digest_note: "Certification does not publish an image. image_digest remains null until the registry reports an immutable sha256 digest for this exact candidate.",
+      post_publication_evidence_required: true,
+      required_post_publication_evidence: ["immutable-registry-digest"],
+      image_digest_note: "This is pre-publication verification, not release certification. image_digest remains null until the registry reports an immutable sha256 digest for this exact candidate in a post-publication evidence record.",
       generated_at_utc: (now | todate)
     }' > "$EVIDENCE_PATH"
 }
@@ -91,8 +96,8 @@ record_gate release-runbooks bash scripts/remediation/gates/release-runbooks.sh
 record_gate release-runbooks-contract bash scripts/remediation/gates/test-release-runbooks-gate.sh
 
 if [[ "$status" -ne 0 ]]; then
-  echo 'Final-candidate certification failed; inspect the evidence artifact for every gate result.' >&2
+  echo 'Pre-publication candidate verification failed; inspect the evidence artifact for every gate result.' >&2
   exit "$status"
 fi
 
-printf 'Final-candidate certification passed. Evidence: %s\n' "$EVIDENCE_PATH"
+printf 'Pre-publication candidate verification passed; release certification remains incomplete until immutable registry digest evidence is recorded. Evidence: %s\n' "$EVIDENCE_PATH"

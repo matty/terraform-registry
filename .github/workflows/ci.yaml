@@ -349,7 +349,7 @@ jobs:
         run: bash scripts/remediation/gates/operability-certification.sh
 
   final-candidate-certification:
-    name: Final-candidate certification evidence
+    name: Pre-publication candidate verification
     # A release manager labels the final PR `final-candidate`; merge-queue
     # candidates are always certified. This is intentionally not tied to a
     # historical remediation branch name.
@@ -384,21 +384,21 @@ jobs:
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Verify final-candidate certification wiring
+      - name: Verify pre-publication candidate verification wiring
         run: bash scripts/remediation/gates/test-final-candidate-certification.sh
 
-      - name: Run final-candidate certification
+      - name: Run pre-publication candidate verification
         env:
           FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}
         run: >-
           FINAL_CANDIDATE_EVIDENCE_PATH="$RUNNER_TEMP/final-candidate-certification-evidence.json"
           bash scripts/remediation/gates/final-candidate-certification.sh
 
-      - name: Upload final-candidate certification evidence
+      - name: Upload pre-publication candidate verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: final-candidate-certification-evidence
+          name: pre-publication-candidate-verification-evidence
           path: ${{ runner.temp }}/final-candidate-certification-evidence.json
           if-no-files-found: error
           retention-days: 90

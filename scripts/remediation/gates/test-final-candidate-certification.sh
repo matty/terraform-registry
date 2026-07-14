@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GATE="$ROOT/scripts/remediation/gates/final-candidate-certification.sh"
+GATE="${FINAL_CANDIDATE_GATE:-$ROOT/scripts/remediation/gates/final-candidate-certification.sh}"
 WORKFLOW="${FINAL_CANDIDATE_WORKFLOW:-$ROOT/.github/workflows/ci.yaml}"
+RUNBOOK="$ROOT/docs/release-operations-runbook.md"
 
 test -x "$GATE"
 
@@ -26,7 +27,13 @@ grep -Fq 'FINAL_CANDIDATE_VERSION' "$GATE"
 grep -Fq 'candidate_sha' "$GATE"
 grep -Fq 'candidate_version' "$GATE"
 grep -Fq 'image_digest' "$GATE"
-grep -Fq 'not-published-by-certification' "$GATE"
+grep -Fq 'pre-publication-verification' "$GATE"
+grep -Fq 'incomplete-requires-immutable-registry-digest' "$GATE"
+grep -Fq 'release_certification_complete: false,' "$GATE"
+grep -Fq 'post_publication_evidence_required: true,' "$GATE"
+grep -Fq 'immutable-registry-digest' "$GATE"
+grep -Fq 'Pre-publication candidate verification' "$RUNBOOK"
+grep -Fq 'not release certification' "$RUNBOOK"
 
 job_body() {
   awk '
@@ -49,7 +56,8 @@ grep -Fq 'fetch-depth: 0' <<<"$job"
 grep -Fq '.github/scripts/resolve-version.sh' <<<"$job"
 grep -Fq 'final-candidate-certification.sh' <<<"$job"
 grep -Fq 'actions/upload-artifact@' <<<"$job"
-grep -Fq 'final-candidate-certification-evidence' <<<"$job"
+grep -Fq 'Pre-publication candidate verification' <<<"$job"
+grep -Fq 'pre-publication-candidate-verification-evidence' <<<"$job"
 
 # Version evidence is meaningful only if the resolver's named step writes a
 # checked, nonempty value and the gate consumes that exact output.
@@ -71,6 +79,19 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
     sed "0,/$mutation/s//$mutation removed/" "$WORKFLOW" > "$mutated_workflow"
     if FINAL_CANDIDATE_WORKFLOW="$mutated_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
       echo "Final-candidate version-handoff mutation was accepted: $mutation" >&2
+      exit 1
+    fi
+  done
+
+  for mutation in \
+    'release_certification_complete: false,' \
+    'post_publication_evidence_required: true,' \
+    'incomplete-requires-immutable-registry-digest'; do
+    mutated_gate="$mutation_root/final-candidate-certification.sh"
+    sed "0,/$mutation/s//MUTATED_RELEASE_COMPLETION_INVARIANT/" "$GATE" > "$mutated_gate"
+    chmod +x "$mutated_gate"
+    if FINAL_CANDIDATE_GATE="$mutated_gate" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+      echo "Final-candidate release-completion mutation was accepted: $mutation" >&2
       exit 1
     fi
   done
