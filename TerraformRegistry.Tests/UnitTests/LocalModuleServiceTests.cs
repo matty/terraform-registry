@@ -316,6 +316,33 @@ public class LocalModuleServiceTests
     }
 
     [Fact]
+    public async Task UploadModuleAsyncCoreKeepsCommittedArtifactWhenRequestIsCanceledAfterCommit()
+    {
+        var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);
+        await using var content = new MemoryStream(Encoding.UTF8.GetBytes("committed"));
+        using var cancellation = new CancellationTokenSource();
+        ModuleStorage? committedModule = null;
+
+        _mockDbService.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null, cancellation.Token))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) =>
+            {
+                committedModule = module;
+                cancellation.Cancel();
+            })
+            .ReturnsAsync(true);
+
+        var result = await service.CallUploadModuleAsyncCore("ns", "name", "provider", "1.0.0", content, "desc",
+            cancellationToken: cancellation.Token);
+
+        Assert.True(result);
+        Assert.NotNull(committedModule);
+        Assert.True(File.Exists(committedModule!.FilePath));
+        _mockDbService.Verify(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>(),
+            CancellationToken.None), Times.Never);
+    }
+
+    [Fact]
     public async Task UploadModuleAsyncCoreRemovesOnlyItsArtifactWhenCatalogCommitLoses()
     {
         var service = new TestableLocalModuleService(_configuration, _mockDbService.Object, _mockLogger.Object);

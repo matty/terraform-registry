@@ -142,6 +142,8 @@ public sealed class SqliteModulePublicationRepository(string connectionString) :
         if (await jobCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
+        // Keep the same irreversible boundary as PostgreSQL: cancellation is honored before commit, never during it.
+        cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit();
         return true;
     }

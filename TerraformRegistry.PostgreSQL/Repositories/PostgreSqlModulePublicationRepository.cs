@@ -139,7 +139,12 @@ public sealed class PostgreSqlModulePublicationRepository(string connectionStrin
         if (await jobCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
             return false;
 
-        await transaction.CommitAsync(cancellationToken);
+        // Once the catalog and attempt updates are ready, the transaction must either be rolled back because the
+        // request was already cancelled or be committed conclusively. Passing the request token to CommitAsync
+        // leaves an ambiguous window where PostgreSQL commits but the client observes cancellation, causing the
+        // caller to delete an artifact that the catalog now references.
+        cancellationToken.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None);
         return true;
     }
 

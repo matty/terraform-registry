@@ -136,6 +136,35 @@ public class S3ModuleServiceUploadTests
     }
 
     [Fact]
+    public async Task UploadModuleAsyncKeepsFinalObjectWhenRequestIsCanceledAfterCommit()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var deleted = new List<string>();
+        ModuleStorage? committedModule = null;
+        _database.Setup(x => x.TryCommitStagedPublicationAsync(
+                It.IsAny<ModulePublicationAttempt>(), It.IsAny<ModuleStorage>(), null, cancellation.Token))
+            .Callback<ModulePublicationAttempt, ModuleStorage, ModuleStorage?, CancellationToken>((_, module, _, _) =>
+            {
+                committedModule = module;
+                cancellation.Cancel();
+            })
+            .ReturnsAsync(true);
+        _s3.Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DeleteObjectRequest, CancellationToken>((request, _) => deleted.Add(request.Key))
+            .ReturnsAsync(new DeleteObjectResponse());
+        using var content = new MemoryStream([1]);
+
+        var result = await CreateService().UploadModuleAsync("ns", "name", "aws", "1.0.0", content, "desc",
+            cancellationToken: cancellation.Token);
+
+        Assert.True(result);
+        Assert.NotNull(committedModule);
+        Assert.DoesNotContain(committedModule!.FilePath, deleted);
+        _database.Verify(x => x.TryFailStagedPublicationAsync(It.IsAny<Guid>(), It.IsAny<string>(),
+            CancellationToken.None), Times.Never);
+    }
+
+    [Fact]
     public async Task UploadModuleAsyncCleansOnlyAttemptObjectsWhenCatalogCommitLoses()
     {
         var deleted = new List<string>();
