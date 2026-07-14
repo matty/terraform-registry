@@ -9,7 +9,8 @@ public sealed class DurableOutboxProcessor(
     IOutboxEventRepository repository,
     IEnumerable<IOutboxDeliveryHandler> handlers,
     IOptions<DurableOutboxOptions> options,
-    ILogger<DurableOutboxProcessor> logger)
+    ILogger<DurableOutboxProcessor> logger,
+    OperationalMetrics? metrics = null)
 {
     private readonly DurableOutboxOptions options = options.Value;
 
@@ -20,6 +21,7 @@ public sealed class DurableOutboxProcessor(
         {
             @event = await repository.TryClaimNextAsync(ownerId, TimeSpan.FromSeconds(options.LeaseSeconds), cancellationToken);
             if (@event is null) return false;
+            metrics?.RecordOutboxClaim(@event.CreatedAt);
 
             var handler = handlers.FirstOrDefault(candidate => candidate.CanHandle(@event.Kind));
             if (handler is null) throw new InvalidOperationException($"No durable outbox handler is registered for '{@event.Kind}'.");
@@ -38,12 +40,15 @@ public sealed class DurableOutboxProcessor(
         catch (Exception ex)
         {
             RegistryLog.Error(logger, ex, "Durable outbox worker {OwnerId} failed to deliver an event.", ownerId);
+            metrics?.RecordOutboxFailure("delivery_failed");
             if (@event is not null)
             {
                 try
                 {
                     if (!await repository.TryFailAsync(@event.Id, ownerId, ex.Message, options.RetryLimit, cancellationToken))
                         RegistryLog.Warning(logger, "Durable outbox worker {OwnerId} lost the lease while recording a delivery failure.", ownerId);
+                    else
+                        metrics?.RecordOutboxRetry("scheduled");
                 }
                 catch (Exception retryEx) when (!cancellationToken.IsCancellationRequested)
                 {

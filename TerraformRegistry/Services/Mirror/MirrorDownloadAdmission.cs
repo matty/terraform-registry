@@ -8,9 +8,12 @@ namespace TerraformRegistry.Services.Mirror;
 /// </summary>
 public sealed class MirrorDownloadAdmission
 {
+    private readonly OperationalMetrics? _metrics;
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _activeByCoordinate = new(StringComparer.Ordinal);
     private int _activeDownloads;
+
+    public MirrorDownloadAdmission(OperationalMetrics? metrics = null) => _metrics = metrics;
 
     public MirrorDownloadAdmissionLease? TryAcquire(MirrorLimitRuntimeOptions limits, string coordinate)
     {
@@ -22,10 +25,12 @@ public sealed class MirrorDownloadAdmission
             if (_activeDownloads >= limits.MaxConcurrentDownloads ||
                 _activeByCoordinate.GetValueOrDefault(coordinate) >= limits.MaxConcurrentDownloadsPerCoordinate)
             {
+                _metrics?.RecordMirrorAdmission(false);
                 return null;
             }
 
             _activeDownloads++;
+            _metrics?.RecordMirrorAdmission(true);
             _activeByCoordinate[coordinate] = _activeByCoordinate.GetValueOrDefault(coordinate) + 1;
             return new MirrorDownloadAdmissionLease(this, coordinate);
         }
@@ -36,6 +41,7 @@ public sealed class MirrorDownloadAdmission
         lock (_gate)
         {
             _activeDownloads--;
+            _metrics?.RecordMirrorRelease();
             var coordinateActive = _activeByCoordinate[coordinate] - 1;
             if (coordinateActive == 0)
             {

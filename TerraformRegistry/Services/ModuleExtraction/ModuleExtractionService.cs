@@ -14,6 +14,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
     private readonly IModuleService _moduleService;
     private readonly IArchiveWorkspaceFactory _workspaceFactory;
     private readonly ModuleExtractionOptions _options;
+    private readonly OperationalMetrics? _metrics;
 
     public ModuleExtractionService(
         IModuleService moduleService,
@@ -23,7 +24,8 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         IModuleLlmContextGenerator llmContextGenerator,
         IModuleExtractionConfigService configService,
         ILogger<ModuleExtractionService> logger,
-        ModuleExtractionOptions? options = null)
+        ModuleExtractionOptions? options = null,
+        OperationalMetrics? metrics = null)
     {
         _moduleService = moduleService;
         _databaseService = databaseService;
@@ -33,6 +35,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         _configService = configService;
         _logger = logger;
         _options = options ?? new ModuleExtractionOptions();
+        _metrics = metrics;
     }
 
     public async Task<bool> QueueAsync(ModuleExtractionRequest request, CancellationToken cancellationToken)
@@ -115,6 +118,9 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         if (job is null)
             return false;
 
+        _metrics?.RecordExtractionClaim(job.CreatedAt);
+        _metrics?.RecordExtractionAttempt();
+
         var request = new ModuleExtractionRequest(job.Namespace, job.Name, job.Provider, job.Version);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = MaintainLeaseAsync(job.Id, ownerId, leaseDuration, linkedCancellation);
@@ -130,6 +136,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _metrics?.RecordExtractionFailure("processing_failed");
             await _databaseService.TryFailExtractionJobAsync(job.Id, ownerId, Truncate(ex.Message, 2048),
                 _options.JobRetryLimit, cancellationToken);
             RegistryLog.Error(_logger, ex, "Module extraction job {JobId} failed", job.Id);
