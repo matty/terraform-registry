@@ -110,11 +110,11 @@ public abstract class IntegrationTestBase : IAsyncLifetime
         var testOutputConsumer = Consume.RedirectStdoutAndStderrToStream(
             new OutputToTestConsoleStream(Output), new OutputToTestConsoleStream(Output));
 
-        PostgresContainer = new PostgreSqlBuilder()
+        PostgresContainer = new PostgreSqlBuilder("postgres:15.1")
             .WithDatabase("testdb")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(5432))
             .WithOutputConsumer(testOutputConsumer)
             .Build();
 
