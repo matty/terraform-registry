@@ -67,12 +67,12 @@ cp -a "$ROOT/." "$copy"
 revision="$(git -C "$copy" rev-parse HEAD)"
 digest="sha256:$(printf '%064d' 0)"
 sed -i \
-  -e "s#| Candidate image digest | REQUIRED |#| Candidate image digest | $digest |#" \
-  -e "s#| Candidate revision | REQUIRED |#| Candidate revision | $revision |#" \
-  -e 's#| Verification run URL | REQUIRED |#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
-  -e 's#| Terraform backend matrix result | REQUIRED |#| Terraform backend matrix result | PASS |#' \
-  -e 's#| Fault and load result | REQUIRED |#| Fault and load result | PASS |#' \
-  -e 's#| Operability gate result | REQUIRED |#| Operability gate result | PASS |#' \
+  -e "s#^| Candidate image digest | .* |\$#| Candidate image digest | $digest |#" \
+  -e "s#^| Candidate revision | .* |\$#| Candidate revision | $revision |#" \
+  -e 's#^| Verification run URL | .* |$#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
+  -e 's#^| Terraform backend matrix result | .* |$#| Terraform backend matrix result | PASS |#' \
+  -e 's#^| Fault and load result | .* |$#| Fault and load result | PASS |#' \
+  -e 's#^| Operability gate result | .* |$#| Operability gate result | PASS |#' \
   "$copy/docs/release-candidate-evidence.md"
 fake_gh="$copy/fake-gh"
 printf '%s\n' '#!/usr/bin/env bash' 'printf "{\\\"conclusion\\\":\\\"failure\\\",\\\"head_sha\\\":\\\"%s\\\"}\\n" "$FAKE_HEAD_SHA"' > "$fake_gh"
@@ -87,12 +87,12 @@ copy="$(mktemp -d)"
 cp -a "$ROOT/." "$copy"
 digest="sha256:$(printf '%064d' 0)"
 sed -i \
-  -e "s#| Candidate image digest | REQUIRED |#| Candidate image digest | $digest |#" \
-  -e "s#| Candidate revision | REQUIRED |#| Candidate revision | $(printf '%040d' 0) |#" \
-  -e 's#| Verification run URL | REQUIRED |#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
-  -e 's#| Terraform backend matrix result | REQUIRED |#| Terraform backend matrix result | PASS |#' \
-  -e 's#| Fault and load result | REQUIRED |#| Fault and load result | PASS |#' \
-  -e 's#| Operability gate result | REQUIRED |#| Operability gate result | PASS |#' \
+  -e "s#^| Candidate image digest | .* |\$#| Candidate image digest | $digest |#" \
+  -e "s#^| Candidate revision | .* |\$#| Candidate revision | $(printf '%040d' 0) |#" \
+  -e 's#^| Verification run URL | .* |$#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
+  -e 's#^| Terraform backend matrix result | .* |$#| Terraform backend matrix result | PASS |#' \
+  -e 's#^| Fault and load result | .* |$#| Fault and load result | PASS |#' \
+  -e 's#^| Operability gate result | .* |$#| Operability gate result | PASS |#' \
   "$copy/docs/release-candidate-evidence.md"
 if "$copy/scripts/remediation/validate-requirement-evidence.sh" --check; then
   echo 'validator accepted a non-existent candidate revision' >&2
@@ -105,12 +105,12 @@ cp -a "$ROOT/." "$copy"
 revision="$(git -C "$copy" rev-parse HEAD)"
 digest="sha256:$(printf '%064d' 0)"
 sed -i \
-  -e "s#| Candidate image digest | REQUIRED |#| Candidate image digest | $digest |#" \
-  -e "s#| Candidate revision | REQUIRED |#| Candidate revision | $revision |#" \
-  -e 's#| Verification run URL | REQUIRED |#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
-  -e 's#| Terraform backend matrix result | REQUIRED |#| Terraform backend matrix result | PASS |#' \
-  -e 's#| Fault and load result | REQUIRED |#| Fault and load result | PASS |#' \
-  -e 's#| Operability gate result | REQUIRED |#| Operability gate result | PASS |#' \
+  -e "s#^| Candidate image digest | .* |\$#| Candidate image digest | $digest |#" \
+  -e "s#^| Candidate revision | .* |\$#| Candidate revision | $revision |#" \
+  -e 's#^| Verification run URL | .* |$#| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/999 |#' \
+  -e 's#^| Terraform backend matrix result | .* |$#| Terraform backend matrix result | PASS |#' \
+  -e 's#^| Fault and load result | .* |$#| Fault and load result | PASS |#' \
+  -e 's#^| Operability gate result | .* |$#| Operability gate result | PASS |#' \
   "$copy/docs/release-candidate-evidence.md"
 
 create_evidence_artifact() {

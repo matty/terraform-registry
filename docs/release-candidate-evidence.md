@@ -8,12 +8,18 @@ been performed.
 
 | Field | Value |
 |---|---|
-| Candidate image digest | REQUIRED |
-| Candidate revision | REQUIRED |
-| Verification run URL | REQUIRED |
-| Terraform backend matrix result | REQUIRED |
-| Fault and load result | REQUIRED |
-| Operability gate result | REQUIRED |
+| Candidate image digest | sha256:953d2d1aa6b96b51ef85a826bff8fe57bf0110815d2c4b894e960fea8303e3a6 |
+| Candidate revision | c4997fc59140d9f2903552285cb1ccc94a3c9536 |
+| Verification run URL | https://github.com/matty/terraform-registry/actions/runs/29345431401 |
+| Terraform backend matrix result | PASS |
+| Fault and load result | PASS |
+| Operability gate result | PASS |
 
-Release certification is **pending** until every `REQUIRED` value is replaced
-with a concrete, reviewed record by the final certification change.
+The candidate artifact from the recorded run binds
+`c4997fc59140d9f2903552285cb1ccc94a3c9536` to
+`refs/heads/release/candidate-2026-07-14` before upload. The image was
+published by [CI run 29339773534](https://github.com/matty/terraform-registry/actions/runs/29339773534);
+its OCI `org.opencontainers.image.revision` label resolves to the recorded
+candidate revision.
+
+Release certification is **complete** for this candidate's automated evidence.
