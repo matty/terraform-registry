@@ -5,8 +5,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 bash "$ROOT/scripts/remediation/gates/supply-chain-pinning.sh"
 
+portable_bin="$(mktemp -d)"
+portable_output="$(mktemp)"
+trap 'rm -rf "${fixture_root:-}" "$portable_bin" "$portable_output"' EXIT
+for command in bash date find grep sed; do
+  ln -s "$(command -v "$command")" "$portable_bin/$command"
+done
+
+PATH="$portable_bin" SUPPLY_CHAIN_ROOT="$ROOT" bash "$ROOT/scripts/remediation/gates/supply-chain-pinning.sh" > "$portable_output" 2>&1
+if grep -Fq 'command not found' "$portable_output"; then
+  echo 'Supply-chain gate must not require tools outside its portable toolset.' >&2
+  cat "$portable_output" >&2
+  exit 1
+fi
+
 fixture_root="$(mktemp -d)"
-trap 'rm -rf "$fixture_root"' EXIT
 
 mkdir -p "$fixture_root"/{docs/security-exceptions,scripts/remediation/gates,TerraformRegistry/web-src,.github}
 cp "$ROOT/Dockerfile" "$ROOT/Dockerfile.dev" "$fixture_root/"

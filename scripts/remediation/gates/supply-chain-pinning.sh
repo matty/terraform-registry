@@ -13,7 +13,7 @@ test -f "$EXCEPTION"
 grep -Eq '^ARG TERRAFORM_CONFIG_INSPECT_VERSION=[0-9a-f]{40}$' "$DOCKERFILE"
 ! grep -Eq '^FROM .*(latest|:[^@[:space:]]+([[:space:]]|$))' "$DOCKERFILE"
 ! grep -Eq '^FROM .*(latest|:[^@[:space:]]+([[:space:]]|$))' "$DEV_DOCKERFILE"
-if rg -n '^[[:space:]]*RUN .*apk[[:space:]]+upgrade' "$DOCKERFILE" "$DEV_DOCKERFILE"; then
+if grep -Eq '^[[:space:]]*RUN .*apk[[:space:]]+upgrade' "$DOCKERFILE" "$DEV_DOCKERFILE"; then
   echo 'Unpinned Alpine package upgrades are not reproducible.' >&2
   exit 1
 fi
@@ -35,14 +35,27 @@ while IFS= read -r image; do
     echo "Mutable Compose image reference: $image" >&2
     exit 1
   fi
-done < <(rg -N --no-filename '^\s*image:' \
+done < <(grep -hE '^[[:space:]]*image:' \
   "$ROOT/docker-compose.dev.yml" \
   "$ROOT/docker-compose.psql.yml" \
   "$ROOT/scripts/remediation/storage-emulators/compose.yaml")
 
-if rg -n -i '<u(auth)?form\b|\bU(Auth)?Form\b|u-auth-form|u-form' \
-  "$ROOT/TerraformRegistry/web-src" \
-  --glob '!package-lock.json' --glob '!pnpm-lock.yaml' --glob '!node_modules/**'; then
+contains_affected_nuxt_form() {
+  local file
+  while IFS= read -r file; do
+    if grep -Eiq '<u(auth)?form\b|\bU(Auth)?Form\b|u-auth-form|u-form' "$file"; then
+      printf '%s\n' "$file"
+      return 0
+    fi
+  done < <(find "$ROOT/TerraformRegistry/web-src" -type f \
+    ! -name package-lock.json \
+    ! -name pnpm-lock.yaml \
+    ! -path '*/node_modules/*' -print)
+
+  return 1
+}
+
+if contains_affected_nuxt_form; then
   echo 'The SUP-003 exception is no longer valid: an affected Nuxt UI form is reachable.' >&2
   exit 1
 fi
@@ -61,4 +74,4 @@ while IFS= read -r action; do
     echo "Mutable GitHub Action reference: $action" >&2
     exit 1
   fi
-done < <(rg -N '^\s*uses: [^[:space:]]+@' "$ROOT/.github/workflows")
+done < <(find "$ROOT/.github/workflows" -type f -exec grep -hE '^[[:space:]]*uses: [^[:space:]]+@' {} +)
