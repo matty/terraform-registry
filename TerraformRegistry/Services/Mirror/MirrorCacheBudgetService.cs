@@ -10,7 +10,8 @@ public sealed class MirrorCacheBudgetService(
     IProviderArtifactStorage providerStorage,
     IModuleService moduleService,
     MirrorCacheUsage cacheUsage,
-    IMirrorLeaseRepository? leaseRepository = null)
+    IMirrorLeaseRepository? leaseRepository = null,
+    OperationalMetrics? metrics = null)
 {
     private const int PageSize = 1000;
 
@@ -126,6 +127,7 @@ public sealed class MirrorCacheBudgetService(
                 LastError = "Evicted to enforce the mirror cache budget.",
                 LastSyncAt = DateTime.UtcNow
             });
+            metrics?.RecordMirrorEviction("provider");
             return true;
         }
 
@@ -148,6 +150,7 @@ public sealed class MirrorCacheBudgetService(
             LastError = "Evicted to enforce the mirror cache budget.",
             LastSyncAt = DateTime.UtcNow
         });
+        metrics?.RecordMirrorEviction("module");
         return true;
     }
 

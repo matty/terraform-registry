@@ -26,6 +26,7 @@ internal static class ServiceRegistrationExtensions
         IConfiguration configuration)
     {
         services.AddRegistryRateLimiting(configuration);
+        services.AddSingleton<OperationalMetrics>();
         services.AddSingleton<ArtifactDownloadTokenService>();
         services.Configure<DatabaseRetryOptions>(configuration.GetSection("DatabaseRetry"));
         services.Configure<WebhookSecurityOptions>(configuration.GetSection("WebhookSecurity"));
@@ -472,7 +473,8 @@ internal static class ServiceRegistrationExtensions
             provider.GetRequiredService<IModuleLlmContextGenerator>(),
             provider.GetRequiredService<IModuleExtractionConfigService>(),
             provider.GetRequiredService<ILogger<ModuleExtractionService>>(),
-            provider.GetRequiredService<IOptions<ModuleExtractionOptions>>().Value));
+            provider.GetRequiredService<IOptions<ModuleExtractionOptions>>().Value,
+            provider.GetRequiredService<OperationalMetrics>()));
         services.AddHostedService<ModuleExtractionHostedService>();
         services.AddSingleton<IModulePublishCoordinator, ModulePublishCoordinator>();
 

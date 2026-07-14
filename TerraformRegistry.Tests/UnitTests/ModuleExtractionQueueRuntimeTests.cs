@@ -24,6 +24,39 @@ public class ModuleExtractionQueueRuntimeTests
     }
 
     [Fact]
+    public async Task ProcessNextAsyncRecordsClaimAttemptAndFailureMetricsForAClaimedJob()
+    {
+        using var listener = new OperationalMetricsTestListener();
+        using var metrics = new OperationalMetrics();
+        var config = new Mock<IModuleExtractionConfigService>();
+        var job = new ModuleExtractionJob
+        {
+            Id = Guid.NewGuid(),
+            PublicationAttemptId = Guid.NewGuid(),
+            Namespace = "acme",
+            Name = "network",
+            Provider = "aws",
+            Version = "1.0.0",
+            State = ModuleExtractionJobState.Processing,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTime.UtcNow
+        };
+        var database = new Mock<IDatabaseService>();
+        database.Setup(x => x.TryClaimNextExtractionJobAsync("worker-1", It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+        database.Setup(x => x.TryFailExtractionJobAsync(job.Id, "worker-1", It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var service = CreateService(config.Object, database.Object, metrics: metrics);
+
+        Assert.True(await service.ProcessNextAsync("worker-1", CancellationToken.None));
+        Assert.Contains(listener.Measurements, measurement => measurement.Name == "terraform_registry.extraction.claim_latency_ms");
+        Assert.Contains(listener.Measurements, measurement => measurement.Name == "terraform_registry.extraction.attempts");
+        Assert.Contains(listener.Measurements, measurement =>
+            measurement.Name == "terraform_registry.extraction.failures" && measurement.Outcome == "processing_failed");
+    }
+
+    [Fact]
     public async Task QueueAsyncMarksModulePendingWhenExtractionEnabled()
     {
         var config = new Mock<IModuleExtractionConfigService>();
@@ -188,7 +221,8 @@ public class ModuleExtractionQueueRuntimeTests
     private static ModuleExtractionService CreateService(
         IModuleExtractionConfigService config,
         IDatabaseService? database = null,
-        ModuleExtractionOptions? options = null)
+        ModuleExtractionOptions? options = null,
+        OperationalMetrics? metrics = null)
     {
         return new ModuleExtractionService(
             Mock.Of<IModuleService>(),
@@ -198,6 +232,7 @@ public class ModuleExtractionQueueRuntimeTests
             Mock.Of<IModuleLlmContextGenerator>(),
             config,
             NullLogger<ModuleExtractionService>.Instance,
-            options);
+            options,
+            metrics);
     }
 }

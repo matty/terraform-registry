@@ -239,7 +239,8 @@ public class S3ModuleServiceDownloadTests
                 LogLevel.Error,
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("pre-signed URL")),
-                It.IsAny<InvalidOperationException>(),
+                It.Is<Exception?>(exception => exception != null &&
+                    exception.Message.Contains("InvalidOperationException: signing failed", StringComparison.Ordinal)),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
@@ -281,7 +282,8 @@ public class S3ModuleServiceDownloadTests
                 LogLevel.Error,
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((value, _) => value.ToString()!.Contains("Error checking S3 object")),
-                It.IsAny<AmazonS3Exception>(),
+                It.Is<Exception?>(exception => exception != null &&
+                    exception.Message.Contains("AmazonS3Exception: boom", StringComparison.Ordinal)),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }

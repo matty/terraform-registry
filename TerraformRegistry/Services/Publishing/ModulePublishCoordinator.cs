@@ -10,10 +10,12 @@ public sealed class ModulePublishCoordinator(
     WebhookDispatcher webhookDispatcher,
     IAuditService auditService,
     ILogger<ModulePublishCoordinator> logger,
-    IArchiveIngestionValidator? archiveValidator = null) : IModulePublishCoordinator
+    IArchiveIngestionValidator? archiveValidator = null,
+    OperationalMetrics? metrics = null) : IModulePublishCoordinator
 {
     public async Task<bool> PublishAsync(ModulePublishRequest request, CancellationToken cancellationToken)
     {
+        metrics?.RecordPublicationAttempt();
         if (archiveValidator is not null)
         {
             await using var archive = await archiveValidator.PrepareAsync(request.ModuleContent, cancellationToken);
@@ -38,7 +40,10 @@ public sealed class ModulePublishCoordinator(
             cancellationToken);
 
         if (!uploaded)
+        {
+            metrics?.RecordPublicationConflict();
             return false;
+        }
 
         await webhookDispatcher.FireEventAsync(
             "module.published",

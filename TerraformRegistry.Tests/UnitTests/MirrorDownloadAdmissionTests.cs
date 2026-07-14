@@ -1,4 +1,5 @@
 using TerraformRegistry.Models;
+using TerraformRegistry.Services;
 using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Tests.UnitTests;
@@ -8,7 +9,9 @@ public sealed class MirrorDownloadAdmissionTests
     [Fact]
     public void AdmissionEnforcesGlobalAndPerCoordinateLimitsAndReleasesCapacity()
     {
-        var admission = new MirrorDownloadAdmission();
+        using var listener = new OperationalMetricsTestListener();
+        using var metrics = new OperationalMetrics();
+        var admission = new MirrorDownloadAdmission(metrics);
         var limits = new MirrorLimitRuntimeOptions
         {
             MaxConcurrentDownloads = 2,
@@ -27,6 +30,10 @@ public sealed class MirrorDownloadAdmissionTests
 
         using var replacement = admission.TryAcquire(limits, "provider:random");
         Assert.NotNull(replacement);
+        Assert.Contains(listener.Measurements, measurement =>
+            measurement.Name == "terraform_registry.mirror.admission_rejections");
+        Assert.Contains(listener.Measurements, measurement =>
+            measurement.Name == "terraform_registry.mirror.active_downloads");
     }
 
     [Fact]
