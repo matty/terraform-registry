@@ -14,16 +14,17 @@ public sealed class SqliteModuleRepository(
     string baseUrl,
     ILogger logger) : IModuleRepository
 {
-    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         var (whereClause, parameters) = BuildListFilter(request);
 
         await using var countCommand = connection.CreateCommand();
         countCommand.CommandText = $"SELECT COUNT(*) FROM (SELECT 1 FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider)";
         AddParameters(countCommand, parameters);
-        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         var coordinates = new List<(string Namespace, string Name, string Provider)>();
         await using (var pageCommand = connection.CreateCommand())
@@ -32,11 +33,11 @@ public sealed class SqliteModuleRepository(
             AddParameters(pageCommand, parameters);
             pageCommand.Parameters.AddWithValue("$limit", request.Limit);
             pageCommand.Parameters.AddWithValue("$offset", request.Offset);
-            await using var reader = await pageCommand.ExecuteReaderAsync();
-            while (await reader.ReadAsync()) coordinates.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            await using var reader = await pageCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) coordinates.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
         }
 
-        var rows = await GetPageRowsAsync(connection, coordinates);
+        var rows = await GetPageRowsAsync(connection, coordinates, cancellationToken);
         var modules = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
@@ -95,7 +96,8 @@ public sealed class SqliteModuleRepository(
         foreach (var parameter in parameters) command.Parameters.Add(new SqliteParameter(parameter.ParameterName, parameter.Value));
     }
 
-    private static async Task<List<ModuleRow>> GetPageRowsAsync(SqliteConnection connection, List<(string Namespace, string Name, string Provider)> coordinates)
+    private static async Task<List<ModuleRow>> GetPageRowsAsync(SqliteConnection connection, List<(string Namespace, string Name, string Provider)> coordinates,
+        CancellationToken cancellationToken)
     {
         if (coordinates.Count == 0) return [];
         await using var command = connection.CreateCommand();
@@ -109,15 +111,17 @@ public sealed class SqliteModuleRepository(
         }
         command.CommandText = $"WITH page(namespace, name, provider) AS (VALUES {string.Join(", ", values)}) SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at FROM modules m JOIN page p ON p.namespace = m.namespace AND p.name = m.name AND p.provider = m.provider WHERE m.deleted_at IS NULL";
         var rows = new List<ModuleRow>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) rows.Add(new ModuleRow { Namespace = reader.GetString(0), Name = reader.GetString(1), Provider = reader.GetString(2), Version = reader.GetString(3), Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), PublishedAt = reader.GetString(5) });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) rows.Add(new ModuleRow { Namespace = reader.GetString(0), Name = reader.GetString(1), Provider = reader.GetString(2), Version = reader.GetString(3), Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), PublishedAt = reader.GetString(5) });
         return rows;
     }
 
-    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         var sql = @"
             SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
@@ -131,11 +135,11 @@ public sealed class SqliteModuleRepository(
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         var publishedAtIso = reader.GetString(6);
-        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new TerraformModule
         {
@@ -157,12 +161,14 @@ public sealed class SqliteModuleRepository(
         };
     }
 
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
-        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternal(connection, moduleNamespace, name, provider, cancellationToken);
         return new ModuleVersions
         {
             Modules = new List<ModuleVersionInfo>
@@ -176,10 +182,11 @@ public sealed class SqliteModuleRepository(
     }
 
     public async Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         var sql = @"
             SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
@@ -193,8 +200,8 @@ public sealed class SqliteModuleRepository(
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         var depsJson = reader.GetString(7);
         var deps = string.IsNullOrWhiteSpace(depsJson)
@@ -505,12 +512,13 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
         var modules = new List<ModuleListItem>();
 
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         var sql = @"SELECT namespace, name, provider, version, description, published_at
             FROM modules WHERE deleted_at IS NOT NULL";
@@ -545,8 +553,8 @@ public sealed class SqliteModuleRepository(
         command.CommandText = sql;
         foreach (var p in parameters) command.Parameters.Add(p);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             modules.Add(new ModuleListItem
             {
@@ -640,7 +648,7 @@ public sealed class SqliteModuleRepository(
         }
     }
     private static async Task<List<string>> GetVersionsInternal(SqliteConnection connection, string moduleNamespace,
-        string name, string provider)
+        string name, string provider, CancellationToken cancellationToken)
     {
         var versions = new List<string>();
         await using var cmd = connection.CreateCommand();
@@ -649,8 +657,8 @@ public sealed class SqliteModuleRepository(
         cmd.Parameters.AddWithValue("$ns", moduleNamespace);
         cmd.Parameters.AddWithValue("$name", name);
         cmd.Parameters.AddWithValue("$prov", provider);
-        await using var r = await cmd.ExecuteReaderAsync();
-        while (await r.ReadAsync()) versions.Add(r.GetString(0));
+        await using var r = await cmd.ExecuteReaderAsync(cancellationToken);
+        while (await r.ReadAsync(cancellationToken)) versions.Add(r.GetString(0));
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
     }
 

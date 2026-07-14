@@ -15,14 +15,15 @@ public sealed class PostgreSqlModuleRepository(
     string baseUrl,
     ILogger logger) : IModuleRepository
 {
-    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         var (whereClause, parameters) = BuildListFilter(request);
         await using var countCommand = new NpgsqlCommand($"SELECT COUNT(*) FROM (SELECT 1 FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider) coordinates", connection);
         AddParameters(countCommand, parameters);
-        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         var coordinates = new List<(string Namespace, string Name, string Provider)>();
         await using (var pageCommand = new NpgsqlCommand($"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider ORDER BY m.namespace, m.name, m.provider LIMIT @limit OFFSET @offset", connection))
@@ -30,11 +31,11 @@ public sealed class PostgreSqlModuleRepository(
             AddParameters(pageCommand, parameters);
             pageCommand.Parameters.AddWithValue("@limit", request.Limit);
             pageCommand.Parameters.AddWithValue("@offset", request.Offset);
-            await using var reader = await pageCommand.ExecuteReaderAsync();
-            while (await reader.ReadAsync()) coordinates.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+            await using var reader = await pageCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) coordinates.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
         }
 
-        var rows = await GetPageRowsAsync(connection, coordinates);
+        var rows = await GetPageRowsAsync(connection, coordinates, cancellationToken);
         var modules = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
@@ -93,7 +94,8 @@ public sealed class PostgreSqlModuleRepository(
         foreach (var parameter in parameters) command.Parameters.Add(new NpgsqlParameter(parameter.ParameterName, parameter.Value));
     }
 
-    private static async Task<List<ModuleRow>> GetPageRowsAsync(NpgsqlConnection connection, List<(string Namespace, string Name, string Provider)> coordinates)
+    private static async Task<List<ModuleRow>> GetPageRowsAsync(NpgsqlConnection connection, List<(string Namespace, string Name, string Provider)> coordinates,
+        CancellationToken cancellationToken)
     {
         if (coordinates.Count == 0) return [];
         await using var command = new NpgsqlCommand();
@@ -108,16 +110,18 @@ public sealed class PostgreSqlModuleRepository(
         }
         command.CommandText = $"WITH page(namespace, name, provider) AS (VALUES {string.Join(", ", values)}) SELECT m.namespace, m.name, m.provider, m.version, m.description, m.published_at FROM modules m JOIN page p ON p.namespace = m.namespace AND p.name = m.name AND p.provider = m.provider WHERE m.deleted_at IS NULL";
         var rows = new List<ModuleRow>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) rows.Add(new ModuleRow { Namespace = reader.GetString(0), Name = reader.GetString(1), Provider = reader.GetString(2), Version = reader.GetString(3), Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), PublishedAt = reader.GetDateTime(5).ToString("o", CultureInfo.InvariantCulture) });
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) rows.Add(new ModuleRow { Namespace = reader.GetString(0), Name = reader.GetString(1), Provider = reader.GetString(2), Version = reader.GetString(3), Description = reader.IsDBNull(4) ? string.Empty : reader.GetString(4), PublishedAt = reader.GetDateTime(5).ToString("o", CultureInfo.InvariantCulture) });
         return rows;
     }
 
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             SELECT 
                 namespace,
@@ -139,7 +143,7 @@ public sealed class PostgreSqlModuleRepository(
                 deleted_at IS NULL";
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -147,8 +151,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
             return null;
 
         var metadata = DeserializeModuleMetadata(reader.GetString(8));
@@ -156,7 +160,7 @@ public sealed class PostgreSqlModuleRepository(
         var publishedAt = reader.GetDateTime(6);
         await reader.DisposeAsync();
 
-        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new TerraformModule
         {
@@ -185,12 +189,14 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public async Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
-        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider);
+        var versions = await GetVersionsInternalAsync(connection, moduleNamespace, name, provider, cancellationToken);
 
         return new ModuleVersions
         {
@@ -208,8 +214,9 @@ public sealed class PostgreSqlModuleRepository(
     ///     Gets the storage path information for a specific module version
     /// </summary>
     public async Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             SELECT
                 namespace,
@@ -231,7 +238,7 @@ public sealed class PostgreSqlModuleRepository(
                 deleted_at IS NULL";
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -239,8 +246,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
             return null;
 
         var dependenciesJson = reader.GetString(7);
@@ -604,7 +611,8 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public async Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
         var modules = new List<ModuleListItem>();
         var conditions = new List<string>();
@@ -641,13 +649,13 @@ public sealed class PostgreSqlModuleRepository(
         parameters.Add(new NpgsqlParameter($"@p{paramCounter + 1}", request.Offset));
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddRange(parameters.ToArray());
 
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var ns = reader.GetString(0);
             var n = reader.GetString(1);
@@ -740,7 +748,7 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
     private static async Task<List<string>> GetVersionsInternalAsync(NpgsqlConnection connection, string moduleNamespace,
-        string name, string provider)
+        string name, string provider, CancellationToken cancellationToken)
     {
         const string sql = @"
             SELECT version
@@ -756,8 +764,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
 
         var versions = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) versions.Add(reader.GetString(0));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) versions.Add(reader.GetString(0));
 
         return versions.OrderByDescending(version => version, SemVerVersionComparer.Instance).ToList();
     }

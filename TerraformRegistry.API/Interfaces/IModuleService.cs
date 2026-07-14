@@ -20,22 +20,25 @@ public interface IModuleService
     /// <summary>
     ///     Lists all modules
     /// </summary>
-    Task<ModuleList> ListModulesAsync(ModuleSearchRequest request);
+    Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version);
+    Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider);
+    Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets the download path for a specific module version
     /// </summary>
-    Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider, string version);
+    Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Opens the stored module package for internal processing
@@ -67,7 +70,7 @@ public interface IModuleService
     /// <summary>
     ///     Lists all soft-deleted modules
     /// </summary>
-    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request);
+    Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Updates the description for all active versions of a module

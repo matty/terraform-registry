@@ -77,6 +77,47 @@ public class S3ModuleServiceDownloadTests
     }
 
     [Fact]
+    public async Task GetModuleDownloadPathAsyncPassesCancellationToDatabaseAndS3()
+    {
+        var moduleStorage = CreateModuleStorage();
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
+            .ReturnsAsync(moduleStorage);
+        _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), cancellation.Token))
+            .ReturnsAsync(new GetObjectMetadataResponse());
+        _mockS3Client
+            .Setup(x => x.GetPreSignedURL(It.IsAny<GetPreSignedUrlRequest>()))
+            .Returns("https://example.test/module.zip");
+
+        var result = await CreateService().GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0", cancellation.Token);
+
+        Assert.Equal("https://example.test/module.zip", result);
+        _mockDatabaseService.Verify(
+            x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0", cancellation.Token), Times.Once);
+        _mockS3Client.Verify(
+            x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), cancellation.Token), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncDoesNotSwallowCancellation()
+    {
+        var moduleStorage = CreateModuleStorage();
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
+            .ReturnsAsync(moduleStorage);
+        _mockS3Client
+            .Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => CreateService().GetModuleDownloadPathAsync("ns", "name", "aws", "1.0.0", cancellation.Token));
+    }
+
+    [Fact]
     public async Task GetModuleDownloadPathAsyncReturnsNullWhenObjectIsMissingInS3()
     {
         var moduleStorage = CreateModuleStorage();

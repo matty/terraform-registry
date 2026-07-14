@@ -108,35 +108,37 @@ public class AzureBlobModuleService : ModuleService
     /// <summary>
     ///     Lists all modules based on search criteria
     /// </summary>
-    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListModulesAsync(request);
+        return _databaseService.ListModulesAsync(request, cancellationToken);
     }
 
     /// <summary>
     ///     Gets detailed information about a specific module
     /// </summary>
-    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     /// <summary>
     ///     Gets all versions of a specific module
     /// </summary>
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider, cancellationToken);
     }
 
     /// <summary>
     ///     Gets the download URL for a specific module version using SAS token
     /// </summary>
     public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
         // First query the database to get storage metadata
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version, cancellationToken);
         if (moduleStorage == null)
         {
             // Module not found in database
@@ -152,7 +154,7 @@ public class AzureBlobModuleService : ModuleService
             var blobClient = _containerClient.GetBlobClient(blobPath);
 
             // Check if the blob exists in Azure Storage
-            if (!await blobClient.ExistsAsync())
+            if (!await blobClient.ExistsAsync(cancellationToken))
             {
                 // This indicates data inconsistency - database record exists but no blob
                 RegistryLog.Warning(_logger,
@@ -184,8 +186,12 @@ public class AzureBlobModuleService : ModuleService
                 {
                     StartsOn = startsOn
                 },
-                CancellationToken.None);
+                cancellationToken);
             return blobClient.GenerateUserDelegationSasUri(sasBuilder, delegationKey.Value).ToString();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -478,9 +484,10 @@ public class AzureBlobModuleService : ModuleService
         return await _databaseService.RemoveModuleAsync(moduleStorage);
     }
 
-    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListDeletedModulesAsync(request);
+        return _databaseService.ListDeletedModulesAsync(request, cancellationToken);
     }
 
     public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,

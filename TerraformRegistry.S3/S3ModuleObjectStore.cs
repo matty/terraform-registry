@@ -46,7 +46,8 @@ internal sealed class S3ModuleObjectStore(
         string @namespace,
         string name,
         string provider,
-        string version)
+        string version,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -54,7 +55,7 @@ internal sealed class S3ModuleObjectStore(
             {
                 BucketName = bucketName,
                 Key = moduleStorage.FilePath
-            });
+            }, cancellationToken);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -66,6 +67,10 @@ internal sealed class S3ModuleObjectStore(
                 version,
                 moduleStorage.FilePath);
             return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

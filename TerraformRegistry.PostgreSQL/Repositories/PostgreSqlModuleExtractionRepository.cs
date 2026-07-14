@@ -66,7 +66,7 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
     }
 
     public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string moduleNamespace, string name,
-        string provider, string version)
+        string provider, string version, CancellationToken cancellationToken = default)
     {
         const string sql = @"
             SELECT c.document_json::text
@@ -78,14 +78,14 @@ public sealed class PostgreSqlModuleExtractionRepository(string connectionString
               AND m.version = @version";
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
         command.Parameters.AddWithValue("@name", name);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
 
-        var json = (string?)await command.ExecuteScalarAsync();
+        var json = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return string.IsNullOrWhiteSpace(json)
             ? null
             : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);

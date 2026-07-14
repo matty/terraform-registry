@@ -95,7 +95,7 @@ public static class ModuleHandlers
             Limit = Math.Clamp(limit, 1, 100)
         };
 
-        var result = await moduleService.ListModulesAsync(request);
+        var result = await moduleService.ListModulesAsync(request, context.RequestAborted);
         return Ok(result);
     }
 
@@ -119,7 +119,7 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Getting module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
-        var localModule = await moduleService.GetModuleAsync(@namespace, name, provider, version);
+        var localModule = await moduleService.GetModuleAsync(@namespace, name, provider, version, context.RequestAborted);
         var module = await moduleMirrorService.GetModuleAsync(
             @namespace,
             name,
@@ -151,7 +151,7 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Getting versions for module: {Namespace}/{Name}/{Provider}",
             @namespace, name, provider);
 
-        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider, context.RequestAborted);
         var versions = await moduleMirrorService.GetModuleVersionsAsync(
             @namespace,
             name,
@@ -188,7 +188,7 @@ public static class ModuleHandlers
         RegistryLog.Information(_logger, "Downloading module: {Namespace}/{Name}/{Provider}/{Version}",
             @namespace, name, provider, version);
 
-        var localDownloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version);
+        var localDownloadPath = await moduleService.GetModuleDownloadPathAsync(@namespace, name, provider, version, context.RequestAborted);
         var downloadPath = await moduleMirrorService.GetModuleDownloadPathAsync(
             @namespace,
             name,
@@ -232,7 +232,7 @@ public static class ModuleHandlers
             @namespace, name, provider);
 
         // Get all versions and pick the latest using SemVer sort
-        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var localVersions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider, context.RequestAborted);
         var versions = await moduleMirrorService.GetModuleVersionsAsync(
             @namespace,
             name,
@@ -502,7 +502,7 @@ public static class ModuleHandlers
             Limit = Math.Clamp(limit, 1, 100)
         };
 
-        var result = await moduleService.ListDeletedModulesAsync(request);
+        var result = await moduleService.ListDeletedModulesAsync(request, context.RequestAborted);
         return Ok(result);
     }
 

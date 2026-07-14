@@ -50,7 +50,7 @@ Human-oriented browsing:
             Limit = boundedLimit
         };
 
-        var modules = await moduleService.ListModulesAsync(request);
+        var modules = await moduleService.ListModulesAsync(request, context.RequestAborted);
         var baseUrl = GetBaseUrl(configuration);
         var items = modules.Modules.Select(module => new ModuleLlmIndexItem
         {
@@ -94,7 +94,7 @@ Human-oriented browsing:
         var denied = RequireAuthenticatedModuleRead(context);
         if (denied != null) return denied;
 
-        var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider);
+        var versions = await moduleService.GetModuleVersionsAsync(@namespace, name, provider, context.RequestAborted);
         var versionList = versions.Modules.FirstOrDefault()?.Versions;
         if (versionList == null || versionList.Count == 0)
             return Results.NotFound(new { error = "Module not found" });
@@ -108,7 +108,8 @@ Human-oriented browsing:
                 @namespace,
                 name,
                 provider,
-                version.Version);
+                version.Version,
+                context.RequestAborted);
 
             items.Add(new ModuleLlmVersionItem
             {
@@ -141,11 +142,12 @@ Human-oriented browsing:
         var denied = RequireAuthenticatedModuleRead(context);
         if (denied != null) return denied;
 
-        var module = await databaseService.GetModuleAsync(@namespace, name, provider, version);
+        var module = await databaseService.GetModuleAsync(@namespace, name, provider, version, context.RequestAborted);
         if (module == null)
             return Results.NotFound(new { error = "Module not found" });
 
-        var llmContext = await databaseService.GetModuleLlmContextAsync(@namespace, name, provider, version);
+        var llmContext = await databaseService.GetModuleLlmContextAsync(@namespace, name, provider, version,
+            context.RequestAborted);
         if (llmContext == null)
             return Results.Json(new { error = "LLM context not generated yet" }, statusCode: StatusCodes.Status409Conflict);
 

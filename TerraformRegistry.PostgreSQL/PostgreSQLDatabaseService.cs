@@ -34,8 +34,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         _downloads = new PostgreSqlModuleDownloadRecorder(connectionString, logger);
     }
 
-    public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request) =>
-        _modules.ListModulesAsync(request);
+    public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
+        _modules.ListModulesAsync(request, cancellationToken);
 
     public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job,
         CancellationToken cancellationToken = default) =>
@@ -66,14 +66,17 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
     public Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default) =>
         _publications.CountPendingExtractionJobsAsync(cancellationToken);
 
-    public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version) =>
-        _modules.GetModuleAsync(moduleNamespace, name, provider, version);
+    public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default) =>
+        _modules.GetModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
 
-    public Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider) =>
-        _modules.GetModuleVersionsAsync(moduleNamespace, name, provider);
+    public Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default) =>
+        _modules.GetModuleVersionsAsync(moduleNamespace, name, provider, cancellationToken);
 
-    public Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider, string version) =>
-        _modules.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+    public Task<ModuleStorage?> GetModuleStorageAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default) =>
+        _modules.GetModuleStorageAsync(moduleNamespace, name, provider, version, cancellationToken);
 
     public Task<bool> AddModuleAsync(ModuleStorage moduleStorage) =>
         _modules.AddModuleAsync(moduleStorage);
@@ -99,8 +102,8 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
     public Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version) =>
         _modules.RestoreModuleAsync(moduleNamespace, name, provider, version);
 
-    public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request) =>
-        _modules.ListDeletedModulesAsync(request);
+    public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
+        _modules.ListDeletedModulesAsync(request, cancellationToken);
 
     public Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(
         string moduleNamespace,
@@ -132,8 +135,9 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         string moduleNamespace,
         string name,
         string provider,
-        string version) =>
-        _moduleExtractions.GetModuleLlmContextAsync(moduleNamespace, name, provider, version);
+        string version,
+        CancellationToken cancellationToken = default) =>
+        _moduleExtractions.GetModuleLlmContextAsync(moduleNamespace, name, provider, version, cancellationToken);
 
     public Task UpsertModuleLlmContextAsync(
         string moduleNamespace,

@@ -143,4 +143,36 @@ public class AzureBlobModuleServiceDelegationTests
                 options.ExpiresOn > DateTimeOffset.UtcNow),
             CancellationToken.None), Times.Once);
     }
+
+    [Fact]
+    public async Task GetModuleDownloadPathAsyncForwardsCancellationToDatabaseBlobAndDelegationKey()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var moduleStorage = new ModuleStorage
+        {
+            Namespace = "ns", Name = "name", Provider = "provider", Version = "1.0.0", Description = "description",
+            FilePath = "path/to/module.zip", Dependencies = []
+        };
+        var blobClient = new Mock<BlobClient>();
+        _mockDatabaseService
+            .Setup(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0", cancellation.Token))
+            .ReturnsAsync(moduleStorage);
+        _mockContainerClient.Setup(x => x.GetBlobClient(moduleStorage.FilePath)).Returns(blobClient.Object);
+        blobClient.Setup(x => x.ExistsAsync(cancellation.Token))
+            .ReturnsAsync(Response.FromValue(true, Mock.Of<Response>()));
+        blobClient.SetupGet(x => x.CanGenerateSasUri).Returns(false);
+        _mockBlobServiceClient
+            .Setup(x => x.GetUserDelegationKeyAsync(It.IsAny<BlobGetUserDelegationKeyOptions>(), cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            CreateService().GetModuleDownloadPathAsync("ns", "name", "provider", "1.0.0", cancellation.Token));
+
+        _mockDatabaseService.Verify(x => x.GetModuleStorageAsync("ns", "name", "provider", "1.0.0", cancellation.Token), Times.Once);
+        blobClient.Verify(x => x.ExistsAsync(cancellation.Token), Times.Once);
+        _mockBlobServiceClient.Verify(
+            x => x.GetUserDelegationKeyAsync(It.IsAny<BlobGetUserDelegationKeyOptions>(), cancellation.Token), Times.Once);
+    }
 }

@@ -58,25 +58,27 @@ public class S3ModuleService : ModuleService
     public override Task InitializeStorageAsync(CancellationToken cancellationToken) =>
         _objectStore.InitializeStorageAsync(cancellationToken);
 
-    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListModulesAsync(request);
+        return _databaseService.ListModulesAsync(request, cancellationToken);
     }
 
-    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public override Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.GetModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
-    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider)
+    public override Task<ModuleVersions> GetModuleVersionsAsync(string moduleNamespace, string name, string provider,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider);
+        return _databaseService.GetModuleVersionsAsync(moduleNamespace, name, provider, cancellationToken);
     }
 
     public override async Task<string?> GetModuleDownloadPathAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
-        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version);
+        var moduleStorage = await _databaseService.GetModuleStorageAsync(moduleNamespace, name, provider, version, cancellationToken);
         if (moduleStorage == null)
         {
             RegistryLog.Warning(_logger,
@@ -88,7 +90,8 @@ public class S3ModuleService : ModuleService
             return null;
         }
 
-        return await _objectStore.GetModuleDownloadPathAsync(moduleStorage, moduleNamespace, name, provider, version);
+        return await _objectStore.GetModuleDownloadPathAsync(moduleStorage, moduleNamespace, name, provider, version,
+            cancellationToken);
     }
 
     public override async Task<Stream?> OpenModulePackageStreamAsync(string moduleNamespace, string name, string provider,
@@ -128,9 +131,10 @@ public class S3ModuleService : ModuleService
         return _purgeWorkflow.PurgeModuleVersionAsync(moduleNamespace, name, provider, version);
     }
 
-    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request)
+    public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.ListDeletedModulesAsync(request);
+        return _databaseService.ListDeletedModulesAsync(request, cancellationToken);
     }
 
     public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,

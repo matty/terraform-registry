@@ -60,10 +60,10 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
     }
 
     public async Task<ModuleLlmContextDocument?> GetModuleLlmContextAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = @"
@@ -76,7 +76,7 @@ public sealed class SqliteModuleExtractionRepository(string connectionString) : 
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
 
-        var json = (string?)await cmd.ExecuteScalarAsync();
+        var json = (string?)await cmd.ExecuteScalarAsync(cancellationToken);
         return string.IsNullOrWhiteSpace(json)
             ? null
             : JsonSerializer.Deserialize<ModuleLlmContextDocument>(json);
