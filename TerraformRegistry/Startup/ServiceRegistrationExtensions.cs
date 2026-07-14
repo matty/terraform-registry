@@ -334,7 +334,8 @@ internal static class ServiceRegistrationExtensions
         });
 
         services.AddSingleton<IProviderRegistryService, ProviderRegistryService>();
-        services.AddSingleton<IProviderPackageValidator, ProviderPackageValidator>();
+        services.AddSingleton<IProviderPackageValidator>(provider =>
+            new ProviderPackageValidator(provider.GetRequiredService<ProviderUploadOptions>().MaxChecksumBytes));
         services.AddSingleton<IProviderRepository>(provider =>
         {
             var config = provider.GetRequiredService<IConfiguration>();
