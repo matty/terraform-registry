@@ -72,7 +72,7 @@ public class S3ModuleServiceDelegationTests
         using var cancellation = new CancellationTokenSource();
         _mockDatabaseService
             .Setup(x => x.GetModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
-            .ReturnsAsync((TerraformModule?)null);
+            .Returns(Task.FromResult<TerraformModule?>(null));
 
         await CreateService().GetModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token);
 

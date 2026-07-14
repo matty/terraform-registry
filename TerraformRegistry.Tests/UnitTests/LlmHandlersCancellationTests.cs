@@ -36,7 +36,7 @@ public class LlmHandlersCancellationTests
             Modules = [new ModuleVersionInfo { Versions = [new VersionInfo { Version = "1.0.0" }] }]
         });
         database.Setup(x => x.GetModuleLlmContextAsync("ns", "name", "aws", "1.0.0", source.Token))
-            .ReturnsAsync((ModuleLlmContextDocument?)null);
+            .Returns(Task.FromResult<ModuleLlmContextDocument?>(null));
 
         await LlmHandlers.GetModuleVersions("ns", "name", "aws", service.Object, database.Object, Configuration(), context);
 
@@ -57,7 +57,7 @@ public class LlmHandlersCancellationTests
                 Version = "1.0.0", PublishedAt = "", Versions = [], Root = "main", Submodules = [], Providers = []
             });
         database.Setup(x => x.GetModuleLlmContextAsync("ns", "name", "aws", "1.0.0", source.Token))
-            .ReturnsAsync((ModuleLlmContextDocument?)null);
+            .Returns(Task.FromResult<ModuleLlmContextDocument?>(null));
 
         await LlmHandlers.GetModuleContext("ns", "name", "aws", "1.0.0", database.Object, context);
 

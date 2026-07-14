@@ -34,7 +34,7 @@ public class ModuleHandlersPaginationTests
     [Fact]
     public async Task ListModulesPassesRequestAbortedToModuleService()
     {
-        var cancellation = new CancellationTokenSource();
+        using var cancellation = new CancellationTokenSource();
         CancellationToken captured = default;
         var context = new DefaultHttpContext();
         context.RequestAborted = cancellation.Token;
