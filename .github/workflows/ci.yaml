@@ -500,6 +500,38 @@ jobs:
           env -u GITHUB_SHA -u GITHUB_REF \
           bash scripts/remediation/gates/final-candidate-certification.sh
 
+      - name: Verify and bind pre-publication evidence provenance
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
+          EVIDENCE_PATH: ${{ runner.temp }}/final-candidate-certification-evidence.json
+        run: |
+          artifact_sha="$(jq -er '.candidate_sha | strings' "$EVIDENCE_PATH")"
+          [[ "$artifact_sha" == "$CANDIDATE_SHA" ]] || {
+            echo 'Pre-publication evidence candidate_sha does not match the explicit candidate SHA.' >&2
+            exit 1
+          }
+
+          case "$CANDIDATE_REF" in
+            refs/heads/*|refs/tags/*) ;;
+            *)
+              echo 'Pre-publication evidence requires a canonical candidate ref.' >&2
+              exit 1
+              ;;
+          esac
+
+          stamped_evidence="$(mktemp "${EVIDENCE_PATH}.XXXXXX")"
+          trap 'rm -f "$stamped_evidence"' EXIT
+          jq --arg candidate_ref "$CANDIDATE_REF" '.candidate_ref = $candidate_ref' "$EVIDENCE_PATH" > "$stamped_evidence"
+          mv "$stamped_evidence" "$EVIDENCE_PATH"
+          trap - EXIT
+
+          artifact_ref="$(jq -er '.candidate_ref | strings' "$EVIDENCE_PATH")"
+          [[ "$artifact_ref" == "$CANDIDATE_REF" ]] || {
+            echo 'Pre-publication evidence candidate_ref does not match the explicit canonical candidate ref.' >&2
+            exit 1
+          }
+
       - name: Upload pre-publication candidate verification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
