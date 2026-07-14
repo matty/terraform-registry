@@ -10,13 +10,19 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 
 public sealed class HttpDeliveryPolicyTests : IDisposable
 {
-    private readonly string _tempDirectory = Path.Combine(Path.GetTempPath(), $"tf-reg-delivery-{Guid.NewGuid():N}");
+    private readonly string _tempDirectory = Path.GetTempFileName();
     private readonly WebApplicationFactory<Program> _factory;
 
     public HttpDeliveryPolicyTests()
     {
+        File.Delete(_tempDirectory);
         Directory.CreateDirectory(_tempDirectory);
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new DeliveryPolicyFactory(_tempDirectory);
+    }
+
+    private sealed class DeliveryPolicyFactory(string tempDirectory) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
@@ -24,10 +30,10 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
                 {
                     ["AuthorizationToken"] = "http-delivery-test-token",
                     ["DatabaseProvider"] = "sqlite",
-                    ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(_tempDirectory, "registry.db")}",
+                    ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDirectory, "registry.db")}",
                     ["StorageProvider"] = "local",
-                    ["ModuleStoragePath"] = Path.Combine(_tempDirectory, "modules"),
-                    ["ProviderStoragePath"] = Path.Combine(_tempDirectory, "providers"),
+                    ["ModuleStoragePath"] = Path.Join(tempDirectory, "modules"),
+                    ["ProviderStoragePath"] = Path.Join(tempDirectory, "providers"),
                     ["Oidc:JwtSecretKey"] = "http-delivery-test-jwt-secret-key-32-chars-minimum"
                 }));
             builder.ConfigureServices(services =>
@@ -39,7 +45,7 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
                     JwtExpiryHours = 24
                 });
             });
-        });
+        }
     }
 
     [Fact]
