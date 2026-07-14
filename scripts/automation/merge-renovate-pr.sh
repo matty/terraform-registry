@@ -71,7 +71,7 @@ review_thread_state() {
 
 check_state() {
   local sha="$1"
-  local checks
+  local checks statuses
   checks="$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100")"
 
   local required
@@ -79,18 +79,20 @@ check_state() {
     if ! jq -e --arg required "$required" '
       [.check_runs[] | select(.name == $required)] as $matching |
       ($matching | length) > 0 and
-      all($matching[]; .status == "completed" and .conclusion == "success")
+      (($matching | sort_by(.started_at // .completed_at // "") | last) |
+        .status == "completed" and .conclusion == "success")
     ' <<<"$checks" >/dev/null; then
       printf 'failed-required-check\n'
       return 0
     fi
   done
 
+  statuses="$(gh api "repos/$repo/commits/$sha/status")"
   if ! jq -e '
-    [.check_runs[] | select(.name == "renovate/stability-days")] as $matching |
+    [.statuses[] | select(.context == "renovate/stability-days")] as $matching |
     ($matching | length) > 0 and
-    all($matching[]; .status == "completed" and .conclusion == "success")
-  ' <<<"$checks" >/dev/null; then
+    all($matching[]; .state == "success")
+  ' <<<"$statuses" >/dev/null; then
     printf 'pending-stability\n'
     return 0
   fi

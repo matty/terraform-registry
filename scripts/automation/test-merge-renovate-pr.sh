@@ -67,16 +67,21 @@ if [[ "$args" == *" graphql "* ]]; then
   exit 0
 fi
 
-if [[ "$args" == *"/commits/"*"/check-runs?"* ]]; then
-  stability='{"name":"renovate/stability-days","status":"completed","conclusion":"success"}'
+if [[ "$args" == *"/commits/"*"/status "* ]]; then
+  stability='{"context":"renovate/stability-days","state":"success"}'
   if [[ "$fixture" == "pending-stability" ]]; then
-    stability='{"name":"renovate/stability-days","status":"in_progress","conclusion":null}'
+    stability='{"context":"renovate/stability-days","state":"pending"}'
   fi
-  required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"success"},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
+  printf '{"statuses":[%s]}' "$stability"
+  exit 0
+fi
+
+if [[ "$args" == *"/commits/"*"/check-runs?"* ]]; then
+  required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Frontend build and audit","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Docker build and scan","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Dependency review","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":".NET build, test, coverage","status":"completed","conclusion":"cancelled","started_at":"2026-07-14T16:00:00Z"}]'
   if [[ "$fixture" == "failed-required-check" ]]; then
     required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"failure"},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
   fi
-  printf '{"check_runs":%s}' "$(printf '%s' "$required" | jq --argjson stability "$stability" '. + [$stability]')"
+  printf '{"check_runs":%s}' "$required"
   exit 0
 fi
 
