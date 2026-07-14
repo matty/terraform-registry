@@ -395,12 +395,11 @@ jobs:
 
   final-candidate-certification:
     name: Pre-publication candidate verification
-    # A release manager labels the final PR `final-candidate`; merge-queue
-    # candidates are always certified. This is intentionally not tied to a
-    # historical remediation branch name.
+    # A release manager labels a same-repository final PR `final-candidate`,
+    # or explicitly supplies the immutable candidate identity by dispatch.
+    # Merge-group refs are synthetic and deliberately cannot certify a release.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        contains(github.event.pull_request.labels.*.name, 'final-candidate'))
@@ -413,8 +412,8 @@ jobs:
       - name: Validate immutable candidate inputs
         id: candidate
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
-          CANDIDATE_REF: ${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) || github.ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) }}
         run: |
           # shellcheck disable=SC2153 # supplied through the step-level env map
           candidate_sha="$CANDIDATE_SHA"

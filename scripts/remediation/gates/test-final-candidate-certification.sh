@@ -26,7 +26,10 @@ grep -Fq 'FINAL_CANDIDATE_EVIDENCE_PATH' "$GATE"
 grep -Fq 'FINAL_CANDIDATE_VERSION' "$GATE"
 grep -Fq 'FINAL_CANDIDATE_SHA' "$GATE"
 grep -Fq 'FINAL_CANDIDATE_REF' "$GATE"
-! grep -Fq 'CANDIDATE_SHA="${GITHUB_SHA:-' "$GATE"
+if grep -Fq 'CANDIDATE_SHA="${GITHUB_SHA:-' "$GATE"; then
+  echo 'Final-candidate gate falls back to the event SHA.' >&2
+  exit 1
+fi
 grep -Fq 'candidate_sha' "$GATE"
 grep -Fq 'candidate_version' "$GATE"
 grep -Fq 'image_digest' "$GATE"
@@ -62,11 +65,15 @@ test -n "$job"
 workflow_dispatch="$(workflow_dispatch_body)"
 test -n "$workflow_dispatch"
 
-# Candidates are selected by a durable release label or the merge queue. Do
-# not couple this final gate to an old one-off remediation branch name.
+# Candidates are selected only by a durable same-repository release label or
+# explicit immutable dispatch inputs. Do not couple this final gate to an old
+# one-off remediation branch name.
 grep -Fq 'types: [opened, synchronize, reopened, labeled]' "$WORKFLOW"
 grep -Fq "'final-candidate'" <<<"$job"
-grep -Fq "github.event_name == 'merge_group'" <<<"$job"
+if grep -Fq "github.event_name == 'merge_group'" <<<"$job"; then
+  echo 'Final-candidate certification must not be eligible for merge groups.' >&2
+  exit 1
+fi
 grep -Fq "github.event_name == 'workflow_dispatch'" <<<"$job"
 grep -Fxq '       github.event.pull_request.head.repo.full_name == github.repository &&' <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"
@@ -74,8 +81,16 @@ grep -Fq 'fetch-depth: 0' <<<"$job"
 grep -Fxq '      candidate_sha:' <<<"$workflow_dispatch"
 grep -Fxq '      candidate_ref:' <<<"$workflow_dispatch"
 grep -Fxq '        id: candidate' <<<"$job"
-grep -Fxq '          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}' <<<"$job"
-grep -Fxq "          CANDIDATE_REF: \${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) || github.ref }}" <<<"$job"
+grep -Fxq '          CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha }}' <<<"$job"
+grep -Fxq "          CANDIDATE_REF: \${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) }}" <<<"$job"
+if grep -Fq 'github.sha' <<<"$job"; then
+  echo 'Final-candidate certification must not use a synthetic GitHub SHA.' >&2
+  exit 1
+fi
+if grep -Fq 'github.ref' <<<"$job"; then
+  echo 'Final-candidate certification must not use a synthetic GitHub ref.' >&2
+  exit 1
+fi
 grep -Fxq '          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          ref: ${{ steps.candidate.outputs.sha }}' <<<"$job"
@@ -149,6 +164,14 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
       exit 1
     fi
   done
+
+  merge_group_workflow="$mutation_root/ci-merge-group.yaml"
+  perl -0pe "s/github\.event_name == 'workflow_dispatch' \|\|/github.event_name == 'workflow_dispatch' ||\n      github.event_name == 'merge_group' ||/" \
+    "$WORKFLOW" > "$merge_group_workflow"
+  if FINAL_CANDIDATE_WORKFLOW="$merge_group_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+    echo 'Final-candidate certification accepted a merge-group eligibility path.' >&2
+    exit 1
+  fi
 
   dispatch_root_escape_workflow="$mutation_root/dispatch-root-escape.yaml"
   perl -0pe 's/^      candidate_sha:$/      candidate_sha removed/m' "$WORKFLOW" > "$dispatch_root_escape_workflow"
