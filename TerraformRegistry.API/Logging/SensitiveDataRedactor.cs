@@ -23,11 +23,16 @@ public static partial class SensitiveDataRedactor
 
     public static T RedactValue<T>(T value)
     {
+        return RedactObject(value) is T redacted ? redacted : value;
+    }
+
+    private static object? RedactObject(object? value)
+    {
         if (value is string text)
-            return (T)(object)Redact(text);
+            return Redact(text);
 
         if (value is Uri uri && !string.Equals(Redact(uri.OriginalString), uri.OriginalString, StringComparison.Ordinal))
-            return (T)(object)new Uri("https://redacted.invalid/[REDACTED-SIGNED-URL]");
+            return new Uri("https://redacted.invalid/[REDACTED-SIGNED-URL]");
 
         return value;
     }

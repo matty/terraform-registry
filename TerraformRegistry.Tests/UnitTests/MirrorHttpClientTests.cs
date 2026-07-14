@@ -100,9 +100,10 @@ public class MirrorHttpClientTests
     [Fact]
     public async Task FetchModuleArchiveAsyncEnforcesMaxBytesWhileReading()
     {
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("too-large"));
         var handler = new SequenceHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("too-large"))
+            Content = content
         });
         var client = CreateClient(handler);
 
@@ -116,7 +117,7 @@ public class MirrorHttpClientTests
     [Fact]
     public async Task FetchModuleArchiveAsyncRedactsSignedCurrentUriWhenLoggingExceededSize()
     {
-        var content = new ByteArrayContent(Encoding.UTF8.GetBytes("too-large"));
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes("too-large"));
         content.Headers.ContentLength = null;
         var handler = new SequenceHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
         var logger = new CapturingLogger();

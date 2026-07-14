@@ -15,13 +15,13 @@ public sealed class OperationalMetricsStartupTests
     [Fact]
     public void StartupRegistersSharedOperationalMetricsAndEmitsMirrorAdmissionMeasurements()
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-metrics-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
+        var tempDir = CreateTestDirectory();
 
         try
         {
             using var listener = new OperationalMetricsTestListener();
-            using var factory = new WebApplicationFactory<Program>()
+            using var baseFactory = new WebApplicationFactory<Program>();
+            using var factory = baseFactory
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseEnvironment("Test");
@@ -31,10 +31,10 @@ public sealed class OperationalMetricsStartupTests
                         {
                             ["AuthorizationToken"] = "startup-test-auth-token",
                             ["DatabaseProvider"] = "sqlite",
-                            ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(tempDir, "metrics-test.db")}",
+                            ["Sqlite:ConnectionString"] = $"Data Source={ResolveTestPath(tempDir, "metrics-test.db")}",
                             ["StorageProvider"] = "local",
-                            ["ModuleStoragePath"] = Path.Combine(tempDir, "modules"),
-                            ["ProviderStoragePath"] = Path.Combine(tempDir, "providers"),
+                            ["ModuleStoragePath"] = ResolveTestPath(tempDir, "modules"),
+                            ["ProviderStoragePath"] = ResolveTestPath(tempDir, "providers"),
                             ["ModuleExtraction:Enabled"] = "false",
                             ["Oidc:JwtSecretKey"] = "startup-test-jwt-secret-key-32-chars-minimum"
                         });
@@ -72,5 +72,32 @@ public sealed class OperationalMetricsStartupTests
         {
             Directory.Delete(tempDir, recursive: true);
         }
+    }
+
+    private static string CreateTestDirectory()
+    {
+        var tempDir = Path.GetFullPath(Path.Join(Path.GetTempPath(), $"tf-reg-metrics-{Guid.NewGuid():N}"));
+        Directory.CreateDirectory(tempDir);
+        return tempDir;
+    }
+
+    private static string ResolveTestPath(string root, string relativePath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(root);
+        ArgumentException.ThrowIfNullOrEmpty(relativePath);
+
+        if (Path.IsPathFullyQualified(relativePath))
+            throw new ArgumentException("Test path segment must be relative.", nameof(relativePath));
+
+        var canonicalRoot = Path.GetFullPath(root);
+        var resolvedPath = Path.GetFullPath(Path.Join(canonicalRoot, relativePath));
+        var rootPrefix = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? canonicalRoot
+            : canonicalRoot + Path.DirectorySeparatorChar;
+
+        if (!resolvedPath.StartsWith(rootPrefix, StringComparison.Ordinal))
+            throw new ArgumentException("Test path must remain under its temporary root.", nameof(relativePath));
+
+        return resolvedPath;
     }
 }

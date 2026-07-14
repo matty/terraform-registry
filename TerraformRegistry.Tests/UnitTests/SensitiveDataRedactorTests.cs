@@ -52,6 +52,19 @@ public sealed class SensitiveDataRedactorTests
     }
 
     [Fact]
+    public void RegistryLogRedactsTypedAzureSasUriArguments()
+    {
+        var logger = new CapturingLogger();
+        var signedUri = new Uri("https://account.blob.core.windows.net/modules/example.zip?sv=2025-11-05&se=2026-07-15T12%3A00%3A00Z&sp=r&sig=azure-sas-signature");
+
+        RegistryLog.Warning(logger, "Module download for {Uri} failed", signedUri);
+
+        Assert.DoesNotContain("account.blob.core.windows.net", logger.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("azure-sas-signature", logger.Message, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED-SIGNED-URL]", logger.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RegistryLogRedactsExceptionAndInnerExceptionMessages()
     {
         var logger = new CapturingLogger();
