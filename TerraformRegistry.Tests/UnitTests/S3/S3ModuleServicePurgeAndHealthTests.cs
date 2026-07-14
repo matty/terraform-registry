@@ -66,7 +66,7 @@ public class S3ModuleServicePurgeAndHealthTests
     }
 
     [Fact]
-    public async Task PurgeModuleVersionAsyncRestoresCatalogRowWhenObjectDeletionIsCancelled()
+    public async Task PurgeModuleVersionAsyncCompletesDestructionWhenCancellationArrivesAfterFirstObjectDeletion()
     {
         var module = new ModuleStorage
         {
@@ -74,22 +74,38 @@ public class S3ModuleServicePurgeAndHealthTests
             FilePath = "ns/name-aws-1.0.0.zip", PublishedAt = DateTime.UtcNow, Dependencies = []
         };
         using var cancellation = new CancellationTokenSource();
+        var deletionCount = 0;
         _mockDatabaseService.Setup(x => x.GetModuleStorageAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
             .ReturnsAsync(module);
-        _mockDatabaseService.Setup(x => x.RemoveModuleExactAsync(module, cancellation.Token)).ReturnsAsync(true);
-        _mockDatabaseService.Setup(x => x.AddModuleAsync(module, CancellationToken.None)).ReturnsAsync(true);
+        _mockDatabaseService.Setup(x => x.RemoveModuleExactAsync(module, CancellationToken.None)).ReturnsAsync(true);
         _mockS3Client.Setup(x => x.ListObjectsV2Async(It.IsAny<ListObjectsV2Request>(), cancellation.Token))
-            .ReturnsAsync(new ListObjectsV2Response { S3Objects = [new S3Object { Key = module.FilePath }] });
+            .ReturnsAsync(new ListObjectsV2Response
+            {
+                S3Objects =
+                [
+                    new S3Object { Key = module.FilePath },
+                    new S3Object { Key = "ns/name-aws-1.0.0.zip.previous" }
+                ]
+            });
         _mockS3Client.Setup(x => x.GetObjectMetadataAsync(It.IsAny<GetObjectMetadataRequest>(), cancellation.Token))
             .ReturnsAsync(CreateMetadataResponse(module));
-        _mockS3Client.Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), cancellation.Token))
-            .Callback(() => cancellation.Cancel())
-            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+        _mockS3Client.Setup(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), CancellationToken.None))
+            .Returns<DeleteObjectRequest, CancellationToken>((_, _) =>
+            {
+                if (++deletionCount == 1)
+                {
+                    cancellation.Cancel();
+                }
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => CreateService().PurgeModuleVersionAsync("ns", "name", "aws", "1.0.0", cancellation.Token));
+                return Task.FromResult(new DeleteObjectResponse());
+            });
 
-        _mockDatabaseService.Verify(x => x.AddModuleAsync(module, CancellationToken.None), Times.Once);
+        var result = await CreateService().PurgeModuleVersionAsync("ns", "name", "aws", "1.0.0", cancellation.Token);
+
+        Assert.True(result);
+        _mockDatabaseService.Verify(x => x.RemoveModuleExactAsync(module, CancellationToken.None), Times.Once);
+        _mockDatabaseService.Verify(x => x.AddModuleAsync(module, It.IsAny<CancellationToken>()), Times.Never);
+        _mockS3Client.Verify(x => x.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), CancellationToken.None), Times.Exactly(2));
     }
 
     [Fact]

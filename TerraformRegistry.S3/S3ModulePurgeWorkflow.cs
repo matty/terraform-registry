@@ -53,10 +53,12 @@ internal sealed class S3ModulePurgeWorkflow(
             return false;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         return activeModuleStorage != null
             ? await PurgeActiveModuleAsync(activeModuleStorage, moduleStorage, purgeableObjectKeys.ObjectKeys,
-                cancellationToken)
-            : await PurgeDeletedModuleAsync(moduleStorage, purgeableObjectKeys.ObjectKeys, cancellationToken);
+                CancellationToken.None)
+            : await PurgeDeletedModuleAsync(moduleStorage, purgeableObjectKeys.ObjectKeys, CancellationToken.None);
     }
 
     private async Task<bool> PurgeActiveModuleAsync(
@@ -79,20 +81,18 @@ internal sealed class S3ModulePurgeWorkflow(
                 return false;
             }
 
-            var deletedObjects = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
+            var deletion = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
                 cancellationToken);
-            if (deletedObjects)
+            if (deletion.Success)
             {
                 return true;
             }
 
-            await TryRestoreActiveModuleSnapshotAsync(activeModuleStorage);
+            if (!deletion.AnyDeleted)
+            {
+                await TryRestoreActiveModuleSnapshotAsync(activeModuleStorage);
+            }
             return false;
-        }
-        catch (OperationCanceledException)
-        {
-            await TryRestoreActiveModuleSnapshotAsync(activeModuleStorage);
-            throw;
         }
         catch (Exception ex)
         {
@@ -128,20 +128,18 @@ internal sealed class S3ModulePurgeWorkflow(
                 return false;
             }
 
-            var deletedObjects = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
+            var deletion = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
                 cancellationToken);
-            if (deletedObjects)
+            if (deletion.Success)
             {
                 return true;
             }
 
-            await TryRestoreDeletedModuleSnapshotAsync(moduleStorage);
+            if (!deletion.AnyDeleted)
+            {
+                await TryRestoreDeletedModuleSnapshotAsync(moduleStorage);
+            }
             return false;
-        }
-        catch (OperationCanceledException)
-        {
-            await TryRestoreDeletedModuleSnapshotAsync(moduleStorage);
-            throw;
         }
         catch (Exception ex)
         {

@@ -300,7 +300,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -316,7 +316,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(moduleStorage.Metadata)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -349,7 +349,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -357,7 +357,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
             command.Parameters.AddWithValue("@version", moduleStorage.Version);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == "23503") // FK violation
@@ -393,7 +393,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -407,7 +407,7 @@ public sealed class PostgreSqlModuleRepository(
                     moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (NpgsqlException ex)
@@ -433,7 +433,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -441,7 +441,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (NpgsqlException ex)
@@ -483,7 +483,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -498,7 +498,7 @@ public sealed class PostgreSqlModuleRepository(
                 NpgsqlDbType.Jsonb;
             command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -577,14 +577,14 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
             command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)
@@ -604,13 +604,13 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)
@@ -706,7 +706,7 @@ public sealed class PostgreSqlModuleRepository(
             FROM modules WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version";
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -714,8 +714,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
@@ -743,13 +743,13 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@description", description);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)
