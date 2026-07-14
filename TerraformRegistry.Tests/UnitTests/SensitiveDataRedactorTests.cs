@@ -39,6 +39,19 @@ public sealed class SensitiveDataRedactorTests
     }
 
     [Fact]
+    public void RegistryLogRedactsTypedS3SignedUriArguments()
+    {
+        var logger = new CapturingLogger();
+        var signedUri = new Uri("https://bucket.s3.example/module.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=access-key&X-Amz-Date=20260714T120000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=secret-signature");
+
+        RegistryLog.Warning(logger, "Mirror fetch for {Uri} exceeded maximum byte count {MaxBytes}", signedUri, 1024);
+
+        Assert.DoesNotContain("bucket.s3.example", logger.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-signature", logger.Message, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED-SIGNED-URL]", logger.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RegistryLogRedactsExceptionAndInnerExceptionMessages()
     {
         var logger = new CapturingLogger();
@@ -53,6 +66,21 @@ public sealed class SensitiveDataRedactorTests
         Assert.DoesNotContain("opaque+/=._~-token", logger.Exception.ToString(), StringComparison.Ordinal);
         Assert.NotNull(logger.Exception.InnerException);
         Assert.DoesNotContain("sas-signature", logger.Exception.InnerException!.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RegistryLogRedactsS3SignedUrisInExceptionChains()
+    {
+        var logger = new CapturingLogger();
+        const string signedUrl = "https://bucket.s3.example/module.zip?X-Amz-Credential=access-key&X-Amz-Security-Token=session-token&X-Amz-Signature=secret-signature";
+        var exception = new InvalidOperationException("mirror request failed", new HttpRequestException($"download failed at {signedUrl}"));
+
+        RegistryLog.Error(logger, exception, "Module download failed");
+
+        Assert.NotNull(logger.Exception);
+        Assert.DoesNotContain("bucket.s3.example", logger.Exception!.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("session-token", logger.Exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-signature", logger.Exception.ToString(), StringComparison.Ordinal);
     }
 
     private sealed class CapturingLogger : ILogger

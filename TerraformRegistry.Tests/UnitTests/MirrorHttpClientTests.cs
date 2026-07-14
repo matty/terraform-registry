@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using TerraformRegistry.Services.Mirror;
@@ -112,6 +114,29 @@ public class MirrorHttpClientTests
     }
 
     [Fact]
+    public async Task FetchModuleArchiveAsyncRedactsSignedCurrentUriWhenLoggingExceededSize()
+    {
+        var content = new ByteArrayContent(Encoding.UTF8.GetBytes("too-large"));
+        content.Headers.ContentLength = null;
+        var handler = new SequenceHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        var logger = new CapturingLogger();
+        var client = CreateClient(handler, logger);
+        const string signedUrl = "https://github.com/acme/module/archive/main.zip?X-Amz-Credential=access-key&X-Amz-Security-Token=session-token&X-Amz-Signature=secret-signature";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.FetchModuleArchiveAsync(
+            signedUrl,
+            maxBytes: 3,
+            maxRedirects: 3,
+            CancellationToken.None));
+
+        Assert.DoesNotContain("access-key", logger.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("session-token", logger.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-signature", logger.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.com/acme/module", logger.Message, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED-SIGNED-URL]", logger.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task FetchModuleArchiveAsyncAttachesPinnedAddressesToInitialRequest()
     {
         var handler = new SequenceHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -140,7 +165,7 @@ public class MirrorHttpClientTests
             await helper.OpenConnectionAsync(request, 443, CancellationToken.None));
     }
 
-    private static MirrorHttpClient CreateClient(SequenceHandler handler)
+    private static MirrorHttpClient CreateClient(SequenceHandler handler, ILogger<MirrorHttpClient>? logger = null)
     {
         var httpClient = new HttpClient(handler)
         {
@@ -163,7 +188,7 @@ public class MirrorHttpClientTests
         return new MirrorHttpClient(
             new TestHttpClientFactory(httpClient),
             policy,
-            NullLogger<MirrorHttpClient>.Instance);
+            logger ?? NullLogger<MirrorHttpClient>.Instance);
     }
 
     private static void AssertPinnedAddress(HttpRequestMessage request, IPAddress expectedAddress)
@@ -208,5 +233,15 @@ public class MirrorHttpClientTests
             int port,
             CancellationToken cancellationToken) =>
             new(Stream.Null);
+    }
+
+    private sealed class CapturingLogger : ILogger<MirrorHttpClient>
+    {
+        public string Message { get; private set; } = string.Empty;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Message = formatter(state, exception);
     }
 }
