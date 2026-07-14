@@ -23,7 +23,8 @@ public sealed class ModuleMirrorService(
     MirrorDownloadAdmission? downloadAdmission = null,
     MirrorCacheBudgetService? cacheBudget = null,
     MirrorCacheUsage? cacheUsage = null,
-    ArtifactDownloadTokenService? downloadTokens = null) : IModuleMirrorService
+    ArtifactDownloadTokenService? downloadTokens = null,
+    OperationalMetrics? metrics = null) : IModuleMirrorService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan LeaseReleaseTimeout = TimeSpan.FromSeconds(5);
@@ -81,6 +82,7 @@ public sealed class ModuleMirrorService(
             config.UpstreamRegistryBaseUrl,
             $"/v1/modules/{moduleNamespace}/{name}/{provider}/{version}");
         using var timeout = CreateTimeout(config.Modules.DownloadTimeoutSeconds, cancellationToken);
+        metrics?.RecordMirrorUpstreamRequest("module");
         using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -169,7 +171,7 @@ public sealed class ModuleMirrorService(
                 return cachedLocalPath;
             }
 
-            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1));
+            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1), metrics, "module");
             return await FetchCacheAndCreateLocalDownloadPathAsync(
                 hostname,
                 moduleNamespace,
@@ -200,6 +202,7 @@ public sealed class ModuleMirrorService(
             cached.LastSyncAt is { } negativeSync &&
             negativeSync.AddSeconds(config.Limits.NegativeCacheTtlSeconds) > DateTime.UtcNow)
         {
+            metrics?.RecordMirrorNegativeCacheHit("module");
             return null;
         }
 
@@ -214,6 +217,7 @@ public sealed class ModuleMirrorService(
         var client = httpClientFactory.CreateClient();
         var uri = BuildUpstreamUri(config.UpstreamRegistryBaseUrl, $"/v1/modules/{moduleNamespace}/{name}/{provider}/versions");
         using var timeout = CreateTimeout(config.Modules.DownloadTimeoutSeconds, cancellationToken);
+        metrics?.RecordMirrorUpstreamRequest("module");
         using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -467,6 +471,11 @@ public sealed class ModuleMirrorService(
                 LastSyncAt = DateTime.UtcNow
             });
 
+            if (cacheBudget is not null)
+            {
+                await cacheBudget.RecordCacheBytesAsync(cancellationToken);
+            }
+
             RegisterModuleTokenPath(localPath, hostname, moduleNamespace, name, provider, version);
             return AppendPreservedHints(localPath, source);
         }
@@ -493,6 +502,7 @@ public sealed class ModuleMirrorService(
     {
         var client = httpClientFactory.CreateClient(MirrorDiscoveryHttpClientName);
         using var timeout = CreateTimeout(timeoutSeconds, cancellationToken);
+        metrics?.RecordMirrorUpstreamRequest("module");
         using var response = await client.GetAsync(upstreamDownloadUri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {

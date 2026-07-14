@@ -13,7 +13,8 @@ public class AuthenticationMiddleware(
     ILogger<AuthenticationMiddleware> logger,
     IHostEnvironment environment,
     IConfiguration configuration,
-    IMirrorConfigService mirrorConfigService)
+    IMirrorConfigService mirrorConfigService,
+    OperationalMetrics? metrics = null)
 {
     private const string AuthorizationHeader = "Authorization";
     private const string BearerPrefix = "Bearer ";
@@ -72,6 +73,7 @@ public class AuthenticationMiddleware(
                 }
 
                 context.User = GetStaticTokenPrincipal();
+                metrics?.RecordAuthenticationDecision("admitted_static_token");
                 await next(context);
                 return;
             }
@@ -139,11 +141,13 @@ public class AuthenticationMiddleware(
                 {
                     if (!await IsCurrentUserActiveAsync(context, principal))
                     {
+                        metrics?.RecordAuthenticationDecision("denied_inactive_user");
                         await WriteUnauthorizedResponseAsync(context, path);
                         return;
                     }
 
                     context.User = principal;
+                    metrics?.RecordAuthenticationDecision("admitted_session");
                     await LoadPermissionsIntoClaims(context);
                     RegistryLog.Information(logger,
                         "Session cookie validated successfully for {Path}. User: {User}. IsAuthenticated: {IsAuthenticated}. AuthType: {AuthType}",
@@ -158,6 +162,7 @@ public class AuthenticationMiddleware(
                 }
                 else
                 {
+                    metrics?.RecordAuthenticationDecision("denied_invalid_session");
                     RegistryLog.Warning(logger, "Session cookie validation failed for {Path}. Token: {TokenPrefix}...", path,
                         sessionToken.Substring(0, Math.Min(10, sessionToken.Length)));
                 }
@@ -177,11 +182,13 @@ public class AuthenticationMiddleware(
             {
                 if (!await IsCurrentUserActiveAsync(context, jwtPrincipal))
                 {
+                    metrics?.RecordAuthenticationDecision("denied_inactive_user");
                     await WriteUnauthorizedResponseAsync(context, path);
                     return;
                 }
 
                 context.User = jwtPrincipal;
+                metrics?.RecordAuthenticationDecision("admitted_jwt");
                 await LoadPermissionsIntoClaims(context);
                 await next(context);
                 return;
@@ -190,6 +197,7 @@ public class AuthenticationMiddleware(
             // No valid authentication found
             RegistryLog.Warning(logger, "Unauthorized request to {Path} from {RemoteIp}", path,
                 context.Connection.RemoteIpAddress);
+            metrics?.RecordAuthenticationDecision("denied_invalid_token");
 
             // For /api/keys, we let the [Authorize] attribute handle the challenge
             if (path.StartsWith("/api/keys", StringComparison.OrdinalIgnoreCase))

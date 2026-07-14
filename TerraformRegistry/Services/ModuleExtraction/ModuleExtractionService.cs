@@ -43,7 +43,9 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         if (!await _configService.IsEnabledAsync(cancellationToken))
             return false;
 
-        if (await _databaseService.CountPendingExtractionJobsAsync(cancellationToken) >= _options.MaxPendingJobs)
+        var pendingJobs = await _databaseService.CountPendingExtractionJobsAsync(cancellationToken);
+        _metrics?.RecordExtractionQueueDepth(pendingJobs);
+        if (pendingJobs >= _options.MaxPendingJobs)
         {
             RegistryLog.Warning(_logger,
                 "Extraction backlog is full; rejecting module {Namespace}/{Name}/{Provider}/{Version}",
@@ -81,6 +83,7 @@ public sealed class ModuleExtractionService : IModuleExtractionService
             UpdatedAt = now
         };
         await _databaseService.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);
+        _metrics?.RecordExtractionQueueDepth(pendingJobs + 1);
         await MarkPendingAsync(request);
         return true;
     }
@@ -118,6 +121,8 @@ public sealed class ModuleExtractionService : IModuleExtractionService
         if (job is null)
             return false;
 
+        _metrics?.RecordExtractionQueueDepth(
+            await _databaseService.CountPendingExtractionJobsAsync(cancellationToken));
         _metrics?.RecordExtractionClaim(job.CreatedAt);
         _metrics?.RecordExtractionAttempt();
 

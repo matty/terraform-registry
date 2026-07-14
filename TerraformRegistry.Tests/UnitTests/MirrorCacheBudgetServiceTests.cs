@@ -1,6 +1,8 @@
 using Moq;
+using System.Diagnostics.Metrics;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
+using TerraformRegistry.Services;
 using TerraformRegistry.Services.Mirror;
 
 namespace TerraformRegistry.Tests.UnitTests;
@@ -137,6 +139,92 @@ public sealed class MirrorCacheBudgetServiceTests
             package.Version, CancellationToken.None);
 
         Assert.Equal(MirrorCachePurgeResult.InUse, result);
+    }
+
+    [Fact]
+    public async Task PurgeProviderRefreshesCacheBytesAfterRemovingThePackage()
+    {
+        using var listener = new MeterListener();
+        var cacheBytes = new List<long>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                cacheBytes.Add(value);
+        });
+        listener.Start();
+
+        var package = ProviderPackage("cache/aws.zip", 42, DateTime.UtcNow);
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.GetProviderPackageAsync(
+                package.Hostname, package.Namespace, package.Type, package.Version, package.Os, package.Arch))
+            .ReturnsAsync(package);
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0)).ReturnsAsync([]);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0)).ReturnsAsync([]);
+        var storage = new Mock<IProviderArtifactStorage>();
+        storage.Setup(x => x.DeleteAsync(package.PackageStoragePath!, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        using var metrics = new OperationalMetrics();
+        var service = new MirrorCacheBudgetService(providers.Object, modules.Object, storage.Object,
+            Mock.Of<IModuleService>(), new MirrorCacheUsage(), metrics: metrics);
+
+        Assert.Equal(MirrorCachePurgeResult.Purged, await service.PurgeProviderAsync(
+            package.Hostname, package.Namespace, package.Type, package.Version, package.Os, package.Arch,
+            CancellationToken.None));
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(0, cacheBytes);
+    }
+
+    [Fact]
+    public async Task RecordCacheBytesRecordsZeroForEmptyRepositoryPages()
+    {
+        using var listener = new MeterListener();
+        var cacheBytes = new List<long>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                cacheBytes.Add(value);
+        });
+        listener.Start();
+
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync([]);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync([]);
+        using var metrics = new OperationalMetrics();
+        var service = new MirrorCacheBudgetService(providers.Object, modules.Object, Mock.Of<IProviderArtifactStorage>(),
+            Mock.Of<IModuleService>(), new MirrorCacheUsage(), metrics: metrics);
+
+        await service.RecordCacheBytesAsync(CancellationToken.None);
+        listener.RecordObservableInstruments();
+
+        providers.Verify(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0), Times.Once);
+        modules.Verify(x => x.ListModulePackagesAsync(null, "ready", 1000, 0), Times.Once);
+        Assert.Contains(0, cacheBytes);
+    }
+
+    [Fact]
+    public async Task RecordCacheBytesRejectsNullRepositoryPages()
+    {
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync(() => null!);
+        var service = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(),
+            Mock.Of<IProviderArtifactStorage>(), Mock.Of<IModuleService>(), new MirrorCacheUsage());
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.RecordCacheBytesAsync(CancellationToken.None));
     }
 
     private static MirrorProviderPackage ProviderPackage(string path, long size, DateTime updatedAt) => new()

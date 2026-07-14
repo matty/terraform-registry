@@ -12,13 +12,18 @@ public sealed class MirrorLeaseHeartbeat : IAsyncDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly TaskCompletionSource _firstHeartbeat = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _runner;
+    private readonly OperationalMetrics? _metrics;
+    private readonly string _kind;
     private int _ownershipLost;
 
-    public MirrorLeaseHeartbeat(IMirrorLeaseService leaseService, MirrorLeaseHandle lease, TimeSpan interval)
+    public MirrorLeaseHeartbeat(IMirrorLeaseService leaseService, MirrorLeaseHandle lease, TimeSpan interval,
+        OperationalMetrics? metrics = null, string kind = "unknown")
     {
         _leaseService = leaseService;
         _lease = lease;
         _interval = interval;
+        _metrics = metrics;
+        _kind = kind;
         _runner = RunAsync();
     }
 
@@ -57,6 +62,7 @@ public sealed class MirrorLeaseHeartbeat : IAsyncDisposable
                     if (!await _leaseService.HeartbeatAsync(_lease, _stopping.Token))
                     {
                         Interlocked.Exchange(ref _ownershipLost, 1);
+                        _metrics?.RecordMirrorLeaseLoss(_kind);
                         return;
                     }
                 }
@@ -67,16 +73,19 @@ public sealed class MirrorLeaseHeartbeat : IAsyncDisposable
                 catch (TimeoutException)
                 {
                     Interlocked.Exchange(ref _ownershipLost, 1);
+                    _metrics?.RecordMirrorLeaseLoss(_kind);
                     return;
                 }
                 catch (System.Data.Common.DbException)
                 {
                     Interlocked.Exchange(ref _ownershipLost, 1);
+                    _metrics?.RecordMirrorLeaseLoss(_kind);
                     return;
                 }
                 catch (IOException)
                 {
                     Interlocked.Exchange(ref _ownershipLost, 1);
+                    _metrics?.RecordMirrorLeaseLoss(_kind);
                     return;
                 }
                 finally

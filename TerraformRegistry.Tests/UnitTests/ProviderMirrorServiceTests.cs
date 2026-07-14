@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -91,6 +92,19 @@ public sealed class ProviderMirrorServiceTests
     [Fact]
     public async Task ProviderVersionCachesVerificationSidecarsWithoutDownloadingThePlatformArchive()
     {
+        using var listener = new MeterListener();
+        var cacheBytes = new List<long>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                cacheBytes.Add(value);
+        });
+        listener.Start();
         var packageBytes = new byte[] { 1, 2, 3 };
         var shasum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
         var filename = "terraform-provider-aws_5.0.0_linux_amd64.zip";
@@ -113,7 +127,12 @@ public sealed class ProviderMirrorServiceTests
         http.RespondBytes("https://releases.example.com/SHA256SUMS.sig", [9, 8, 7], "application/octet-stream");
         var storage = new InMemoryProviderArtifactStorage();
         var repository = new InMemoryProviderMirrorRepository();
-        var service = CreateServiceWithRepository(http, repository, storage);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0)).ReturnsAsync([]);
+        using var metrics = new OperationalMetrics();
+        var budget = new MirrorCacheBudgetService(repository, modules.Object, storage, Mock.Of<IModuleService>(),
+            new MirrorCacheUsage(), metrics: metrics);
+        var service = CreateServiceWithRepository(http, repository, storage, cacheBudget: budget);
 
         var version = await service.GetProviderVersionAsync(
             "registry.terraform.io",
@@ -144,6 +163,8 @@ public sealed class ProviderMirrorServiceTests
         using var downloaded = new MemoryStream();
         await content.CopyToAsync(downloaded);
         Assert.Equal(packageBytes, downloaded.ToArray());
+        listener.RecordObservableInstruments();
+        Assert.Contains(cacheBytes, bytes => bytes > 0);
     }
 
     [Fact]
@@ -969,7 +990,8 @@ public sealed class ProviderMirrorServiceTests
         IProviderMirrorRepository repository,
         InMemoryProviderArtifactStorage? storage = null,
         IConfiguration? configuration = null,
-        Mock<IProviderPackageValidator>? validator = null)
+        Mock<IProviderPackageValidator>? validator = null,
+        MirrorCacheBudgetService? cacheBudget = null)
     {
         configuration ??= CreateConfiguration();
         var settings = new Mock<IRuntimeSettingsService>();
@@ -1009,6 +1031,7 @@ public sealed class ProviderMirrorServiceTests
             new SingleClientFactory(new HttpClient(http)),
             new MirrorPackageUrlSigner(configuration, new TestHostEnvironment()),
             NullLogger<ProviderMirrorService>.Instance,
+            cacheBudget: cacheBudget,
             packageValidator: validator.Object);
     }
 
