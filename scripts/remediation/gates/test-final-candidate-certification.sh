@@ -22,7 +22,9 @@ for gate in \
 done
 
 grep -Fq 'FINAL_CANDIDATE_EVIDENCE_PATH' "$GATE"
+grep -Fq 'FINAL_CANDIDATE_VERSION' "$GATE"
 grep -Fq 'candidate_sha' "$GATE"
+grep -Fq 'candidate_version' "$GATE"
 grep -Fq 'image_digest' "$GATE"
 grep -Fq 'not-published-by-certification' "$GATE"
 
@@ -43,6 +45,9 @@ grep -Fq 'types: [opened, synchronize, reopened, labeled]' "$WORKFLOW"
 grep -Fq "'final-candidate'" <<<"$job"
 grep -Fq "github.event_name == 'merge_group'" <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"
+grep -Fq 'fetch-depth: 0' <<<"$job"
+grep -Fq '.github/scripts/resolve-version.sh' <<<"$job"
+grep -Fq 'FINAL_CANDIDATE_VERSION' <<<"$job"
 grep -Fq 'final-candidate-certification.sh' <<<"$job"
 grep -Fq 'actions/upload-artifact@' <<<"$job"
 grep -Fq 'final-candidate-certification-evidence' <<<"$job"

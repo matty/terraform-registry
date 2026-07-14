@@ -13,6 +13,7 @@ MATRIX_HOME="${FINAL_CANDIDATE_MATRIX_HOME:-${RUNNER_TEMP:-/tmp}/terraform-regis
 CANDIDATE_SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 CANDIDATE_REF="${GITHUB_REF:-$(git rev-parse --abbrev-ref HEAD)}"
 EVENT_NAME="${GITHUB_EVENT_NAME:-local}"
+CANDIDATE_VERSION="${FINAL_CANDIDATE_VERSION:?FINAL_CANDIDATE_VERSION must be resolved before certification starts}"
 DOTNET_SDK_VERSION="$(dotnet --version)"
 readonly TERRAFORM_VERSIONS='["1.12.0", "1.14.2"]'
 
@@ -47,6 +48,7 @@ write_evidence() {
   jq -n \
     --arg candidate_sha "$CANDIDATE_SHA" \
     --arg candidate_ref "$CANDIDATE_REF" \
+    --arg candidate_version "$CANDIDATE_VERSION" \
     --arg event_name "$EVENT_NAME" \
     --arg dotnet_sdk_version "$DOTNET_SDK_VERSION" \
     --arg image_digest_status 'not-published-by-certification' \
@@ -57,6 +59,7 @@ write_evidence() {
       schema_version: 1,
       candidate_sha: $candidate_sha,
       candidate_ref: $candidate_ref,
+      candidate_version: $candidate_version,
       event_name: $event_name,
       dotnet_sdk_version: $dotnet_sdk_version,
       terraform_versions: $terraform_versions,

@@ -365,16 +365,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Resolve candidate version
+        id: candidate-version
+        env:
+          GITHUB_REF_TYPE: branch
+          GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          version="$(.github/scripts/resolve-version.sh)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Verify final-candidate certification wiring
         run: bash scripts/remediation/gates/test-final-candidate-certification.sh
 
       - name: Run final-candidate certification
+        env:
+          FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}
         run: >-
           FINAL_CANDIDATE_EVIDENCE_PATH="$RUNNER_TEMP/final-candidate-certification-evidence.json"
           bash scripts/remediation/gates/final-candidate-certification.sh
