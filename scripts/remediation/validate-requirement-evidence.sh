@@ -6,6 +6,7 @@ SPEC="$ROOT/docs/remediation-specification.md"
 MANIFEST="$ROOT/scripts/remediation/requirement-evidence.tsv"
 STATUS="$ROOT/docs/remediation-status.md"
 CANDIDATE="$ROOT/docs/release-candidate-evidence.md"
+GH_BIN="${GH_BIN:-gh}"
 MODE="${1:---check}"
 
 case "$MODE" in
@@ -40,7 +41,10 @@ while IFS=$'\t' read -r id state pull_request merge_record gate evidence extra; 
   [[ "$merge_record" =~ ^[0-9a-f]{40}$ ]] || fail "$id has no immutable merge record"
   git -C "$ROOT" cat-file -e "$merge_record^{commit}" 2>/dev/null || fail "$id merge record is not a commit"
   git -C "$ROOT" merge-base --is-ancestor "$merge_record" HEAD || fail "$id merge record is not reachable from the current candidate"
+  commit_message="$(git -C "$ROOT" show -s --format=%B "$merge_record")"
+  grep -Eq "Merge pull request #${pull_request}([[:space:]]|$)|\\(#${pull_request}\\)" <<<"$commit_message" || fail "$id pull request #$pull_request is not bound to its merge record"
   [[ -x "$ROOT/$gate" ]] || fail "$id gate is absent or not executable: $gate"
+  rg -F --glob '*.yaml' --glob '*.yml' --quiet -- "$gate" "$ROOT/.github/workflows" || fail "$id gate is not wired into CI: $gate"
   [[ -e "$ROOT/$evidence" ]] || fail "$id evidence is absent: $evidence"
 done < "$MANIFEST"
 
@@ -70,7 +74,17 @@ fi
 if (( pending_count == 0 )); then
   [[ "${candidate_values[0]}" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "candidate digest is not immutable"
   [[ "${candidate_values[1]}" =~ ^[0-9a-f]{40}$ ]] || fail "candidate revision is not a commit SHA"
-  [[ "${candidate_values[2]}" =~ ^https://github\.com/.+/actions/runs/[0-9]+$ ]] || fail "candidate verification is not a GitHub Actions run URL"
+  candidate_revision="${candidate_values[1]}"
+  git -C "$ROOT" cat-file -e "$candidate_revision^{commit}" 2>/dev/null || fail "candidate revision is not an existing commit"
+  git -C "$ROOT" merge-base --is-ancestor "$candidate_revision" HEAD || fail "candidate revision is not reachable from the current target"
+  [[ "${candidate_values[2]}" =~ ^https://github\.com/matty/terraform-registry/actions/runs/([1-9][0-9]*)$ ]] || fail "candidate verification is not an authoritative repository run URL"
+  run_id="${BASH_REMATCH[1]}"
+  run_conclusion="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.conclusion' 2>/dev/null)" || fail "candidate verification run cannot be read"
+  run_head_sha="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.head_sha' 2>/dev/null)" || fail "candidate verification run head cannot be read"
+  run_name="$("$GH_BIN" api "repos/matty/terraform-registry/actions/runs/$run_id" --jq '.name' 2>/dev/null)" || fail "candidate verification run name cannot be read"
+  [[ "$run_conclusion" == success ]] || fail "candidate verification run did not succeed"
+  [[ "$run_head_sha" == "$candidate_revision" ]] || fail "candidate verification run does not verify the candidate revision"
+  [[ "$run_name" == CI ]] || fail "candidate verification run is not the CI workflow"
   for index in 3 4 5; do [[ "${candidate_values[$index]}" == PASS ]] || fail "candidate gate result must be PASS"; done
 fi
 

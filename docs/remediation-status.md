@@ -74,9 +74,9 @@ certification from historical records.
 | `REL-002` | MERGED | [#104](https://github.com/matty/terraform-registry/pull/104) | `338b05617aa691b94e7fa1d5aa4073f81e2faccc` | `scripts/remediation/gates/operability-certification.sh` | `TerraformRegistry.Tests/UnitTests/ModuleDownloadAnalyticsQueueTests.cs` |
 | `REL-003` | MERGED | [#105](https://github.com/matty/terraform-registry/pull/105) | `3f83a4295f2ce649a6bf275f4896297c8d22b331` | `scripts/remediation/gates/operability-certification.sh` | `TerraformRegistry.Tests/IntegrationTests/HttpDeliveryPolicyTests.cs` |
 | `REL-004` | MERGED | [#106](https://github.com/matty/terraform-registry/pull/106) | `2ace3de16dc98b759757810760c2fdde40141a08` | `scripts/remediation/gates/operability-certification.sh` | `TerraformRegistry.Tests/IntegrationTests/BrowserSecurityHeaderTests.cs` |
-| `SUP-001` | MERGED | [#45](https://github.com/matty/terraform-registry/pull/45) | `7b4deebf0dc3f349110b7bfac53fa522a0478bc8` | `scripts/remediation/gates/supply-chain-pinning.sh` | `global.json` |
-| `SUP-002` | MERGED | [#110](https://github.com/matty/terraform-registry/pull/110) | `b4fdd701e4df739ea09868a99bf8c29e0d83bd69` | `scripts/remediation/gates/supply-chain-pinning.sh` | `Dockerfile` |
-| `SUP-003` | MERGED | [#110](https://github.com/matty/terraform-registry/pull/110) | `b4fdd701e4df739ea09868a99bf8c29e0d83bd69` | `scripts/remediation/gates/supply-chain-pinning.sh` | `TerraformRegistry/web-src/package.json` |
+| `SUP-001` | MERGED | [#45](https://github.com/matty/terraform-registry/pull/45) | `7b4deebf0dc3f349110b7bfac53fa522a0478bc8` | `scripts/remediation/gates/test-supply-chain-pinning.sh` | `global.json` |
+| `SUP-002` | MERGED | [#110](https://github.com/matty/terraform-registry/pull/110) | `b4fdd701e4df739ea09868a99bf8c29e0d83bd69` | `scripts/remediation/gates/test-supply-chain-pinning.sh` | `Dockerfile` |
+| `SUP-003` | MERGED | [#110](https://github.com/matty/terraform-registry/pull/110) | `b4fdd701e4df739ea09868a99bf8c29e0d83bd69` | `scripts/remediation/gates/test-supply-chain-pinning.sh` | `TerraformRegistry/web-src/package.json` |
 
 ## Current release candidate
 
