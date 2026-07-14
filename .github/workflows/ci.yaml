@@ -36,7 +36,7 @@ concurrency:
 
 env:
   CONFIGURATION: Release
-  DOTNET_VERSION: "10.0.x"
+  DOTNET_VERSION: "10.0.301"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/terraform-registry
   NODE_VERSION: "24"
   SCAN_IMAGE_NAME: terraform-registry:${{ github.sha }}
@@ -307,11 +307,6 @@ jobs:
     if: github.event_name == 'pull_request' && github.head_ref == 'test/fault-load-certification'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
-  operability-certification:
-    name: Operability certification gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/operability-certification'
-    runs-on: ubuntu-latest
     permissions:
       contents: read
 
@@ -329,6 +324,25 @@ jobs:
 
       - name: Run fault and load certification
         run: bash scripts/remediation/gates/fault-load-certification.sh
+
+  operability-certification:
+    name: Operability certification gate
+    if: github.event_name == 'pull_request' && github.head_ref == 'test/operability-certification'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Verify operability certification structure and selectors
+        run: bash scripts/remediation/gates/test-operability-certification.sh
 
       - name: Run operability certification gate
         run: bash scripts/remediation/gates/operability-certification.sh
