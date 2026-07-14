@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MATRIX="$ROOT/scripts/remediation/terraform-backend-matrix.sh"
 WORKFLOW="$ROOT/.github/workflows/ci.yaml"
 BUILD_INPUTS="$ROOT/docs/build-inputs.md"
+EMULATOR_COMPOSE="$ROOT/scripts/remediation/storage-emulators/compose.yaml"
 
 test -x "$MATRIX"
 grep -Fq 'hashicorp/terraform:1.12.0@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b' "$MATRIX"
@@ -27,3 +28,8 @@ grep -Fq "docker image inspect --format '{{.Config.User}}'" "$MATRIX"
 grep -Eq '^  terraform-backend-matrix:' "$WORKFLOW"
 grep -Fq 'scripts/remediation/test-terraform-backend-matrix.sh' "$WORKFLOW"
 grep -Fq 'scripts/remediation/terraform-backend-matrix.sh' "$WORKFLOW"
+
+# The matrix starts the emulator compose stack for each provider. Validate its
+# rendered YAML so an overlapping remediation change cannot introduce duplicate
+# mapping keys that stop the certification before either backend is exercised.
+REGISTRY_ROOT="$ROOT" STORAGE_PROVIDER=azure docker compose -f "$EMULATOR_COMPOSE" config -q
