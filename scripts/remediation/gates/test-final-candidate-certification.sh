@@ -24,6 +24,9 @@ done
 
 grep -Fq 'FINAL_CANDIDATE_EVIDENCE_PATH' "$GATE"
 grep -Fq 'FINAL_CANDIDATE_VERSION' "$GATE"
+grep -Fq 'FINAL_CANDIDATE_SHA' "$GATE"
+grep -Fq 'FINAL_CANDIDATE_REF' "$GATE"
+! grep -Fq 'CANDIDATE_SHA="${GITHUB_SHA:-' "$GATE"
 grep -Fq 'candidate_sha' "$GATE"
 grep -Fq 'candidate_version' "$GATE"
 grep -Fq 'image_digest' "$GATE"
@@ -45,16 +48,36 @@ job_body() {
   ' "$WORKFLOW"
 }
 
+workflow_dispatch_body() {
+  awk '
+    $0 == "  workflow_dispatch:" { in_dispatch = 1 }
+    in_dispatch && $0 ~ /^  [[:alnum:]_-]+:$/ && $0 != "  workflow_dispatch:" { exit }
+    in_dispatch { print }
+  ' "$WORKFLOW"
+}
+
 job="$(job_body)"
 test -n "$job"
+workflow_dispatch="$(workflow_dispatch_body)"
+test -n "$workflow_dispatch"
 
 # Candidates are selected by a durable release label or the merge queue. Do
 # not couple this final gate to an old one-off remediation branch name.
 grep -Fq 'types: [opened, synchronize, reopened, labeled]' "$WORKFLOW"
 grep -Fq "'final-candidate'" <<<"$job"
 grep -Fq "github.event_name == 'merge_group'" <<<"$job"
+grep -Fq "github.event_name == 'workflow_dispatch'" <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"
 grep -Fq 'fetch-depth: 0' <<<"$job"
+grep -Fxq '      candidate_sha:' <<<"$workflow_dispatch"
+grep -Fxq '      candidate_ref:' <<<"$workflow_dispatch"
+grep -Fxq '        id: candidate' <<<"$job"
+grep -Fxq '          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' <<<"$job"
+grep -Fxq '          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' <<<"$job"
+grep -Fxq '          ref: ${{ steps.candidate.outputs.sha }}' <<<"$job"
+grep -Fq 'git rev-parse HEAD' <<<"$job"
+grep -Fxq "            echo 'checkout did not resolve the requested immutable candidate SHA.' >&2" <<<"$job"
+grep -Fxq '          env -u GITHUB_SHA -u GITHUB_REF \' <<<"$job"
 grep -Fq '.github/scripts/resolve-version.sh' <<<"$job"
 grep -Fq 'final-candidate-certification.sh' <<<"$job"
 grep -Fq 'actions/upload-artifact@' <<<"$job"
@@ -67,18 +90,31 @@ grep -Fxq '        id: candidate-version' <<<"$job"
 grep -Fxq '          test -n "$version"' <<<"$job"
 grep -Fxq '          echo "version=$version" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}' <<<"$job"
+grep -Fxq '          FINAL_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}' <<<"$job"
+grep -Fxq '          FINAL_CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}' <<<"$job"
 
 if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
   mutation_root="$(mktemp -d)"
   trap 'rm -rf "$mutation_root"' EXIT
 
   for mutation in \
+    'candidate_sha:' \
+    'candidate_ref:' \
+    'id: candidate' \
+    'echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' \
+    'echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' \
+    'ref: ${{ steps.candidate.outputs.sha }}' \
+    'checkout did not resolve the requested immutable candidate SHA' \
+    'env -u GITHUB_SHA -u GITHUB_REF' \
+    'FINAL_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}' \
+    'FINAL_CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}' \
     'id: candidate-version' \
     'test -n "$version"' \
     'echo "version=$version" >> "$GITHUB_OUTPUT"' \
     'FINAL_CANDIDATE_VERSION: ${{ steps.candidate-version.outputs.version }}'; do
     mutated_workflow="$mutation_root/ci.yaml"
-    sed "0,/$mutation/s//$mutation removed/" "$WORKFLOW" > "$mutated_workflow"
+    MUTATION="$mutation" perl -0pe 's/\Q$ENV{MUTATION}\E/$ENV{MUTATION} . q( removed)/e' \
+      "$WORKFLOW" > "$mutated_workflow"
     if FINAL_CANDIDATE_WORKFLOW="$mutated_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
       echo "Final-candidate version-handoff mutation was accepted: $mutation" >&2
       exit 1

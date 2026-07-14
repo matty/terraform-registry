@@ -10,12 +10,25 @@ cd "$ROOT"
 
 EVIDENCE_PATH="${FINAL_CANDIDATE_EVIDENCE_PATH:-$ROOT/final-candidate-certification-evidence.json}"
 MATRIX_HOME="${FINAL_CANDIDATE_MATRIX_HOME:-${RUNNER_TEMP:-/tmp}/terraform-registry-final-candidate-matrix}"
-CANDIDATE_SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
-CANDIDATE_REF="${GITHUB_REF:-$(git rev-parse --abbrev-ref HEAD)}"
+CANDIDATE_SHA="${FINAL_CANDIDATE_SHA:?FINAL_CANDIDATE_SHA must identify the immutable candidate commit}"
+CANDIDATE_REF="${FINAL_CANDIDATE_REF:?FINAL_CANDIDATE_REF must identify the candidate source}"
 EVENT_NAME="${GITHUB_EVENT_NAME:-local}"
 CANDIDATE_VERSION="${FINAL_CANDIDATE_VERSION:?FINAL_CANDIDATE_VERSION must be resolved before certification starts}"
-DOTNET_SDK_VERSION="$(dotnet --version)"
 readonly TERRAFORM_VERSIONS='["1.12.0", "1.14.2"]'
+
+[[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+  echo 'FINAL_CANDIDATE_SHA must be an immutable 40-character lowercase commit SHA.' >&2
+  exit 2
+}
+
+checked_out_sha="$(git rev-parse HEAD)"
+git cat-file -e "$CANDIDATE_SHA^{commit}"
+[[ "$checked_out_sha" == "$CANDIDATE_SHA" ]] || {
+  echo 'The checked-out source does not match FINAL_CANDIDATE_SHA.' >&2
+  exit 2
+}
+
+DOTNET_SDK_VERSION="$(dotnet --version)"
 
 declare -a gate_names=()
 declare -a gate_results=()
