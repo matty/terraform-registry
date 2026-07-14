@@ -43,7 +43,7 @@ public class AzureBlobModuleServiceDownloadTests
         _mockContainerClient.Setup(c =>
                 c.CreateIfNotExists(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(), default))
             .Returns(Mock.Of<Response<BlobContainerInfo>>());
-        _mockContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+        _mockContainerClient.Setup(c => c.GetBlobsAsync(null, It.IsAny<CancellationToken>()))
             .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
 

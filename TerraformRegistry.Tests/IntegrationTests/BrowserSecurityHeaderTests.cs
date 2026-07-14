@@ -18,7 +18,9 @@ public sealed class BrowserSecurityHeaderTests
                 {
                     ["AuthorizationToken"] = "browser-security-test-token",
                     ["DatabaseProvider"] = "sqlite",
-                    ["Sqlite:ConnectionString"] = "Data Source=/tmp/terraform-registry-browser-security-tests.db"
+                    ["Sqlite:ConnectionString"] = "Data Source=/tmp/terraform-registry-browser-security-tests.db",
+                    ["StorageProvider"] = "local",
+                    ["ModuleStoragePath"] = "/tmp/terraform-registry-browser-security-modules"
                 }));
         });
         using var client = factory.CreateClient();

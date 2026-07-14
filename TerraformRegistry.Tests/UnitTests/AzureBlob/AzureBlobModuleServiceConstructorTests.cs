@@ -32,7 +32,7 @@ public class AzureBlobModuleServiceConstructorTests
                 c.CreateIfNotExistsAsync(It.IsAny<PublicAccessType>(), It.IsAny<IDictionary<string, string>>(),
                     It.IsAny<BlobContainerEncryptionScopeOptions>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<Response<BlobContainerInfo>>());
-        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(null, It.IsAny<CancellationToken>()))
             .Returns(AsyncPageable<BlobItem>.FromPages([]));
     }
 
@@ -217,7 +217,7 @@ public class AzureBlobModuleServiceConstructorTests
 
         _mockBlobServiceClient.Setup(s => s.GetBlobContainerClient(_containerName))
             .Returns(_mockBlobContainerClient.Object);
-        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(null, It.IsAny<CancellationToken>()))
             .Returns(blobs);
         _mockBlobContainerClient.Setup(c => c.GetBlobClient(blobName))
             .Returns(mockBlobClient.Object);
@@ -255,7 +255,7 @@ public class AzureBlobModuleServiceConstructorTests
         const string stagedBlobName = "publications/5f7d39dc3bb84fef8b61cf0e84b33117/network-aws-1.10.0.zip";
         var stagedBlob = BlobsModelFactory.BlobItem(stagedBlobName, false, null, null, null);
         var page = Page<BlobItem>.FromValues([stagedBlob], null, Mock.Of<Response>());
-        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(BlobTraits.None, BlobStates.None, null, default))
+        _mockBlobContainerClient.Setup(c => c.GetBlobsAsync(null, It.IsAny<CancellationToken>()))
             .Returns(AsyncPageable<BlobItem>.FromPages([page]));
 
         var service = new AzureBlobModuleService(configuration, _mockDatabaseService.Object, _mockLogger.Object,
@@ -281,7 +281,6 @@ public class AzureBlobModuleServiceConstructorTests
 
         await service.InitializeStorageAsync(CancellationToken.None);
 
-        _mockBlobContainerClient.Verify(c => c.GetBlobsAsync(
-            BlobTraits.None, BlobStates.None, null, CancellationToken.None), Times.Never);
+        _mockBlobContainerClient.Verify(c => c.GetBlobsAsync(null, CancellationToken.None), Times.Never);
     }
 }
