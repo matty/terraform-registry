@@ -13,4 +13,5 @@ grep -Fq '[[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]' "$SMOKE
 grep -Fq 'run_s3_provider_sidecar_contract' "$SMOKE"
 grep -Fq 'providers/${provider_namespace}/example/1.0.0/${sidecar}' "$SMOKE"
 grep -Fq "'http://app:5131/api/auth/dev-login' | grep -qx '200'" "$SMOKE"
+grep -Fq 'bootstrap_emulator_admin "$network"' "$SMOKE"
 grep -Fq 'TF_REG_AdminEmails: dev@localhost' "$ROOT/scripts/remediation/storage-emulators/compose.yaml"

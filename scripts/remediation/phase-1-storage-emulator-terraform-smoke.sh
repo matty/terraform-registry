@@ -27,6 +27,16 @@ project_for() {
   printf 'tfregstorage%s' "$(printf '%s' "$1" | sha256sum | cut -c1-12)"
 }
 
+bootstrap_emulator_admin() {
+  local network="$1"
+
+  # Establish the configured DevAuthBypass identity through the application's
+  # development-only login endpoint. This creates the user and assigns the
+  # configured admin role before either protected smoke flow loads RBAC claims.
+  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
+    -X POST 'http://app:5131/api/auth/dev-login' | grep -qx '200'
+}
+
 run_s3_provider_sidecar_contract() {
   local project="$1" home_dir="$2" network="$3" fixture="$4"
   local provider_namespace shasums_name signature_name
@@ -37,12 +47,6 @@ run_s3_provider_sidecar_contract() {
   printf '%s  terraform-provider-example_1.0.0_linux_amd64.zip\n' \
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' > "$fixture/$shasums_name"
   printf '%s\n' 'fabricated provider sidecar signature' > "$fixture/$signature_name"
-
-  # Establish the configured DevAuthBypass identity through the application's
-  # development-only login endpoint. This creates the user and assigns the
-  # configured admin role before protected provider routes load RBAC claims.
-  docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
-    -X POST 'http://app:5131/api/auth/dev-login' | grep -qx '200'
 
   docker run --rm --network "$network" curlimages/curl:8.16.0 -fsS -o /dev/null -w '%{http_code}' \
     -H 'Content-Type: application/json' \
@@ -106,6 +110,7 @@ run_provider() {
   [[ "$(docker logs "$app" 2>&1)" == *"Application started"* ]]
 
   network="${project}_default"
+  bootstrap_emulator_admin "$network"
   if [[ "$storage_provider" = s3 ]]; then
     run_s3_provider_sidecar_contract "$project" "$HOME_DIR" "$network" "$fixture"
   fi
