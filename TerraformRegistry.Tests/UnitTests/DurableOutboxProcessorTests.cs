@@ -28,6 +28,8 @@ public sealed class DurableOutboxProcessorTests
     [Fact]
     public async Task ProcessNextAsyncSchedulesRetryWhenDeliveryFails()
     {
+        using var listener = new OperationalMetricsTestListener();
+        using var metrics = new OperationalMetrics();
         var @event = CreateEvent();
         var repository = new Mock<IOutboxEventRepository>();
         repository.Setup(x => x.TryClaimNextAsync("worker-1", It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>())).ReturnsAsync(@event);
@@ -35,15 +37,18 @@ public sealed class DurableOutboxProcessorTests
         var handler = new Mock<IOutboxDeliveryHandler>();
         handler.Setup(x => x.CanHandle("test")).Returns(true);
         handler.Setup(x => x.HandleAsync(@event, It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("failed"));
-        var processor = CreateProcessor(repository.Object, handler.Object);
+        var processor = CreateProcessor(repository.Object, handler.Object, metrics);
 
         Assert.False(await processor.ProcessNextAsync("worker-1", CancellationToken.None));
         repository.Verify(x => x.TryFailAsync(@event.Id, "worker-1", "failed", 5, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Contains(listener.Measurements, measurement =>
+            measurement.Name == "terraform_registry.outbox.failures" && measurement.Outcome == "delivery_failed");
     }
 
-    private static DurableOutboxProcessor CreateProcessor(IOutboxEventRepository repository, IOutboxDeliveryHandler handler) =>
+    private static DurableOutboxProcessor CreateProcessor(IOutboxEventRepository repository, IOutboxDeliveryHandler handler,
+        OperationalMetrics? metrics = null) =>
         new(repository, [handler], Options.Create(new DurableOutboxOptions { LeaseSeconds = 30, RetryLimit = 5 }),
-            NullLogger<DurableOutboxProcessor>.Instance);
+            NullLogger<DurableOutboxProcessor>.Instance, metrics);
 
     private static OutboxEvent CreateEvent() => new()
     {

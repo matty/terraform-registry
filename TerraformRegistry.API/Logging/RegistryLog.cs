@@ -201,7 +201,7 @@ public static class RegistryLog
             CreateKey(level, message),
             static key => LoggerMessage.Define(key.Level, new EventId(0), key.Message));
 
-        callback(logger, exception);
+        callback(logger, SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0)
@@ -213,7 +213,7 @@ public static class RegistryLog
             CreateKey<T0>(level, message),
             static key => LoggerMessage.Define<T0>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0, T1>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0, T1 arg1)
@@ -225,7 +225,7 @@ public static class RegistryLog
             CreateKey<T0, T1>(level, message),
             static key => LoggerMessage.Define<T0, T1>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0, T1, T2>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0, T1 arg1, T2 arg2)
@@ -237,7 +237,7 @@ public static class RegistryLog
             CreateKey<T0, T1, T2>(level, message),
             static key => LoggerMessage.Define<T0, T1, T2>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0, T1, T2, T3>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0, T1 arg1, T2 arg2, T3 arg3)
@@ -249,7 +249,7 @@ public static class RegistryLog
             CreateKey<T0, T1, T2, T3>(level, message),
             static key => LoggerMessage.Define<T0, T1, T2, T3>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0, T1, T2, T3, T4>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0, T1 arg1, T2 arg2, T3 arg3, T4 arg4)
@@ -261,7 +261,7 @@ public static class RegistryLog
             CreateKey<T0, T1, T2, T3, T4>(level, message),
             static key => LoggerMessage.Define<T0, T1, T2, T3, T4>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), SensitiveDataRedactor.RedactValue(arg4), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), SensitiveDataRedactor.RedactValue(arg4), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static void Log<T0, T1, T2, T3, T4, T5>(ILogger logger, LogLevel level, Exception? exception, string message, T0 arg0, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5)
@@ -273,7 +273,7 @@ public static class RegistryLog
             CreateKey<T0, T1, T2, T3, T4, T5>(level, message),
             static key => LoggerMessage.Define<T0, T1, T2, T3, T4, T5>(key.Level, new EventId(0), key.Message));
 
-        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), SensitiveDataRedactor.RedactValue(arg4), SensitiveDataRedactor.RedactValue(arg5), exception);
+        callback(logger, SensitiveDataRedactor.RedactValue(arg0), SensitiveDataRedactor.RedactValue(arg1), SensitiveDataRedactor.RedactValue(arg2), SensitiveDataRedactor.RedactValue(arg3), SensitiveDataRedactor.RedactValue(arg4), SensitiveDataRedactor.RedactValue(arg5), SensitiveDataRedactor.RedactException(exception));
     }
 
     private static LoggerMessageCacheKey CreateKey(LogLevel level, string message)

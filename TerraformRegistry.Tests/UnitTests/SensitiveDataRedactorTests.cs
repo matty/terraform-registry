@@ -11,6 +11,10 @@ public sealed class SensitiveDataRedactorTests
     [InlineData("api_key=trf_api_key_value")]
     [InlineData("code=oauth-authorization-code")]
     [InlineData("https://storage.example/module?sig=sas-signature&se=2027-01-01")]
+    [InlineData("Authorization: Bearer opaque+/=._~-token")]
+    [InlineData("authorization=Bearer opaque+/=._~-token")]
+    [InlineData("X-Api-Key: api-key-with+/=characters")]
+    [InlineData("webhook-secret=webhook-secret-value")]
     public void RedactRemovesCredentialsAndSignedUrlValues(string value)
     {
         var redacted = SensitiveDataRedactor.Redact(value);
@@ -34,12 +38,34 @@ public sealed class SensitiveDataRedactorTests
         Assert.DoesNotContain("storage.example", logger.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RegistryLogRedactsExceptionAndInnerExceptionMessages()
+    {
+        var logger = new CapturingLogger();
+        var inner = new InvalidOperationException("download failed at https://storage.example/module?sig=sas-signature&se=2027-01-01");
+        var exception = new HttpRequestException("Authorization: Bearer opaque+/=._~-token", inner);
+
+        RegistryLog.Error(logger, exception, "Module download failed");
+
+        Assert.NotNull(logger.Exception);
+        Assert.DoesNotContain("sas-signature", logger.Exception!.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("storage.example", logger.Exception.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("opaque+/=._~-token", logger.Exception.ToString(), StringComparison.Ordinal);
+        Assert.NotNull(logger.Exception.InnerException);
+        Assert.DoesNotContain("sas-signature", logger.Exception.InnerException!.Message, StringComparison.Ordinal);
+    }
+
     private sealed class CapturingLogger : ILogger
     {
         public string Message { get; private set; } = string.Empty;
+        public Exception? Exception { get; private set; }
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) => Message = formatter(state, exception);
+            Func<TState, Exception?, string> formatter)
+        {
+            Message = formatter(state, exception);
+            Exception = exception;
+        }
     }
 }

@@ -31,3 +31,25 @@ public sealed class OperationalMetricsTests
             measurement.Outcome == "delivery_failed" && measurement.Secret is null);
     }
 }
+
+internal sealed class OperationalMetricsTestListener : IDisposable
+{
+    private readonly MeterListener _listener = new();
+
+    public List<(string Name, string? Outcome)> Measurements { get; } = [];
+
+    public OperationalMetricsTestListener()
+    {
+        _listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == OperationalMetrics.MeterName)
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        _listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+            Measurements.Add((instrument.Name,
+                tags.ToArray().FirstOrDefault(tag => tag.Key == "outcome").Value?.ToString())));
+        _listener.Start();
+    }
+
+    public void Dispose() => _listener.Dispose();
+}

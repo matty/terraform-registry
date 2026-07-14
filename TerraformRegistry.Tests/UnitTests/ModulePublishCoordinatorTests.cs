@@ -49,6 +49,8 @@ public class ModulePublishCoordinatorTests
     [Fact]
     public async Task PublishAsyncUploadsModuleAndQueuesExtraction()
     {
+        using var listener = new OperationalMetricsTestListener();
+        using var metrics = new OperationalMetrics();
         var moduleService = new Mock<IModuleService>();
         moduleService
             .Setup(x => x.UploadModuleAsync(
@@ -92,7 +94,8 @@ public class ModulePublishCoordinatorTests
             extraction.Object,
             webhookDispatcher,
             audit.Object,
-            NullLogger<ModulePublishCoordinator>.Instance);
+            NullLogger<ModulePublishCoordinator>.Instance,
+            metrics: metrics);
 
         await using var content = new MemoryStream([1, 2, 3]);
 
@@ -113,6 +116,8 @@ public class ModulePublishCoordinatorTests
         }, CancellationToken.None);
 
         Assert.True(published);
+        Assert.Contains(listener.Measurements, measurement =>
+            measurement.Name == "terraform_registry.publication.attempts");
         extraction.Verify(x => x.QueueAsync(
             new ModuleExtractionRequest("acme", "network", "aws", "1.2.3"),
             It.IsAny<CancellationToken>()), Times.Once);
