@@ -107,7 +107,7 @@ jobs:
           retention-days: 14
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@f2274c2c340e0c81c8f7dc407b2a477b8935f171 # v6
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
         if: env.CODECOV_TOKEN != ''
         with:
           files: ${{ env.TEST_RESULTS_DIR }}/**/coverage.cobertura.xml
@@ -408,7 +408,7 @@ jobs:
           test "$actual" = "$expected"
 
       - name: Run Trivy image scan
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.SCAN_IMAGE_NAME }}
           format: sarif
@@ -420,7 +420,7 @@ jobs:
           limit-severities-for-sarif: true
 
       - name: Upload Trivy image scan
-        uses: github/codeql-action/upload-sarif@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
         if: always() && hashFiles('trivy-image.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           sarif_file: trivy-image.sarif
