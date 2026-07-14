@@ -72,7 +72,8 @@ public class ProviderRegistryServiceTests
                 AsciiArmor = "key",
                 CreatedAt = DateTime.UtcNow
             });
-        repository.Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"))
+        repository.Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64",
+                CancellationToken.None))
             .ReturnsAsync(new ProviderPackageDetails(
                 providerId,
                 ["5.0"],
@@ -108,12 +109,14 @@ public class ProviderRegistryServiceTests
             "linux",
             "amd64",
             "127.0.0.1",
-            "Terraform"), Times.Once);
+            "Terraform",
+            CancellationToken.None), Times.Once);
     }
 
     [Fact]
     public async Task GetPackageAsyncUsesOneRepositoryReadAndCreatesArtifactUrlsConcurrently()
     {
+        using var cancellation = new CancellationTokenSource();
         var repository = new Mock<IProviderRepository>(MockBehavior.Strict);
         var storage = new Mock<IProviderArtifactStorage>(MockBehavior.Strict);
         var packageDetails = new ProviderPackageDetails(
@@ -132,10 +135,12 @@ public class ProviderRegistryServiceTests
             null,
             null);
         repository
-            .Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"))
+            .Setup(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64",
+                cancellation.Token))
             .ReturnsAsync(packageDetails);
         repository
-            .Setup(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux", "amd64", null, null))
+            .Setup(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux",
+                "amd64", null, null, cancellation.Token))
             .Returns(Task.CompletedTask);
 
         var urlsStarted = 0;
@@ -152,12 +157,15 @@ public class ProviderRegistryServiceTests
             });
         var service = CreateService(repository, storage);
 
-        var response = await service.GetPackageAsync("acme", "example", "1.0.0", "linux", "amd64", null, null, CancellationToken.None);
+        var response = await service.GetPackageAsync("acme", "example", "1.0.0", "linux", "amd64", null, null,
+            cancellation.Token);
 
         Assert.NotNull(response);
         Assert.Equal(3, urlsStarted);
-        repository.Verify(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64"), Times.Once);
-        repository.Verify(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux", "amd64", null, null), Times.Once);
+        repository.Verify(x => x.GetProviderPackageDetailsAsync("acme", "example", "1.0.0", "linux", "amd64",
+            cancellation.Token), Times.Once);
+        repository.Verify(x => x.RecordProviderDownloadAsync(packageDetails.ProviderId, "acme", "example", "1.0.0", "linux",
+            "amd64", null, null, cancellation.Token), Times.Once);
     }
 
     [Fact]
