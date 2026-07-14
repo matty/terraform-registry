@@ -38,6 +38,13 @@ expect_failure() {
   fi
 }
 
+mkdir -p "$fixture_root/TerraformRegistry/web-src/.nuxt"
+printf 'declare const UAuthForm: typeof import("@nuxt/ui")["UAuthForm"]\n' > "$fixture_root/TerraformRegistry/web-src/.nuxt/components.d.ts"
+if ! SUPPLY_CHAIN_ROOT="$fixture_root" bash "$ROOT/scripts/remediation/gates/supply-chain-pinning.sh"; then
+  echo 'Generated Nuxt declarations must not invalidate the SUP-003 exception.' >&2
+  exit 1
+fi
+
 printf '<template><UAuthForm /></template>\n' > "$fixture_root/TerraformRegistry/web-src/affected.vue"
 expect_failure 'UAuthForm'
 rm "$fixture_root/TerraformRegistry/web-src/affected.vue"

@@ -47,10 +47,14 @@ contains_affected_nuxt_form() {
       printf '%s\n' "$file"
       return 0
     fi
-  done < <(find "$ROOT/TerraformRegistry/web-src" -type f \
-    ! -name package-lock.json \
-    ! -name pnpm-lock.yaml \
-    ! -path '*/node_modules/*' -print)
+  done < <(find "$ROOT/TerraformRegistry/web-src" \
+    \( -path '*/.nuxt' -o -path '*/.nuxt/*' \
+      -o -path '*/.output' -o -path '*/.output/*' \
+      -o -path '*/coverage' -o -path '*/coverage/*' \
+      -o -path '*/dist' -o -path '*/dist/*' \
+      -o -path '*/node_modules' -o -path '*/node_modules/*' \) -prune -o \
+    -type f \( -name '*.vue' -o -name '*.ts' -o -name '*.tsx' \
+      -o -name '*.js' -o -name '*.jsx' \) -print)
 
   return 1
 }
