@@ -70,8 +70,8 @@ write_evidence() {
       release_certification_complete: false,
       release_certification_status: $release_certification_status,
       image_digest: null,
-      post_publication_evidence_required: true,
-      required_post_publication_evidence: ["immutable-registry-digest"],
+      required_post_publication_evidence: true,
+      required_post_publication_evidence_kinds: ["immutable-registry-digest"],
       image_digest_note: "This is pre-publication verification, not release certification. image_digest remains null until the registry reports an immutable sha256 digest for this exact candidate in a post-publication evidence record.",
       generated_at_utc: (now | todate)
     }' > "$EVIDENCE_PATH"

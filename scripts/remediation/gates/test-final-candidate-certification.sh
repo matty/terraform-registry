@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GATE="${FINAL_CANDIDATE_GATE:-$ROOT/scripts/remediation/gates/final-candidate-certification.sh}"
 WORKFLOW="${FINAL_CANDIDATE_WORKFLOW:-$ROOT/.github/workflows/ci.yaml}"
-RUNBOOK="$ROOT/docs/release-operations-runbook.md"
+RUNBOOK="${FINAL_CANDIDATE_RUNBOOK:-$ROOT/docs/release-operations-runbook.md}"
 
 test -x "$GATE"
 
@@ -30,10 +30,12 @@ grep -Fq 'image_digest' "$GATE"
 grep -Fq 'pre-publication-verification' "$GATE"
 grep -Fq 'incomplete-requires-immutable-registry-digest' "$GATE"
 grep -Fq 'release_certification_complete: false,' "$GATE"
-grep -Fq 'post_publication_evidence_required: true,' "$GATE"
+grep -Fq 'image_digest: null,' "$GATE"
+grep -Fq 'required_post_publication_evidence: true,' "$GATE"
+grep -Fq 'required_post_publication_evidence_kinds: ["immutable-registry-digest"],' "$GATE"
 grep -Fq 'immutable-registry-digest' "$GATE"
 grep -Fq 'Pre-publication candidate verification' "$RUNBOOK"
-grep -Fq 'not release certification' "$RUNBOOK"
+grep -Fq 'not release certification until immutable post-publication digest evidence is recorded' "$RUNBOOK"
 
 job_body() {
   awk '
@@ -85,14 +87,32 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
 
   for mutation in \
     'release_certification_complete: false,' \
-    'post_publication_evidence_required: true,' \
-    'incomplete-requires-immutable-registry-digest'; do
+    'verification_status '\''pre-publication-verification'\''' \
+    'incomplete-requires-immutable-registry-digest' \
+    'image_digest: null,' \
+    'required_post_publication_evidence: true,' \
+    'required_post_publication_evidence_kinds: ["immutable-registry-digest"],'; do
     mutated_gate="$mutation_root/final-candidate-certification.sh"
-    sed "0,/$mutation/s//MUTATED_RELEASE_COMPLETION_INVARIANT/" "$GATE" > "$mutated_gate"
+    MUTATION="$mutation" perl -0pe 's/\Q$ENV{MUTATION}\E/MUTATED_RELEASE_COMPLETION_INVARIANT/' "$GATE" > "$mutated_gate"
     chmod +x "$mutated_gate"
     if FINAL_CANDIDATE_GATE="$mutated_gate" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
       echo "Final-candidate release-completion mutation was accepted: $mutation" >&2
       exit 1
     fi
   done
+
+  non_null_digest_gate="$mutation_root/non-null-image-digest.sh"
+  sed '0,/image_digest: null,/s//image_digest: "sha256:not-a-registry-digest",/' "$GATE" > "$non_null_digest_gate"
+  chmod +x "$non_null_digest_gate"
+  if FINAL_CANDIDATE_GATE="$non_null_digest_gate" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+    echo 'Final-candidate non-null image-digest mutation was accepted.' >&2
+    exit 1
+  fi
+
+  weakened_runbook="$mutation_root/release-operations-runbook.md"
+  sed '0,/not release certification until immutable post-publication digest evidence is recorded/s//release certification is complete/' "$RUNBOOK" > "$weakened_runbook"
+  if FINAL_CANDIDATE_RUNBOOK="$weakened_runbook" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+    echo 'Final-candidate weakened runbook release-certification wording was accepted.' >&2
+    exit 1
+  fi
 fi

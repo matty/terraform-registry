@@ -29,8 +29,7 @@ docker buildx imagetools inspect "$IMAGE:$VERSION"
 ## Pre-publication candidate verification
 
 The labelled-candidate CI artifact verifies the portable P5/P6 gates before an
-image is published. It is not release certification: its `image_digest` is
-deliberately null and its release-certification status remains incomplete.
+image is published. This artifact is not release certification until immutable post-publication digest evidence is recorded: its `image_digest` is deliberately null and its release-certification status remains incomplete.
 After publication, create the explicit post-publication evidence record with
 the immutable registry digest for the exact candidate SHA and version before
 approving rollout. A local Docker image ID or a mutable tag is not acceptable
