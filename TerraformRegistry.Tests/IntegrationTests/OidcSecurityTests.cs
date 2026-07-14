@@ -150,6 +150,41 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     }
 
     [Fact]
+    public async Task CallbackIgnoresUnsafeReturnPathCookie()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+        var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
+        var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
+        var oauthService = CreateGitHubOAuthService(
+            scope.ServiceProvider.GetRequiredService<IConfiguration>(),
+            new QueuedResponseHandler(
+                CreateJsonResponse(new { access_token = "test-access-token" }),
+                CreateJsonResponse(new { id = 12345, email = "user@example.com", login = "user" })));
+        var context = CreateCallbackHttpContext(
+            "state-return-to",
+            scope.ServiceProvider,
+            "oauth-return-to=/%5Cevil.example");
+
+        var result = await AuthHandlers.Callback(
+            "github",
+            "auth-code",
+            "state-return-to",
+            null,
+            oauthService,
+            jwtService,
+            apiKeyService,
+            auditService,
+            context,
+            NullLogger<Program>.Instance);
+
+        await result.ExecuteAsync(context);
+
+        Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
+        Assert.Equal("/", context.Response.Headers.Location.ToString());
+    }
+
+    [Fact]
     public async Task CallbackOnAccountCollisionRedirectsWithoutSessionCookie()
     {
         using var scope = Factory.Services.CreateScope();
@@ -379,10 +414,12 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         await command.ExecuteNonQueryAsync();
     }
 
-    private static DefaultHttpContext CreateCallbackHttpContext(string state, IServiceProvider services)
+    private static DefaultHttpContext CreateCallbackHttpContext(string state, IServiceProvider services, string? additionalCookies = null)
     {
         var context = new DefaultHttpContext();
-        context.Request.Headers.Cookie = $"oauth-state={state}";
+        context.Request.Headers.Cookie = additionalCookies is null
+            ? $"oauth-state={state}"
+            : $"oauth-state={state}; {additionalCookies}";
         context.RequestServices = services;
         context.Response.Body = new MemoryStream();
         return context;
