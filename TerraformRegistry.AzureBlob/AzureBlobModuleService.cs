@@ -450,29 +450,31 @@ public class AzureBlobModuleService : ModuleService
         }
     }
 
-    public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version)
+    public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
-        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     public override Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
-        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     public override async Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
         var moduleStorage =
-            await _databaseService.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version);
+            await _databaseService.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version,
+                cancellationToken);
         if (moduleStorage == null)
             return false;
 
         try
         {
             var blobClient = _containerClient.GetBlobClient(moduleStorage.FilePath);
-            await blobClient.DeleteIfExistsAsync();
+            await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -481,7 +483,9 @@ public class AzureBlobModuleService : ModuleService
             return false;
         }
 
-        return await _databaseService.RemoveModuleAsync(moduleStorage);
+        // Blob deletion is irreversible; complete the catalog mutation after it so cancellation
+        // cannot leave a catalog entry that points at an artifact which no longer exists.
+        return await _databaseService.RemoveModuleAsync(moduleStorage, CancellationToken.None);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
@@ -491,9 +495,10 @@ public class AzureBlobModuleService : ModuleService
     }
 
     public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
-        string description)
+        string description, CancellationToken cancellationToken = default)
     {
-        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
+        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description,
+            cancellationToken);
     }
 
     private async Task CleanupFailedPublicationAsync(BlobClient blobClient, Guid attemptId, string reason)

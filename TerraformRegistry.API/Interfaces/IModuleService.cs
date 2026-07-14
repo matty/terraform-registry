@@ -55,17 +55,20 @@ public interface IModuleService
     /// <summary>
     ///     Soft deletes a module version
     /// </summary>
-    Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Restores a soft-deleted module version
     /// </summary>
-    Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Permanently deletes a module version (purge)
     /// </summary>
-    Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Lists all soft-deleted modules
@@ -75,7 +78,8 @@ public interface IModuleService
     /// <summary>
     ///     Updates the description for all active versions of a module
     /// </summary>
-    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description);
+    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Checks that the storage backend is healthy and writable

@@ -222,7 +222,7 @@ public sealed class SqliteModuleRepository(
         };
     }
 
-    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
         var sql = @"
             INSERT INTO modules (
@@ -234,7 +234,7 @@ public sealed class SqliteModuleRepository(
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
@@ -249,7 +249,7 @@ public sealed class SqliteModuleRepository(
                 moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies));
             cmd.Parameters.AddWithValue("$metadata", JsonSerializer.Serialize(moduleStorage.Metadata));
 
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
@@ -258,7 +258,7 @@ public sealed class SqliteModuleRepository(
                 moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex, "Error adding module {Namespace}/{Name}/{Provider}/{Version} to SQLite",
                 moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
@@ -266,7 +266,7 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
         var sql = @"
             DELETE FROM modules
@@ -274,17 +274,17 @@ public sealed class SqliteModuleRepository(
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleStorage.Namespace);
             cmd.Parameters.AddWithValue("$name", moduleStorage.Name);
             cmd.Parameters.AddWithValue("$prov", moduleStorage.Provider);
             cmd.Parameters.AddWithValue("$ver", moduleStorage.Version);
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex, "Error removing module {Namespace}/{Name}/{Provider}/{Version} from SQLite",
                 moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
@@ -292,7 +292,7 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
         var sql = @"
             DELETE FROM modules
@@ -309,7 +309,7 @@ public sealed class SqliteModuleRepository(
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleStorage.Namespace);
@@ -321,10 +321,10 @@ public sealed class SqliteModuleRepository(
             cmd.Parameters.AddWithValue("$published", moduleStorage.PublishedAt.ToString("o", CultureInfo.InvariantCulture));
             cmd.Parameters.AddWithValue("$deps",
                 moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies));
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error removing exact module row {Namespace}/{Name}/{Provider}/{Version} from SQLite",
@@ -333,7 +333,8 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
         var sql = @"
             DELETE FROM modules
@@ -346,17 +347,17 @@ public sealed class SqliteModuleRepository(
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleNamespace);
             cmd.Parameters.AddWithValue("$name", name);
             cmd.Parameters.AddWithValue("$prov", provider);
             cmd.Parameters.AddWithValue("$ver", version);
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error removing deleted module row {Namespace}/{Name}/{Provider}/{Version} from SQLite",
@@ -365,7 +366,7 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
         var sql = @"
             INSERT INTO modules (
@@ -377,7 +378,7 @@ public sealed class SqliteModuleRepository(
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
@@ -392,7 +393,7 @@ public sealed class SqliteModuleRepository(
                 moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies));
             cmd.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
 
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (SqliteException ex) when (ex.SqliteErrorCode == 19 && ex.SqliteExtendedErrorCode == 2067)
@@ -401,7 +402,7 @@ public sealed class SqliteModuleRepository(
                 moduleStorage.Namespace, moduleStorage.Name, moduleStorage.Provider, moduleStorage.Version);
             return false;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error adding deleted module row {Namespace}/{Name}/{Provider}/{Version} to SQLite",
@@ -452,7 +453,7 @@ public sealed class SqliteModuleRepository(
             var rows = await cmd.ExecuteNonQueryAsync();
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex,
                 "Error replacing exact module row {Namespace}/{Name}/{Provider}/{Version} in SQLite",
@@ -461,14 +462,15 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
         var sql = @"UPDATE modules SET deleted_at = $deletedAt 
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NULL";
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleNamespace);
@@ -476,10 +478,10 @@ public sealed class SqliteModuleRepository(
             cmd.Parameters.AddWithValue("$prov", provider);
             cmd.Parameters.AddWithValue("$ver", version);
             cmd.Parameters.AddWithValue("$deletedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex, "Error soft deleting module {Namespace}/{Name}/{Provider}/{Version} from SQLite",
                 moduleNamespace, name, provider, version);
@@ -487,24 +489,25 @@ public sealed class SqliteModuleRepository(
         }
     }
 
-    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
         var sql = @"UPDATE modules SET deleted_at = NULL 
             WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver AND deleted_at IS NOT NULL";
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleNamespace);
             cmd.Parameters.AddWithValue("$name", name);
             cmd.Parameters.AddWithValue("$prov", provider);
             cmd.Parameters.AddWithValue("$ver", version);
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex, "Error restoring module {Namespace}/{Name}/{Provider}/{Version} in SQLite",
                 moduleNamespace, name, provider, version);
@@ -585,10 +588,10 @@ public sealed class SqliteModuleRepository(
     }
 
     public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string moduleNamespace, string name,
-        string provider, string version)
+        string provider, string version, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata
             FROM modules WHERE namespace = $ns AND name = $name AND provider = $prov AND version = $ver";
@@ -600,8 +603,8 @@ public sealed class SqliteModuleRepository(
         cmd.Parameters.AddWithValue("$prov", provider);
         cmd.Parameters.AddWithValue("$ver", version);
 
-        await using var reader = await cmd.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         var depsJson = reader.GetString(7);
         var deps = string.IsNullOrWhiteSpace(depsJson)
@@ -623,24 +626,24 @@ public sealed class SqliteModuleRepository(
     }
 
     public async Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
-        string description)
+        string description, CancellationToken cancellationToken = default)
     {
         var sql = @"UPDATE modules SET description = $desc
             WHERE namespace = $ns AND name = $name AND provider = $prov AND deleted_at IS NULL";
         try
         {
             await using var connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddWithValue("$ns", moduleNamespace);
             cmd.Parameters.AddWithValue("$name", name);
             cmd.Parameters.AddWithValue("$prov", provider);
             cmd.Parameters.AddWithValue("$desc", description);
-            var rows = await cmd.ExecuteNonQueryAsync();
+            var rows = await cmd.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             RegistryLog.Error(logger, ex, "Error updating description for module {Namespace}/{Name}/{Provider} in SQLite",
                 moduleNamespace, name, provider);

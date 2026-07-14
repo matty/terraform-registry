@@ -10,17 +10,23 @@ internal sealed class S3ModulePurgeWorkflow(
     S3ModuleObjectStore objectStore,
     ILogger logger)
 {
-    public async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version)
+    public async Task<bool> PurgeModuleVersionAsync(string @namespace, string name, string provider, string version,
+        CancellationToken cancellationToken)
     {
         ModuleStorage? activeModuleStorage;
         ModuleStorage? moduleStorage;
 
         try
         {
-            activeModuleStorage = await databaseService.GetModuleStorageAsync(@namespace, name, provider, version);
+            activeModuleStorage = await databaseService.GetModuleStorageAsync(@namespace, name, provider, version,
+                cancellationToken);
             moduleStorage = activeModuleStorage ??
                             await databaseService.GetModuleStorageIncludingDeletedAsync(@namespace, name, provider,
-                                version);
+                                version, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -40,25 +46,30 @@ internal sealed class S3ModulePurgeWorkflow(
         }
 
         var logicalObjectKey = S3ModuleObjectKeys.CreateLogicalObjectKey(@namespace, name, provider, version);
-        var purgeableObjectKeys = await objectStore.CollectPurgeableObjectKeysAsync(logicalObjectKey, moduleStorage);
+        var purgeableObjectKeys = await objectStore.CollectPurgeableObjectKeysAsync(logicalObjectKey, moduleStorage,
+            cancellationToken);
         if (!purgeableObjectKeys.Success)
         {
             return false;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         return activeModuleStorage != null
-            ? await PurgeActiveModuleAsync(activeModuleStorage, moduleStorage, purgeableObjectKeys.ObjectKeys)
-            : await PurgeDeletedModuleAsync(moduleStorage, purgeableObjectKeys.ObjectKeys);
+            ? await PurgeActiveModuleAsync(activeModuleStorage, moduleStorage, purgeableObjectKeys.ObjectKeys,
+                CancellationToken.None)
+            : await PurgeDeletedModuleAsync(moduleStorage, purgeableObjectKeys.ObjectKeys, CancellationToken.None);
     }
 
     private async Task<bool> PurgeActiveModuleAsync(
         ModuleStorage activeModuleStorage,
         ModuleStorage moduleStorage,
-        IReadOnlyList<string> objectKeys)
+        IReadOnlyList<string> objectKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var removed = await databaseService.RemoveModuleExactAsync(activeModuleStorage);
+            var removed = await databaseService.RemoveModuleExactAsync(activeModuleStorage, cancellationToken);
             if (!removed)
             {
                 RegistryLog.Warning(logger,
@@ -70,13 +81,17 @@ internal sealed class S3ModulePurgeWorkflow(
                 return false;
             }
 
-            var deletedObjects = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage);
-            if (deletedObjects)
+            var deletion = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
+                cancellationToken);
+            if (deletion.Success)
             {
                 return true;
             }
 
-            await TryRestoreActiveModuleSnapshotAsync(activeModuleStorage);
+            if (!deletion.AnyDeleted)
+            {
+                await TryRestoreActiveModuleSnapshotAsync(activeModuleStorage);
+            }
             return false;
         }
         catch (Exception ex)
@@ -92,7 +107,8 @@ internal sealed class S3ModulePurgeWorkflow(
         }
     }
 
-    private async Task<bool> PurgeDeletedModuleAsync(ModuleStorage moduleStorage, IReadOnlyList<string> objectKeys)
+    private async Task<bool> PurgeDeletedModuleAsync(ModuleStorage moduleStorage, IReadOnlyList<string> objectKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -100,7 +116,7 @@ internal sealed class S3ModulePurgeWorkflow(
                 moduleStorage.Namespace,
                 moduleStorage.Name,
                 moduleStorage.Provider,
-                moduleStorage.Version);
+                moduleStorage.Version, cancellationToken);
             if (!removed)
             {
                 RegistryLog.Warning(logger,
@@ -112,13 +128,17 @@ internal sealed class S3ModulePurgeWorkflow(
                 return false;
             }
 
-            var deletedObjects = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage);
-            if (deletedObjects)
+            var deletion = await objectStore.DeletePurgeableObjectKeysAsync(objectKeys, moduleStorage,
+                cancellationToken);
+            if (deletion.Success)
             {
                 return true;
             }
 
-            await TryRestoreDeletedModuleSnapshotAsync(moduleStorage);
+            if (!deletion.AnyDeleted)
+            {
+                await TryRestoreDeletedModuleSnapshotAsync(moduleStorage);
+            }
             return false;
         }
         catch (Exception ex)

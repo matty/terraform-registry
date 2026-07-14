@@ -169,6 +169,31 @@ public class S3ModuleServiceDelegationTests
     }
 
     [Fact]
+    public async Task LifecycleMutationsPassCancellationToDatabaseService()
+    {
+        using var cancellation = new CancellationTokenSource();
+        _mockDatabaseService
+            .Setup(x => x.SoftDeleteModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
+            .ReturnsAsync(true);
+        _mockDatabaseService
+            .Setup(x => x.RestoreModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token))
+            .ReturnsAsync(true);
+        _mockDatabaseService
+            .Setup(x => x.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc", cancellation.Token))
+            .ReturnsAsync(true);
+
+        var service = CreateService();
+
+        Assert.True(await service.DeleteModuleVersionAsync("ns", "name", "aws", "1.0.0", cancellation.Token));
+        Assert.True(await service.RestoreModuleVersionAsync("ns", "name", "aws", "1.0.0", cancellation.Token));
+        Assert.True(await service.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc", cancellation.Token));
+
+        _mockDatabaseService.Verify(x => x.SoftDeleteModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token), Times.Once);
+        _mockDatabaseService.Verify(x => x.RestoreModuleAsync("ns", "name", "aws", "1.0.0", cancellation.Token), Times.Once);
+        _mockDatabaseService.Verify(x => x.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc", cancellation.Token), Times.Once);
+    }
+
+    [Fact]
     public async Task UpdateModuleDescriptionAsyncDelegatesToDatabaseService()
     {
         _mockDatabaseService.Setup(x => x.UpdateModuleDescriptionAsync("ns", "name", "aws", "new-desc")).ReturnsAsync(true);

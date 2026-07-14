@@ -115,20 +115,21 @@ public class S3ModuleService : ModuleService
     }
 
     public override Task<bool> DeleteModuleVersionAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
-        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.SoftDeleteModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     public override Task<bool> RestoreModuleVersionAsync(string moduleNamespace, string name, string provider,
-        string version)
+        string version, CancellationToken cancellationToken = default)
     {
-        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version);
+        return _databaseService.RestoreModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
-    public override Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version)
+    public override Task<bool> PurgeModuleVersionAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
-        return _purgeWorkflow.PurgeModuleVersionAsync(moduleNamespace, name, provider, version);
+        return _purgeWorkflow.PurgeModuleVersionAsync(moduleNamespace, name, provider, version, cancellationToken);
     }
 
     public override Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request,
@@ -138,9 +139,10 @@ public class S3ModuleService : ModuleService
     }
 
     public override Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
-        string description)
+        string description, CancellationToken cancellationToken = default)
     {
-        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
+        return _databaseService.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description,
+            cancellationToken);
     }
 
     public override Task<(bool Healthy, string? Reason)> CheckStorageAsync()

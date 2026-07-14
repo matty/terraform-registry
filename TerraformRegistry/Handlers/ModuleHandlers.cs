@@ -385,7 +385,7 @@ public static class ModuleHandlers
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
-        var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version);
+        var result = await moduleService.DeleteModuleVersionAsync(@namespace, name, provider, version, context.RequestAborted);
         if (!result) return ErrorResponseExtensions.NotFound("Module version not found");
 
         await webhookDispatcher.FireEventAsync("module.deleted", @namespace, name, provider, version, null, context.RequestAborted);
@@ -425,7 +425,7 @@ public static class ModuleHandlers
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
-        var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version);
+        var result = await moduleService.RestoreModuleVersionAsync(@namespace, name, provider, version, context.RequestAborted);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         await webhookDispatcher.FireEventAsync("module.restored", @namespace, name, provider, version, null, context.RequestAborted);
@@ -465,7 +465,7 @@ public static class ModuleHandlers
                 $"Version '{version}' is not a valid Semantic Version (SemVer 2.0.0). Expected format: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILDMETADATA]");
         }
 
-        var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version);
+        var result = await moduleService.PurgeModuleVersionAsync(@namespace, name, provider, version, context.RequestAborted);
         if (!result) return ErrorResponseExtensions.NotFound("Deleted module version not found");
 
         await webhookDispatcher.FireEventAsync("module.purged", @namespace, name, provider, version, null, context.RequestAborted);
@@ -529,16 +529,21 @@ public static class ModuleHandlers
         try
         {
             using var reader = new StreamReader(request.Body);
-            var body = await reader.ReadToEndAsync();
+            var body = await reader.ReadToEndAsync(context.RequestAborted);
             using var json = System.Text.Json.JsonDocument.Parse(body);
             var description = json.RootElement.GetProperty("description").GetString() ?? string.Empty;
 
-            var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description);
+            var result = await moduleService.UpdateModuleDescriptionAsync(@namespace, name, provider, description,
+                context.RequestAborted);
             if (!result) return ErrorResponseExtensions.NotFound("Module not found");
 
             await context.FireAuditLogAsync(auditService, "module.description_updated", "module", $"{@namespace}/{name}/{provider}", new { @namespace, name, provider, description });
 
             return Ok(new { description });
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

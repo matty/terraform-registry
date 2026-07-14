@@ -270,8 +270,9 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Adds a new module to the database
     /// </summary>
-    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             INSERT INTO modules (
                 namespace,
@@ -299,7 +300,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -315,7 +316,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@metadata", JsonSerializer.Serialize(moduleStorage.Metadata)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -335,8 +336,9 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Removes a module from the database
     /// </summary>
-    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -347,7 +349,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -355,7 +357,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@provider", moduleStorage.Provider);
             command.Parameters.AddWithValue("@version", moduleStorage.Version);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == "23503") // FK violation
@@ -373,8 +375,9 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -390,7 +393,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -404,7 +407,7 @@ public sealed class PostgreSqlModuleRepository(
                     moduleStorage.Dependencies == null ? "[]" : JsonSerializer.Serialize(moduleStorage.Dependencies)).NpgsqlDbType =
                 NpgsqlDbType.Jsonb;
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (NpgsqlException ex)
@@ -415,8 +418,10 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -428,7 +433,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -436,7 +441,7 @@ public sealed class PostgreSqlModuleRepository(
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (NpgsqlException ex)
@@ -448,8 +453,9 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             INSERT INTO modules (
                 namespace,
@@ -477,7 +483,7 @@ public sealed class PostgreSqlModuleRepository(
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleStorage.Namespace);
@@ -492,7 +498,7 @@ public sealed class PostgreSqlModuleRepository(
                 NpgsqlDbType.Jsonb;
             command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
 
-            var rowsAffected = await command.ExecuteNonQueryAsync();
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
@@ -562,21 +568,23 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET deleted_at = @deletedAt 
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
             command.Parameters.AddWithValue("@deletedAt", DateTime.UtcNow);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)
@@ -587,20 +595,22 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET deleted_at = NULL 
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NOT NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@version", version);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)
@@ -689,13 +699,14 @@ public sealed class PostgreSqlModuleRepository(
     }
 
     public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string moduleNamespace, string name,
-        string provider, string version)
+        string provider, string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies::text, metadata::text
             FROM modules WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version";
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
@@ -703,8 +714,8 @@ public sealed class PostgreSqlModuleRepository(
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@version", version);
 
-        await using var reader = await command.ExecuteReaderAsync();
-        if (!await reader.ReadAsync()) return null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         var dependenciesJson = reader.GetString(7);
         var dependencies = JsonSerializer.Deserialize<List<string>>(dependenciesJson) ?? new List<string>();
@@ -724,20 +735,21 @@ public sealed class PostgreSqlModuleRepository(
     }
 
     public async Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
-        string description)
+        string description, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET description = @description
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND deleted_at IS NULL";
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("moduleNamespace", moduleNamespace);
             command.Parameters.AddWithValue("@name", name);
             command.Parameters.AddWithValue("@provider", provider);
             command.Parameters.AddWithValue("@description", description);
-            var rows = await command.ExecuteNonQueryAsync();
+            var rows = await command.ExecuteNonQueryAsync(cancellationToken);
             return rows > 0;
         }
         catch (NpgsqlException ex)

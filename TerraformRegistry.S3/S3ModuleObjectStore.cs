@@ -251,7 +251,8 @@ internal sealed class S3ModuleObjectStore(
 
     public async Task<(bool Success, IReadOnlyList<string> ObjectKeys)> CollectPurgeableObjectKeysAsync(
         string prefix,
-        ModuleStorage module)
+        ModuleStorage module,
+        CancellationToken cancellationToken)
     {
         var objectKeys = new List<string>();
         string? continuationToken = null;
@@ -265,7 +266,11 @@ internal sealed class S3ModuleObjectStore(
                     BucketName = bucketName,
                     Prefix = prefix,
                     ContinuationToken = continuationToken
-                });
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -282,7 +287,7 @@ internal sealed class S3ModuleObjectStore(
 
             foreach (var s3Object in response.S3Objects)
             {
-                var inspection = await InspectPurgeObjectAsync(s3Object.Key, module);
+                var inspection = await InspectPurgeObjectAsync(s3Object.Key, module, cancellationToken);
                 if (!inspection.Success)
                 {
                     return (false, []);
@@ -300,10 +305,12 @@ internal sealed class S3ModuleObjectStore(
         return (true, objectKeys);
     }
 
-    public async Task<bool> DeletePurgeableObjectKeysAsync(
+    public async Task<(bool Success, bool AnyDeleted)> DeletePurgeableObjectKeysAsync(
         IReadOnlyList<string> objectKeys,
-        ModuleStorage module)
+        ModuleStorage module,
+        CancellationToken cancellationToken)
     {
+        var anyDeleted = false;
         foreach (var objectKey in EnumeratePurgeDeletionOrder(objectKeys, module.FilePath))
         {
             try
@@ -312,7 +319,12 @@ internal sealed class S3ModuleObjectStore(
                 {
                     BucketName = bucketName,
                     Key = objectKey
-                });
+                }, cancellationToken);
+                anyDeleted = true;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -324,11 +336,11 @@ internal sealed class S3ModuleObjectStore(
                     module.Name,
                     module.Provider,
                     module.Version);
-                return false;
+                return (false, anyDeleted);
             }
         }
 
-        return true;
+        return (true, anyDeleted);
     }
 
     private async Task<bool> FinalObjectMatchesModuleAsync(ModuleStorage module)
@@ -417,7 +429,8 @@ internal sealed class S3ModuleObjectStore(
         }
     }
 
-    private async Task<(bool Success, bool ShouldDelete)> InspectPurgeObjectAsync(string objectKey, ModuleStorage module)
+    private async Task<(bool Success, bool ShouldDelete)> InspectPurgeObjectAsync(string objectKey, ModuleStorage module,
+        CancellationToken cancellationToken)
     {
         GetObjectMetadataResponse response;
         try
@@ -426,11 +439,15 @@ internal sealed class S3ModuleObjectStore(
             {
                 BucketName = bucketName,
                 Key = objectKey
-            });
+            }, cancellationToken);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             return (true, false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
