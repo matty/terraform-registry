@@ -270,8 +270,9 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Adds a new module to the database
     /// </summary>
-    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             INSERT INTO modules (
                 namespace,
@@ -335,8 +336,9 @@ public sealed class PostgreSqlModuleRepository(
     /// <summary>
     ///     Removes a module from the database
     /// </summary>
-    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -373,8 +375,9 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage)
+    public async Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -415,8 +418,10 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             DELETE FROM modules
             WHERE namespace = @moduleNamespace
@@ -448,8 +453,9 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage)
+    public async Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"
             INSERT INTO modules (
                 namespace,
@@ -562,8 +568,10 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET deleted_at = @deletedAt 
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NULL";
         try
@@ -587,8 +595,10 @@ public sealed class PostgreSqlModuleRepository(
         }
     }
 
-    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version)
+    public async Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET deleted_at = NULL 
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version AND deleted_at IS NOT NULL";
         try
@@ -689,8 +699,9 @@ public sealed class PostgreSqlModuleRepository(
     }
 
     public async Task<ModuleStorage?> GetModuleStorageIncludingDeletedAsync(string moduleNamespace, string name,
-        string provider, string version)
+        string provider, string version, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"SELECT namespace, name, provider, version, description, storage_path, published_at, dependencies::text, metadata::text
             FROM modules WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND version = @version";
 
@@ -724,8 +735,9 @@ public sealed class PostgreSqlModuleRepository(
     }
 
     public async Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider,
-        string description)
+        string description, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var sql = @"UPDATE modules SET description = @description
             WHERE namespace = @moduleNamespace AND name = @name AND provider = @provider AND deleted_at IS NULL";
         try

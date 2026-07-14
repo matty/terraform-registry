@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Moq;
+using System.Security.Claims;
 using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
@@ -11,6 +12,30 @@ namespace TerraformRegistry.Tests.UnitTests;
 
 public class ModuleHandlersPaginationTests
 {
+    [Fact]
+    public async Task UpdateDescriptionPassesRequestAbortedToModuleService()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var context = new DefaultHttpContext { RequestAborted = cancellation.Token };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "system"), new Claim("permission", Permissions.ModulesDescription)], "StaticToken"));
+        context.Request.Body = new MemoryStream("{\"description\":\"new description\"}"u8.ToArray());
+        var moduleService = new Mock<IModuleService>();
+        moduleService.Setup(x => x.UpdateModuleDescriptionAsync("acme", "name", "aws", "new description", cancellation.Token))
+            .ReturnsAsync(true);
+        var audit = new Mock<IAuditService>();
+        audit.Setup(x => x.LogAsync(It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(),
+                It.IsAny<object?>(), It.IsAny<string?>()))
+            .Returns(Task.CompletedTask);
+
+        await ModuleHandlers.UpdateDescription(
+            "acme", "name", "aws", context.Request, moduleService.Object, audit.Object,
+            new NamespaceAuthorizationService(Mock.Of<INamespaceMaintainerStore>()), context);
+
+        moduleService.Verify(
+            x => x.UpdateModuleDescriptionAsync("acme", "name", "aws", "new description", cancellation.Token), Times.Once);
+    }
+
     [Fact]
     public async Task ListModulesClampsOffsetAndLimitBeforeCallingService()
     {

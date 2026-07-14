@@ -92,29 +92,32 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
         CancellationToken cancellationToken = default) =>
         _modules.GetModuleStorageAsync(moduleNamespace, name, provider, version, cancellationToken);
 
-    public Task<bool> AddModuleAsync(ModuleStorage moduleStorage) =>
-        _modules.AddModuleAsync(moduleStorage);
+    public Task<bool> AddModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default) =>
+        _modules.AddModuleAsync(moduleStorage, cancellationToken);
 
-    public Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage) =>
-        _modules.RemoveModuleAsync(moduleStorage);
+    public Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default) =>
+        _modules.RemoveModuleAsync(moduleStorage, cancellationToken);
 
-    public Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage) =>
-        _modules.RemoveModuleExactAsync(moduleStorage);
+    public Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default) =>
+        _modules.RemoveModuleExactAsync(moduleStorage, cancellationToken);
 
-    public Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version) =>
-        _modules.RemoveDeletedModuleAsync(moduleNamespace, name, provider, version);
+    public Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default) =>
+        _modules.RemoveDeletedModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
 
-    public Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage) =>
-        _modules.AddDeletedModuleAsync(moduleStorage);
+    public Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default) =>
+        _modules.AddDeletedModuleAsync(moduleStorage, cancellationToken);
 
     public Task<bool> ReplaceModuleExactAsync(ModuleStorage existingModule, ModuleStorage newModule) =>
         _modules.ReplaceModuleExactAsync(existingModule, newModule);
 
-    public Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version) =>
-        _modules.SoftDeleteModuleAsync(moduleNamespace, name, provider, version);
+    public Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default) =>
+        _modules.SoftDeleteModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
 
-    public Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version) =>
-        _modules.RestoreModuleAsync(moduleNamespace, name, provider, version);
+    public Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default) =>
+        _modules.RestoreModuleAsync(moduleNamespace, name, provider, version, cancellationToken);
 
     public Task<ModuleList> ListDeletedModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
         _modules.ListDeletedModulesAsync(request, cancellationToken);
@@ -123,11 +126,12 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
         string moduleNamespace,
         string name,
         string provider,
-        string version) =>
-        _modules.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version);
+        string version, CancellationToken cancellationToken = default) =>
+        _modules.GetModuleStorageIncludingDeletedAsync(moduleNamespace, name, provider, version, cancellationToken);
 
-    public Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description) =>
-        _modules.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description);
+    public Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description,
+        CancellationToken cancellationToken = default) =>
+        _modules.UpdateModuleDescriptionAsync(moduleNamespace, name, provider, description, cancellationToken);
 
     public Task<ModuleExtractionDocument?> GetModuleExtractionAsync(
         string moduleNamespace,

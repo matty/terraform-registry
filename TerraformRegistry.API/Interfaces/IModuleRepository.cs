@@ -33,27 +33,28 @@ public interface IModuleRepository
     /// <summary>
     ///     Adds a new module to the database.
     /// </summary>
-    Task<bool> AddModuleAsync(ModuleStorage moduleStorage);
+    Task<bool> AddModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Removes a module from the database permanently.
     /// </summary>
-    Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage);
+    Task<bool> RemoveModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Removes a module row only when its stored metadata matches the provided module.
     /// </summary>
-    Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage);
+    Task<bool> RemoveModuleExactAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Removes a module row only when it is currently soft-deleted.
     /// </summary>
-    Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> RemoveDeletedModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Adds a module row directly in the soft-deleted state.
     /// </summary>
-    Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage);
+    Task<bool> AddDeletedModuleAsync(ModuleStorage moduleStorage, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Replaces a module row only when its stored metadata matches the expected current module.
@@ -63,12 +64,14 @@ public interface IModuleRepository
     /// <summary>
     ///     Soft deletes a module by setting its deleted timestamp.
     /// </summary>
-    Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> SoftDeleteModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Restores a soft-deleted module by clearing its deleted timestamp.
     /// </summary>
-    Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version);
+    Task<bool> RestoreModuleAsync(string moduleNamespace, string name, string provider, string version,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Lists all soft-deleted modules.
@@ -82,10 +85,11 @@ public interface IModuleRepository
         string moduleNamespace,
         string name,
         string provider,
-        string version);
+        string version, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Updates the description for all active versions of a module.
     /// </summary>
-    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description);
+    Task<bool> UpdateModuleDescriptionAsync(string moduleNamespace, string name, string provider, string description,
+        CancellationToken cancellationToken = default);
 }
