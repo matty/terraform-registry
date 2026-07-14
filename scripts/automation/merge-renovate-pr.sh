@@ -36,14 +36,13 @@ is_routine_renovate_pr() {
   [[ "$(jq -r '.head.ref' <<<"$pr")" == renovate/* ]] || return 1
   [[ "$(jq -r '.base.ref' <<<"$pr")" == 'develop' ]] || return 1
 
-  local text labels
-  text="$(jq -r '[.title, .body // ""] | join("\n") | ascii_downcase' <<<"$pr")"
+  local labels
   labels="$(jq -r '[.labels[]?.name | ascii_downcase] | join("\n")' <<<"$pr")"
 
-  # Renovate represents security-alert and dashboard-approved major updates in
-  # its PR body/title or labels. These always remain maintainer-reviewed.
-  if grep -Eqi 'security update|vulnerabilit|cve-[0-9]|(^|[^a-z])major([^a-z]|$)' <<<"$text" ||
-     grep -Eqi 'security|vulnerabilit|major|dependency-dashboard' <<<"$labels"; then
+  # Renovate assigns this label only to explicitly configured routine update
+  # types. Security alerts and dashboard-approved majors never receive it.
+  grep -Fxq 'automerge-candidate' <<<"$labels" || return 1
+  if grep -Eqi 'security|vulnerabilit|major|dependency-dashboard' <<<"$labels"; then
     return 1
   fi
 }
@@ -72,15 +71,14 @@ review_thread_state() {
 check_state() {
   local sha="$1"
   local checks statuses
-  checks="$(gh api "repos/$repo/commits/$sha/check-runs?per_page=100")"
+  checks="$(gh api "repos/$repo/commits/$sha/check-runs?filter=latest&per_page=100")"
 
   local required
   for required in "${REQUIRED_CHECKS[@]}"; do
     if ! jq -e --arg required "$required" '
       [.check_runs[] | select(.name == $required)] as $matching |
       ($matching | length) > 0 and
-      (($matching | sort_by(.started_at // .completed_at // "") | last) |
-        .status == "completed" and .conclusion == "success")
+      all($matching[]; .status == "completed" and .conclusion == "success")
     ' <<<"$checks" >/dev/null; then
       printf 'failed-required-check\n'
       return 0
@@ -135,16 +133,16 @@ inspect() {
 }
 
 prior_develop_workflows_are_successful() {
+  local base_sha="$1"
   local workflow runs
   for workflow in ci.yaml security.yaml; do
     runs="$(gh api "repos/$repo/actions/workflows/$workflow/runs?branch=develop&event=push&per_page=1")"
-    jq -e '.workflow_runs | length == 1 and .[0].conclusion == "success"' <<<"$runs" >/dev/null || return 1
+    jq -e --arg base_sha "$base_sha" '
+      [.workflow_runs[] | select(.head_sha == $base_sha)] |
+      length == 1 and .[0].conclusion == "success"
+    ' <<<"$runs" >/dev/null || return 1
   done
 }
-
-if ! prior_develop_workflows_are_successful; then
-  fail 'prior-develop-workflow-not-successful' none
-fi
 
 numbers="$(gh api "repos/$repo/pulls?state=open&base=develop&per_page=100" | jq -r '.[].number')"
 if [[ -z "$numbers" ]]; then
@@ -178,6 +176,10 @@ case "$initial_result" in
   failed-required-check) fail 'failed-required-check' "$number" ;;
   *) fail 'unexpected-inspection-result' "$number" ;;
 esac
+initial_base_sha="$(jq -r '.base.sha' <<<"$initial_pr")"
+if ! prior_develop_workflows_are_successful "$initial_base_sha"; then
+  fail 'prior-develop-workflow-not-successful' "$number"
+fi
 
 final_pr="$(read_pr "$number")"
 if ! is_routine_renovate_pr "$final_pr"; then
@@ -186,6 +188,10 @@ fi
 final_sha="$(jq -r '.head.sha' <<<"$final_pr")"
 if [[ "$final_sha" != "$initial_sha" ]]; then
   fail 'changed-head' "$number"
+fi
+final_base_sha="$(jq -r '.base.sha' <<<"$final_pr")"
+if [[ "$final_base_sha" != "$initial_base_sha" ]]; then
+  fail 'changed-base' "$number"
 fi
 
 final_result="$(inspect "$number" "$final_pr")"
@@ -199,7 +205,7 @@ case "$final_result" in
   *) fail 'changed-head-or-checks' "$number" ;;
 esac
 
-if ! prior_develop_workflows_are_successful; then
+if ! prior_develop_workflows_are_successful "$initial_base_sha"; then
   fail 'prior-develop-workflow-not-successful' "$number"
 fi
 

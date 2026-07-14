@@ -19,7 +19,7 @@ fixture="${WATCHER_FIXTURE:?WATCHER_FIXTURE must be set}"
 state_dir="${WATCHER_STATE_DIR:?WATCHER_STATE_DIR must be set}"
 
 if [[ "$args" == *"/actions/workflows/ci.yaml/runs?"* || "$args" == *"/actions/workflows/security.yaml/runs?"* ]]; then
-  printf '%s\n' '{"workflow_runs":[{"conclusion":"success"}]}'
+  printf '%s\n' '{"workflow_runs":[{"head_sha":"base-a","conclusion":"success"}]}'
   exit 0
 fi
 
@@ -35,10 +35,18 @@ if [[ "$args" == *"/pulls/42 "* ]]; then
   count=$((count + 1))
   printf '%s' "$count" >"$count_file"
   head_sha="head-a"
+  base_sha="base-a"
   if [[ "$fixture" == "changed-head" && "$count" -gt 1 ]]; then
     head_sha="head-b"
   fi
-  printf '{"number":42,"user":{"login":"renovate[bot]"},"head":{"ref":"renovate/pin-postgres","sha":"%s"},"base":{"ref":"develop"},"title":"chore(deps): pin postgres","body":"Routine update","labels":[]}' "$head_sha"
+  if [[ "$fixture" == "changed-base" && "$count" -gt 1 ]]; then
+    base_sha="base-b"
+  fi
+  labels='[{"name":"dependencies"},{"name":"automerge-candidate"}]'
+  if [[ "$fixture" == "dashboard-major" ]]; then
+    labels='[{"name":"dependencies"}]'
+  fi
+  printf '{"number":42,"user":{"login":"renovate[bot]"},"head":{"ref":"renovate/pin-postgres","sha":"%s"},"base":{"ref":"develop","sha":"%s"},"title":"chore(deps): pin postgres","body":"Routine update","labels":%s}' "$head_sha" "$base_sha" "$labels"
   exit 0
 fi
 
@@ -79,9 +87,16 @@ if [[ "$args" == *"/commits/"*"/status "* ]]; then
 fi
 
 if [[ "$args" == *"/commits/"*"/check-runs?"* ]]; then
-  required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Frontend build and audit","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Docker build and scan","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Dependency review","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success","started_at":"2026-07-14T17:00:00Z"},{"name":".NET build, test, coverage","status":"completed","conclusion":"cancelled","started_at":"2026-07-14T16:00:00Z"}]'
+  [[ "$args" == *"filter=latest"* ]] || {
+    echo "check-runs request did not use filter=latest: $*" >&2
+    exit 97
+  }
+  required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"success"},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
   if [[ "$fixture" == "failed-required-check" ]]; then
     required='[{"name":".NET build, test, coverage","status":"completed","conclusion":"failure"},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
+  fi
+  if [[ "$fixture" == "queued-required-check" ]]; then
+    required='[{"name":".NET build, test, coverage","status":"queued","conclusion":null},{"name":"Frontend build and audit","status":"completed","conclusion":"success"},{"name":"Docker build and scan","status":"completed","conclusion":"success"},{"name":"Dependency review","status":"completed","conclusion":"success"},{"name":"CodeQL (csharp)","status":"completed","conclusion":"success"},{"name":"CodeQL (javascript-typescript)","status":"completed","conclusion":"success"},{"name":"CodeQL (actions)","status":"completed","conclusion":"success"},{"name":"Trivy filesystem scan","status":"completed","conclusion":"success"}]'
   fi
   printf '{"check_runs":%s}' "$required"
   exit 0
@@ -130,8 +145,16 @@ run_fixture pending-stability 0 skipped-pending-stability
 run_fixture comments 0 skipped-comments-or-reviews
 run_fixture unresolved-threads 0 skipped-unresolved-review-thread
 run_fixture failed-required-check 1 failed-required-check
+run_fixture queued-required-check 1 failed-required-check
 run_fixture changed-head 1 changed-head
+run_fixture changed-base 1 changed-base
 run_fixture unclean-merge-state 1 unclean-merge-state
+
+dashboard_state="$tmp/dashboard-major"
+mkdir -p "$dashboard_state"
+PATH="$tmp/bin:$PATH" GH_REPO=example/registry WATCHER_FIXTURE=dashboard-major WATCHER_STATE_DIR="$dashboard_state" "$SCRIPT" >"$dashboard_state/output" 2>&1
+! test -e "$dashboard_state/calls"
+grep -Fqx 'decision=no-routine-renovate-pr pr=none' "$dashboard_state/output"
 
 eligible_state="$tmp/eligible"
 mkdir -p "$eligible_state"
@@ -139,4 +162,4 @@ PATH="$tmp/bin:$PATH" GH_REPO=example/registry WATCHER_FIXTURE=eligible WATCHER_
 test "$(wc -l <"$eligible_state/calls")" -eq 1
 grep -Fqx 'decision=merged pr=42' "$eligible_state/output"
 
-echo 'merge-renovate-pr tests: 7 fixtures passed'
+echo 'merge-renovate-pr tests: 10 fixtures passed'
