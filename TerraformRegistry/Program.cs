@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.FileProviders;
 using System.Net;
 using NSwag;
@@ -28,6 +29,12 @@ builder.Configuration
     .AddEnvironmentVariables("TF_REG_");
 
 builder.Services.AddTerraformRegistryServices(builder.Configuration);
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+});
 
 var enableSwagger = false;
 var enableSwaggerConfig = builder.Configuration["EnableSwagger"];
@@ -105,13 +112,25 @@ app.UseHttpsRedirection();
 // Add global exception handling middleware early in the pipeline
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-var webFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "web");
+app.UseResponseCompression();
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    await next(context);
+});
+
+var webFolderPath = Path.Combine(app.Environment.ContentRootPath, "web");
 if (Directory.Exists(webFolderPath))
 {
     app.UseStaticFiles(new StaticFileOptions
     {
         FileProvider = new PhysicalFileProvider(webFolderPath),
-        RequestPath = ""
+        RequestPath = "",
+        OnPrepareResponse = context =>
+        {
+            if (IsFingerprintedFrontendAsset(context.Context.Request.Path))
+                context.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+        }
     });
 }
 
@@ -196,5 +215,15 @@ app.MapFallback(async context =>
 });
 
 app.Run($"http://0.0.0.0:{portNumber}");
+
+static bool IsFingerprintedFrontendAsset(PathString requestPath)
+{
+    if (!requestPath.StartsWithSegments("/_nuxt") && !requestPath.StartsWithSegments("/_fonts"))
+        return false;
+
+    var fingerprint = Path.GetFileNameWithoutExtension(requestPath.Value ?? string.Empty);
+    return fingerprint.Length >= 8 && fingerprint.All(character =>
+        char.IsAsciiLetterOrDigit(character) || character is '-' or '_');
+}
 
 public partial class Program;
