@@ -13,7 +13,8 @@ public class ApiKeyService(
     ILogger<ApiKeyService> logger,
     UserAdmissionOptions userAdmissionOptions,
     ApiKeySecurityOptions securityOptions,
-    ApiKeyVerificationGate verificationGate) : IApiKeyService
+    ApiKeyVerificationGate verificationGate,
+    OperationalMetrics? metrics = null) : IApiKeyService
 {
     private const int TokenLength = 32;
     // private const string TokenPrefix = "tf-"; // Removed prefix requirement
@@ -63,6 +64,7 @@ public class ApiKeyService(
     {
         if (string.IsNullOrWhiteSpace(rawToken))
         {
+            metrics?.RecordAuthenticationDecision("denied_missing_api_key");
             return new ApiKeyValidationResult(null, false);
         }
 
@@ -77,6 +79,7 @@ public class ApiKeyService(
             if (prefixLease is null)
             {
                 RegistryLog.Warning(logger, "Rejected API key verification because the prefix limit was reached.");
+                metrics?.RecordAuthenticationDecision("denied_rate_limited");
                 return new ApiKeyValidationResult(null, false, true);
             }
 
@@ -87,11 +90,13 @@ public class ApiKeyService(
                 if (principalLease is null)
                 {
                     RegistryLog.Warning(logger, "Rejected API key verification because the principal limit was reached.");
+                    metrics?.RecordAuthenticationDecision("denied_rate_limited");
                     return new ApiKeyValidationResult(null, false, true);
                 }
 
                 if (key.ExpiresAt.HasValue && key.ExpiresAt.Value < DateTime.UtcNow)
                 {
+                    metrics?.RecordAuthenticationDecision("denied_expired_api_key");
                     return new ApiKeyValidationResult(null, true);
                 }
 
@@ -99,6 +104,7 @@ public class ApiKeyService(
                 if (user?.IsActive != true)
                 {
                     RegistryLog.Warning(logger, "Rejected API key for inactive or missing user {UserId}", key.UserId);
+                    metrics?.RecordAuthenticationDecision("denied_inactive_user");
                     return new ApiKeyValidationResult(null, false);
                 }
 
@@ -115,10 +121,12 @@ public class ApiKeyService(
                     key.LastUsedAt = now;
                     await dbService.UpdateApiKeyAsync(key);
                 }
+                metrics?.RecordAuthenticationDecision("admitted_api_key");
                 return new ApiKeyValidationResult(key, false);
             }
         }
 
+        metrics?.RecordAuthenticationDecision("denied_invalid_api_key");
         return new ApiKeyValidationResult(null, false);
     }
 

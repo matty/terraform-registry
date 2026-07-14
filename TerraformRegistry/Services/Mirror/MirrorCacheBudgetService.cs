@@ -25,6 +25,7 @@ public sealed class MirrorCacheBudgetService(
         var providers = await ListProviderPackagesAsync(cancellationToken);
         var modules = await ListModulePackagesAsync(cancellationToken);
         var totalBytes = providers.Sum(CacheBytes) + modules.Sum(CacheBytes);
+        metrics?.RecordMirrorCacheBytes(totalBytes);
         if (totalBytes + additionalBytes <= maximumBytes)
         {
             return true;
@@ -44,6 +45,7 @@ public sealed class MirrorCacheBudgetService(
             }
 
             totalBytes -= candidate.Bytes;
+            metrics?.RecordMirrorCacheBytes(totalBytes);
             if (totalBytes + additionalBytes <= maximumBytes)
             {
                 return true;

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Telemetry;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services.Sqlite;
@@ -77,8 +79,13 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
     public Task<int> CountPendingExtractionJobsAsync(CancellationToken cancellationToken = default) =>
         _publications.CountPendingExtractionJobsAsync(cancellationToken);
 
-    public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
-        _modules.ListModulesAsync(request, cancellationToken);
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var page = await _modules.ListModulesAsync(request, cancellationToken);
+        OperationalDatabaseMetrics.RecordModulePage("sqlite", Stopwatch.GetElapsedTime(startedAt), page.Modules.Count);
+        return page;
+    }
 
     public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
         CancellationToken cancellationToken = default) =>

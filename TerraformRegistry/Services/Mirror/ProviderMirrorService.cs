@@ -22,7 +22,8 @@ public sealed class ProviderMirrorService(
     MirrorDownloadAdmission? downloadAdmission = null,
     MirrorCacheBudgetService? cacheBudget = null,
     MirrorCacheUsage? cacheUsage = null,
-    IProviderPackageValidator? packageValidator = null) : IProviderMirrorService
+    IProviderPackageValidator? packageValidator = null,
+    OperationalMetrics? metrics = null) : IProviderMirrorService
 {
     private const string MirrorHttpClientName = "TerraformRegistryMirror";
     private const int BufferSize = 81920;
@@ -216,6 +217,7 @@ public sealed class ProviderMirrorService(
             cached.LastSyncAt is { } negativeSync &&
             negativeSync.AddSeconds(config.Limits.NegativeCacheTtlSeconds) > DateTime.UtcNow)
         {
+            metrics?.RecordMirrorNegativeCacheHit("provider");
             return null;
         }
 
@@ -230,6 +232,7 @@ public sealed class ProviderMirrorService(
         var client = httpClientFactory.CreateClient();
         var uri = BuildUpstreamUri(MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(), $"/v1/providers/{providerNamespace}/{type}/versions");
         using var timeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+        metrics?.RecordMirrorUpstreamRequest("provider");
         using var response = await client.GetAsync(uri, timeout.Token);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -306,7 +309,7 @@ public sealed class ProviderMirrorService(
                 return cached;
             }
 
-            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1));
+            await using var heartbeat = new MirrorLeaseHeartbeat(leaseService, lease, TimeSpan.FromMinutes(1), metrics, "provider");
             return await FetchAndCachePackageAsync(hostname, providerNamespace, type, version, platform, config, heartbeat, cancellationToken);
         }
         finally
@@ -470,6 +473,7 @@ public sealed class ProviderMirrorService(
                 MirrorConfigurationValidator.GetProviderUpstreamUri(config, hostname).ToString(),
                 $"/v1/providers/{providerNamespace}/{type}/{version.Version}/download/{platform.Os}/{platform.Arch}");
             using var metadataTimeout = CreateTimeout(config.Providers.DownloadTimeoutSeconds, cancellationToken);
+            metrics?.RecordMirrorUpstreamRequest("provider");
             var metadata = await client.GetFromJsonAsync<ProviderPackageResponse>(metadataUri, JsonOptions, metadataTimeout.Token);
             if (metadata is null)
             {

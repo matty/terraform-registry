@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using TerraformRegistry.API.Interfaces;
+using TerraformRegistry.API.Telemetry;
 using TerraformRegistry.Migrations;
 using TerraformRegistry.Models;
 using TerraformRegistry.PostgreSQL.Repositories;
@@ -34,8 +36,13 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         _downloads = new PostgreSqlModuleDownloadRecorder(connectionString, logger);
     }
 
-    public Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default) =>
-        _modules.ListModulesAsync(request, cancellationToken);
+    public async Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default)
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var page = await _modules.ListModulesAsync(request, cancellationToken);
+        OperationalDatabaseMetrics.RecordModulePage("postgresql", Stopwatch.GetElapsedTime(startedAt), page.Modules.Count);
+        return page;
+    }
 
     public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job,
         CancellationToken cancellationToken = default) =>
