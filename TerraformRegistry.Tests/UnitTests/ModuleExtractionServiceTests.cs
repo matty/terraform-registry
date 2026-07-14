@@ -229,12 +229,13 @@ public class ModuleExtractionServiceTests
     public async Task ExtractAsyncDoesNotPersistResultsWhenCancellationIsRequestedDuringInspection()
     {
         using var cancellation = new CancellationTokenSource();
+        using var packageStream = new MemoryStream([1, 2, 3]);
         var moduleService = new Mock<IModuleService>(MockBehavior.Strict);
         moduleService
             .Setup(x => x.OpenModulePackageStreamAsync("acme", "network", "aws", "1.2.3"))
-            .ReturnsAsync(new MemoryStream([1, 2, 3]));
+            .ReturnsAsync(packageStream);
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), $"module-extraction-test-{Guid.NewGuid():N}");
+        var tempRoot = Path.Join(Path.GetTempPath(), $"module-extraction-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
 
         var workspaceFactory = new Mock<IArchiveWorkspaceFactory>(MockBehavior.Strict);
