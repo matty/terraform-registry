@@ -51,6 +51,7 @@ job_body() {
 workflow_dispatch_body() {
   awk '
     $0 == "  workflow_dispatch:" { in_dispatch = 1 }
+    in_dispatch && /^[^[:space:]]/ { exit }
     in_dispatch && $0 ~ /^  [[:alnum:]_-]+:$/ && $0 != "  workflow_dispatch:" { exit }
     in_dispatch { print }
   ' "$WORKFLOW"
@@ -75,6 +76,12 @@ grep -Fxq '        id: candidate' <<<"$job"
 grep -Fxq '          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' <<<"$job"
 grep -Fxq '          ref: ${{ steps.candidate.outputs.sha }}' <<<"$job"
+grep -Fxq '      - name: Validate candidate reference provenance' <<<"$job"
+grep -Fxq '          git check-ref-format "$CANDIDATE_REF"' <<<"$job"
+grep -Fxq '            refs/heads/*|refs/tags/*) ;;' <<<"$job"
+grep -Fxq '          git fetch --no-tags origin "$CANDIDATE_REF"' <<<"$job"
+grep -Fxq "          resolved_ref_sha=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\"" <<<"$job"
+grep -Fxq "            echo 'candidate_ref does not resolve to the requested immutable candidate SHA.' >&2" <<<"$job"
 grep -Fq 'git rev-parse HEAD' <<<"$job"
 grep -Fxq "            echo 'checkout did not resolve the requested immutable candidate SHA.' >&2" <<<"$job"
 grep -Fxq '          env -u GITHUB_SHA -u GITHUB_REF \' <<<"$job"
@@ -104,6 +111,12 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
     'echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"' \
     'echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"' \
     'ref: ${{ steps.candidate.outputs.sha }}' \
+    'Validate candidate reference provenance' \
+    'git check-ref-format "$CANDIDATE_REF"' \
+    'refs/heads/*|refs/tags/*)' \
+    'git fetch --no-tags origin "$CANDIDATE_REF"' \
+    "resolved_ref_sha=\"\$(git rev-parse 'FETCH_HEAD^{commit}')\"" \
+    'candidate_ref does not resolve to the requested immutable candidate SHA' \
     'checkout did not resolve the requested immutable candidate SHA' \
     'env -u GITHUB_SHA -u GITHUB_REF' \
     'FINAL_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}' \
@@ -120,6 +133,14 @@ if [[ "${FINAL_CANDIDATE_SKIP_MUTATION:-false}" != true ]]; then
       exit 1
     fi
   done
+
+  dispatch_root_escape_workflow="$mutation_root/dispatch-root-escape.yaml"
+  perl -0pe 's/^      candidate_sha:$/      candidate_sha removed/m' "$WORKFLOW" > "$dispatch_root_escape_workflow"
+  printf '\nsentinel:\n      candidate_sha:\n' >> "$dispatch_root_escape_workflow"
+  if FINAL_CANDIDATE_WORKFLOW="$dispatch_root_escape_workflow" FINAL_CANDIDATE_SKIP_MUTATION=true "$0" >/dev/null 2>&1; then
+    echo 'Final-candidate workflow-dispatch parser accepted a root-level escape.' >&2
+    exit 1
+  fi
 
   for mutation in \
     'release_certification_complete: false,' \

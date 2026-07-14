@@ -413,7 +413,7 @@ jobs:
         id: candidate
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
-          CANDIDATE_REF: ${{ inputs.candidate_ref || github.event.pull_request.head.label || github.ref }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref || (github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref)) || github.ref }}
         run: |
           # shellcheck disable=SC2153 # supplied through the step-level env map
           candidate_sha="$CANDIDATE_SHA"
@@ -427,6 +427,10 @@ jobs:
             echo 'candidate_ref must identify the candidate source.' >&2
             exit 1
           }
+          [[ "$candidate_ref" == refs/heads/* || "$candidate_ref" == refs/tags/* ]] || {
+            echo 'candidate_ref must be a canonical refs/heads/* or refs/tags/* reference.' >&2
+            exit 1
+          }
           echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
           echo "ref=$candidate_ref" >> "$GITHUB_OUTPUT"
 
@@ -435,6 +439,26 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ steps.candidate.outputs.sha }}
+
+      - name: Validate candidate reference provenance
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          CANDIDATE_REF: ${{ steps.candidate.outputs.ref }}
+        run: |
+          git check-ref-format "$CANDIDATE_REF"
+          case "$CANDIDATE_REF" in
+            refs/heads/*|refs/tags/*) ;;
+            *)
+              echo 'candidate_ref must be a canonical refs/heads/* or refs/tags/* reference.' >&2
+              exit 1
+              ;;
+          esac
+          git fetch --no-tags origin "$CANDIDATE_REF"
+          resolved_ref_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          [[ "$resolved_ref_sha" == "$CANDIDATE_SHA" ]] || {
+            echo 'candidate_ref does not resolve to the requested immutable candidate SHA.' >&2
+            exit 1
+          }
 
       - name: Verify immutable candidate checkout
         env:
