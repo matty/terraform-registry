@@ -39,6 +39,7 @@ test -n "$job"
 
 # Candidates are selected by a durable release label or the merge queue. Do
 # not couple this final gate to an old one-off remediation branch name.
+grep -Fq 'types: [opened, synchronize, reopened, labeled]' "$WORKFLOW"
 grep -Fq "'final-candidate'" <<<"$job"
 grep -Fq "github.event_name == 'merge_group'" <<<"$job"
 grep -Fq 'test-final-candidate-certification.sh' <<<"$job"

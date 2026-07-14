@@ -9,6 +9,7 @@ on:
       - "hotfix/**"
       - "remediation/phase/**"
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - main
       - develop
