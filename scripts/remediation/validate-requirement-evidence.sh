@@ -224,7 +224,8 @@ HEADER
     [[ -z "$id" || "$id" == \#* ]] && continue
     printf '| `%s` | %s | [#%s](https://github.com/matty/terraform-registry/pull/%s) | `%s` | `%s` | `%s` |\n' "$id" "$state" "$pull_request" "$pull_request" "$merge_record" "$gate" "$evidence"
   done < "$MANIFEST"
-  cat <<'CANDIDATE'
+  if (( pending_count != 0 )); then
+    cat <<'PENDING_CANDIDATE'
 
 ## Current release candidate
 
@@ -234,7 +235,17 @@ The required fields are declared, rather than fabricated, in
 source revision, verification-run URL, Terraform backend matrix, fault/load, and
 operability results. The validator rejects absent fields and rejects a mixture of
 pending and completed values.
-CANDIDATE
+PENDING_CANDIDATE
+  else
+    cat <<'CERTIFIED_CANDIDATE'
+
+## Current release candidate
+
+Final certification is **certified** with complete candidate evidence.
+The image digest, source revision, verification-run URL, Terraform backend matrix,
+fault/load, and operability results have been validated against published evidence.
+CERTIFIED_CANDIDATE
+  fi
 }
 
 if [[ "$MODE" == --write-status ]]; then
