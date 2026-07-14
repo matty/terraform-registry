@@ -145,9 +145,12 @@ public sealed class MirrorAdminHandlersTests
         providers.Setup(x => x.UpsertProviderPackageAsync(It.Is<MirrorProviderPackage>(item =>
                 item.PackageStoragePath == null && item.State == "evicted")))
             .Returns(Task.CompletedTask);
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0)).ReturnsAsync([]);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0)).ReturnsAsync([]);
         var storage = new Mock<IProviderArtifactStorage>();
         storage.Setup(x => x.DeleteAsync("cache/aws", context.RequestAborted)).ReturnsAsync(true);
-        var budget = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(), storage.Object,
+        var budget = new MirrorCacheBudgetService(providers.Object, modules.Object, storage.Object,
             Mock.Of<IModuleService>(), new MirrorCacheUsage());
         var audit = new Mock<IAuditService>();
 

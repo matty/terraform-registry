@@ -181,21 +181,50 @@ public sealed class MirrorCacheBudgetServiceTests
     }
 
     [Fact]
-    public async Task RecordCacheBytesTreatsMissingRepositoryPagesAsEmpty()
+    public async Task RecordCacheBytesRecordsZeroForEmptyRepositoryPages()
+    {
+        using var listener = new MeterListener();
+        var cacheBytes = new List<long>();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "terraform_registry.mirror.cache_bytes")
+                cacheBytes.Add(value);
+        });
+        listener.Start();
+
+        var providers = new Mock<IProviderMirrorRepository>();
+        providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync([]);
+        var modules = new Mock<IModuleMirrorRepository>();
+        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0))
+            .ReturnsAsync([]);
+        using var metrics = new OperationalMetrics();
+        var service = new MirrorCacheBudgetService(providers.Object, modules.Object, Mock.Of<IProviderArtifactStorage>(),
+            Mock.Of<IModuleService>(), new MirrorCacheUsage(), metrics: metrics);
+
+        await service.RecordCacheBytesAsync(CancellationToken.None);
+        listener.RecordObservableInstruments();
+
+        providers.Verify(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0), Times.Once);
+        modules.Verify(x => x.ListModulePackagesAsync(null, "ready", 1000, 0), Times.Once);
+        Assert.Contains(0, cacheBytes);
+    }
+
+    [Fact]
+    public async Task RecordCacheBytesRejectsNullRepositoryPages()
     {
         var providers = new Mock<IProviderMirrorRepository>();
         providers.Setup(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0))
             .ReturnsAsync((IReadOnlyList<MirrorProviderPackage>)null!);
-        var modules = new Mock<IModuleMirrorRepository>();
-        modules.Setup(x => x.ListModulePackagesAsync(null, "ready", 1000, 0))
-            .ReturnsAsync((IReadOnlyList<MirrorModulePackage>)null!);
-        var service = new MirrorCacheBudgetService(providers.Object, modules.Object, Mock.Of<IProviderArtifactStorage>(),
-            Mock.Of<IModuleService>(), new MirrorCacheUsage());
+        var service = new MirrorCacheBudgetService(providers.Object, Mock.Of<IModuleMirrorRepository>(),
+            Mock.Of<IProviderArtifactStorage>(), Mock.Of<IModuleService>(), new MirrorCacheUsage());
 
-        await service.RecordCacheBytesAsync(CancellationToken.None);
-
-        providers.Verify(x => x.ListProviderPackagesAsync(null, "ready", 1000, 0), Times.Once);
-        modules.Verify(x => x.ListModulePackagesAsync(null, "ready", 1000, 0), Times.Once);
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.RecordCacheBytesAsync(CancellationToken.None));
     }
 
     private static MirrorProviderPackage ProviderPackage(string path, long size, DateTime updatedAt) => new()
