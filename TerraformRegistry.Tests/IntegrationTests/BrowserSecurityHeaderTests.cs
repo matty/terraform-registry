@@ -17,6 +17,7 @@ public sealed class BrowserSecurityHeaderTests
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["AuthorizationToken"] = "browser-security-test-token",
+                    ["DatabaseProvider"] = "sqlite",
                     ["Sqlite:ConnectionString"] = "Data Source=/tmp/terraform-registry-browser-security-tests.db"
                 }));
         });
