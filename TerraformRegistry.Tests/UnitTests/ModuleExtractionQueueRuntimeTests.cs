@@ -257,7 +257,7 @@ public class ModuleExtractionQueueRuntimeTests
 
         var moduleService = new Mock<IModuleService>();
         moduleService.Setup(x => x.OpenModulePackageStreamAsync("acme", "network", "aws", "1.0.0"))
-            .ReturnsAsync((Stream?)null);
+            .Returns(() => Task.FromResult<Stream?>(null));
         using var metrics = new OperationalMetrics();
         var service = new ModuleExtractionService(
             moduleService.Object,
