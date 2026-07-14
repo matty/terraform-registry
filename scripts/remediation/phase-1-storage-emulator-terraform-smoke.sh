@@ -97,7 +97,7 @@ EOF
       -e SSL_CERT_FILE=/certs/caddy/pki/authorities/local/root.crt \
       -e TF_CLI_CONFIG_FILE=/work/terraform.rc \
       -v "${project}_caddy-data:/certs:ro" -v "$workspace/$archive:/work" -w /work \
-      hashicorp/terraform:1.14.2 init -input=false -no-color
+      hashicorp/terraform:1.14.2@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf init -input=false -no-color
   done
 
   printf 'Phase 1 %s emulator Terraform smoke passed.\n' "$storage_provider"
