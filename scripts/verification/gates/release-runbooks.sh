@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${RELEASE_RUNBOOK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-RUNBOOK="$ROOT/docs/release-operations-runbook.md"
+RUNBOOK="$ROOT/docs/operations/release-management.md"
 ADMIN_ENDPOINTS="$ROOT/TerraformRegistry/Startup/AdminEndpointMappingExtensions.cs"
 MIRROR_HANDLERS="$ROOT/TerraformRegistry/Handlers/MirrorAdminHandlers.cs"
 MODULE_DOCS_HANDLERS="$ROOT/TerraformRegistry/Handlers/ModuleDocsHandlers.cs"
@@ -20,7 +20,7 @@ for heading in \
   grep -Fq "## $heading" "$RUNBOOK"
 done
 
-grep -Fq 'phase-0-migration-recovery-runbook.md' "$RUNBOOK"
+grep -Fq 'database-migration-recovery.md' "$RUNBOOK"
 grep -Fq 'supply-chain-pinning.sh' "$RUNBOOK"
 grep -Fq 'MapGet("/health"' "$ROOT/TerraformRegistry/Startup/EndpointMappingExtensions.cs"
 grep -Fq 'MapGet("/ready"' "$ROOT/TerraformRegistry/Startup/EndpointMappingExtensions.cs"

@@ -1,4 +1,4 @@
-# Phase 0 migration backup, restore, and unsafe-state recovery
+# Database Migration Recovery
 
 This operator runbook implements `DB-006`. It is deliberately fail-closed: do
 not delete DbUp journal rows, renumber an embedded migration, manually alter a
@@ -14,7 +14,7 @@ SQLite 010, backup ID/location/retention, and disposable restore target. Record
 source/restored row counts for every application table, table-specific field and
 relationship assertions, backup/restore/migration duration, and observed lock
 wait or blocking (or explicitly that none was observed). Attach the exact
-candidate-binary readiness result and Phase 0 matrix output.
+candidate-binary readiness result and database migration verification output.
 
 A successful disposable exercise is not evidence that production was restored.
 
@@ -65,11 +65,11 @@ printf 'started=%s\nfinished=%s\n' "$started" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >"$workdir/timing.txt"
 ```
 
-The count query is only a template; the Phase 0 matrix's table-specific field and
+The count query is only a template; the database migration verification matrix's table-specific field and
 relationship assertions are authoritative. Capture timestamped `pg_stat_activity`
 and `pg_locks` snapshots from approved monitoring while backup/migration runs,
 then record longest wait and blocker PID/query. Start the exact candidate image
-against `RESTORE_PGURL`, run the Phase 0 gate, and preserve its output.
+against `RESTORE_PGURL`, run the database migration verification gate, and preserve its output.
 
 ## SQLite: backup and disposable restore
 
@@ -120,6 +120,6 @@ potentially exposed PATs and webhook secrets. Record this limitation explicitly.
 - [ ] Restore row counts, relationships, journal, and SQLite foreign keys (where
       applicable) compared successfully.
 - [ ] Backup/restore/migration durations and lock/blocking observations recorded.
-- [ ] Exact release binary passed readiness and the Phase 0 matrix on the restore.
+- [ ] Exact release binary passed readiness and the database migration verification matrix on the restore.
 - [ ] Irrecoverable-data limitation acknowledged, or evidence shows it does not
       apply.

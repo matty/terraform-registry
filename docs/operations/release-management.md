@@ -1,4 +1,4 @@
-# Release operations runbook
+# Release Management
 
 This runbook is the operating procedure for a Terraform Registry release. It
 uses only interfaces that are present in this repository. Deployment-platform
@@ -72,8 +72,8 @@ local storage; the storage verification checks exercise those paths.
 ## Backup, restore, and migration state
 
 Every schema rollout requires a verified backup and a disposable restore of
-the exact candidate binary. Follow the detailed [migration recovery
-runbook](phase-0-migration-recovery-runbook.md); it contains the PostgreSQL
+the exact candidate binary. Follow the detailed [database migration recovery
+guide](database-migration-recovery.md); it contains the PostgreSQL
 `pg_dump`/`pg_restore` and SQLite online-backup commands, row-count and journal
 comparisons, foreign-key check, timing/lock evidence, and unsafe-state path.
 
