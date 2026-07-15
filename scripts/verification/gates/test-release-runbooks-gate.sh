@@ -40,6 +40,6 @@ assert_rejects \
   'new { queued });' \
   'new { accepted = queued });'
 assert_rejects \
-  'docs/release-operations-runbook.md' \
+  'docs/operations/release-management.md' \
   '.queued == true' \
   '.queued == false'
