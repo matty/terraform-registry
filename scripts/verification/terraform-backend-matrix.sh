@@ -43,13 +43,13 @@ run_version() {
 
   printf 'Running Terraform %s Local module evidence.\n' "$label"
   TF_REGISTRY_TERRAFORM_IMAGE="$image" \
-    bash "$ROOT/scripts/remediation/phase-1-local-terraform-smoke.sh"
+    bash "$ROOT/scripts/verification/phase-1-local-terraform-smoke.sh"
 
   # Build once per supported Terraform version. The helper runs as its declared
   # non-root user and talks to the final registry image over the emulator
   # network, so the provider path exercises the same Azure/S3 storage backend
   # as modules rather than a Local-only development host.
-  docker build -f "$ROOT/scripts/remediation/terraform-provider-smoke.Dockerfile" \
+  docker build -f "$ROOT/scripts/verification/terraform-provider-smoke.Dockerfile" \
     -t "terraform-registry-provider-smoke:$label" "$ROOT" >/dev/null
 
   run_emulator_provider() {
@@ -58,7 +58,7 @@ run_version() {
     network="${project}_default"
     printf 'Running Terraform %s %s module and signed-provider evidence.\n' "$label" "$storage_provider"
     TF_REGISTRY_TERRAFORM_IMAGE="$image" \
-      bash "$ROOT/scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh" \
+      bash "$ROOT/scripts/verification/phase-1-storage-emulator-terraform-smoke.sh" \
         --provider "$storage_provider" --keep-running --home "$HOME_DIR/$label"
 
     caddy="$(docker compose --project-name "$project" --project-directory "$HOME_DIR/$label" -f "$HOME_DIR/$label/compose.yaml" ps -q caddy)"
@@ -77,7 +77,7 @@ run_version() {
       -e TF_REG_SMOKE_SSL_CERT_FILE='/tools/caddy-root.crt' \
       "terraform-registry-provider-smoke:$label" \
       bash /src/devutils/provider-registry-terraform-smoke-test.sh
-    "$ROOT/scripts/remediation/storage-emulators/storage-emulators.sh" clean --home "$HOME_DIR/$label"
+    "$ROOT/scripts/verification/storage-emulators/storage-emulators.sh" clean --home "$HOME_DIR/$label"
   }
 
   run_emulator_provider azure

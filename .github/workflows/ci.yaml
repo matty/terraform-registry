@@ -7,13 +7,11 @@ on:
       - develop
       - "release/**"
       - "hotfix/**"
-      - "remediation/phase/**"
   pull_request:
     types: [opened, synchronize, reopened, labeled]
     branches:
       - main
       - develop
-      - "remediation/phase/**"
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
@@ -147,7 +145,7 @@ jobs:
         run: npm ci
 
       - name: Verify reproducible release inputs
-        run: bash scripts/remediation/gates/test-supply-chain-pinning.sh
+        run: bash scripts/verification/gates/test-supply-chain-pinning.sh
 
       - name: Run npm audit
         working-directory: TerraformRegistry/web-src
@@ -177,8 +175,8 @@ jobs:
 
       - name: Verify release runbook contracts and mutation coverage
         run: |
-          bash scripts/remediation/gates/release-runbooks.sh
-          bash scripts/remediation/gates/test-release-runbooks-gate.sh
+          bash scripts/verification/gates/release-runbooks.sh
+          bash scripts/verification/gates/test-release-runbooks-gate.sh
 
   storage-emulator-contract:
     name: Storage emulator Terraform contract
@@ -192,13 +190,13 @@ jobs:
 
       - name: Verify storage emulator harness scripts
         run: |
-          bash scripts/remediation/storage-emulators/test-lifecycle.sh
-          bash scripts/remediation/storage-emulators/test-ci-workflow.sh
-          bash scripts/remediation/storage-emulators/test-smoke-script.sh
+          bash scripts/verification/storage-emulators/test-lifecycle.sh
+          bash scripts/verification/storage-emulators/test-ci-workflow.sh
+          bash scripts/verification/storage-emulators/test-smoke-script.sh
 
       - name: Run Azurite and MinIO Terraform contract smoke
         run: >-
-          bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh
+          bash scripts/verification/phase-1-storage-emulator-terraform-smoke.sh
           --provider all
           --home "$RUNNER_TEMP/terraform-registry-storage-test"
 
@@ -221,7 +219,7 @@ jobs:
       - name: Clean storage emulator harness
         if: always()
         run: >-
-          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          bash scripts/verification/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-storage-test" || true
 
   terraform-backend-matrix:
@@ -235,145 +233,20 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       - name: Verify Terraform backend matrix contract
-        run: bash scripts/remediation/test-terraform-backend-matrix.sh
+        run: bash scripts/verification/test-terraform-backend-matrix.sh
 
       - name: Run pinned Terraform backend matrix
         run: >-
-          bash scripts/remediation/terraform-backend-matrix.sh
+          bash scripts/verification/terraform-backend-matrix.sh
           --home "$RUNNER_TEMP/terraform-registry-terraform-matrix"
 
       - name: Clean Terraform backend matrix harness
         if: always()
         run: >-
-          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          bash scripts/verification/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.12.0" || true;
-          bash scripts/remediation/storage-emulators/storage-emulators.sh clean
+          bash scripts/verification/storage-emulators/storage-emulators.sh clean
           --home "$RUNNER_TEMP/terraform-registry-terraform-matrix/terraform-1.14.2" || true
-
-  migration-safety-gate:
-    name: Migration safety gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p0-migration-matrix'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Run migration safety gate
-        run: bash scripts/remediation/gates/phase-0.sh
-
-  phase-1-deployment-gate:
-    name: Phase 1 deployment gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p1-terraform-deployment-gate'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Run portable Phase 1 deployment gate
-        run: bash scripts/remediation/gates/phase-1.sh
-
-  bounded-ingestion-security-gate:
-    name: Bounded ingestion security gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/audit-p2-security-abuse-gate'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Run bounded ingestion security gate
-        run: bash scripts/remediation/gates/bounded-ingestion-security.sh
-
-  mirror-containment-gate:
-    name: Mirror containment gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/mirror-containment-gate'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Run mirror containment gate
-        run: bash scripts/remediation/gates/mirror-containment-gate.sh
-
-  publication-fault-gate:
-    name: Transactional publication fault gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/publication-fault-gate'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Run transactional publication fault gate
-        run: bash scripts/remediation/gates/publication-fault-gate.sh
-
-  fault-load-certification:
-    name: Fault and load certification
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/fault-load-certification'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Verify fault and load certification gate structure
-        run: bash scripts/remediation/gates/test-fault-load-certification.sh
-
-      - name: Run fault and load certification
-        run: bash scripts/remediation/gates/fault-load-certification.sh
-
-  operability-certification:
-    name: Operability certification gate
-    if: github.event_name == 'pull_request' && github.head_ref == 'test/operability-certification'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Verify operability certification structure and selectors
-        run: bash scripts/remediation/gates/test-operability-certification.sh
-
-      - name: Run operability certification gate
-        run: bash scripts/remediation/gates/operability-certification.sh
 
   final-candidate-certification:
     name: Pre-publication candidate verification
@@ -470,7 +343,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Verify pre-publication candidate verification wiring
-        run: bash scripts/remediation/gates/test-final-candidate-certification.sh
+        run: bash scripts/verification/gates/test-final-candidate-certification.sh
 
       - name: Run pre-publication candidate verification
         env:
@@ -480,7 +353,7 @@ jobs:
         run: |
           FINAL_CANDIDATE_EVIDENCE_PATH="$RUNNER_TEMP/final-candidate-certification-evidence.json" \
           env -u GITHUB_SHA -u GITHUB_REF \
-          bash scripts/remediation/gates/final-candidate-certification.sh
+          bash scripts/verification/gates/final-candidate-certification.sh
 
       - name: Verify and bind pre-publication evidence provenance
         env:

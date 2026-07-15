@@ -22,7 +22,7 @@ is responsible for proposing reviewed updates.
 | MinIO client | `minio/mc:RELEASE.2025-03-12T17-29-24Z@sha256:470f5546b596e16c7816b9c3fa7a78ce4076bb73c2c73f7faeec0c8043923123` | S3-compatible storage-emulator initialization |
 | Caddy | `caddy:2.11-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648` | Storage-emulator smoke-test reverse proxy |
 
-The gate at `scripts/remediation/gates/supply-chain-pinning.sh` ensures these
+The gate at `scripts/verification/gates/supply-chain-pinning.sh` ensures these
 references remain immutable, including every Compose image used by development
 or the CI storage-emulator smoke tests, and that all workflow actions use a
 40-character commit SHA. It deliberately permits a human-readable version
