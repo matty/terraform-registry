@@ -4,14 +4,17 @@
 
 Add one Docker-backed integration test that proves the PostgreSQL migration
 chain can advance from an empty database to the current schema while it
-contains representative application data at every migration boundary.
+contains representative application data at every migration boundary, including
+the VCS connection upgrade.
 
 ## Scope
 
 - PostgreSQL only.
 - Reuse the existing Testcontainers PostgreSQL fixture in
   `DbUpPostgresqlMigrationTests`.
-- Do not change production migrations or Docker Compose configuration.
+- Replace the destructive PostgreSQL 010 VCS migration with a data-preserving
+  expand–migrate–contract implementation.
+- Do not change Docker Compose configuration.
 
 ## Design
 
@@ -28,10 +31,13 @@ initial migration seeds a module; later steps add a user and API key, webhook,
 legacy VCS source, role and assignment, audit entry, and later feature records
 as their tables become available.
 
-Migration 010 is a required preservation checkpoint. The fixture creates a
-legacy VCS source before the migration, then asserts afterwards that its source
-identity and metadata remain and that the encrypted PAT and webhook secret were
-moved to a linked VCS connection.
+Migration 010 is a required preservation checkpoint. It creates a VCS
+connection for every legacy VCS source, backfills a required `connection_id`,
+adds its foreign key and index, and removes only the duplicated credentials from
+`vcs_sources`. It must not drop or recreate the source table. The fixture
+creates legacy VCS sources before the migration, then asserts afterwards that
+their source identity and metadata remain and that the encrypted PAT and
+webhook secret moved to linked VCS connections.
 
 Before and after each migration, verification queries assert every previously
 seeded record and its required relationships remain present. The final
@@ -45,6 +51,14 @@ Each upgrade step is labeled with its embedded resource name. A failed DbUp
 result is surfaced with that name and DbUp's original exception, so a test
 failure identifies the precise migration boundary. Assertions use stable seed
 identifiers and report the missing table or relationship.
+
+## Historical limitation
+
+The previous 010 migration dropped `vcs_sources`. Data already deleted by a
+database that ran that historical script is irrecoverable from the remaining
+schema. Such environments require restoration from a backup or an authoritative
+external system; rewriting 010 protects only fresh and not-yet-upgraded
+databases.
 
 ## Validation
 
