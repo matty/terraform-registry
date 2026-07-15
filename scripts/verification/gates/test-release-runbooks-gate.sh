@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GATE="$ROOT/scripts/remediation/gates/release-runbooks.sh"
+GATE="$ROOT/scripts/verification/gates/release-runbooks.sh"
 
 test -x "$GATE"
 

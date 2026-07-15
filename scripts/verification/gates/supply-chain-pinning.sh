@@ -74,7 +74,7 @@ while IFS= read -r image; do
 done < <(grep -hE '^[[:space:]]*image:' \
   "$ROOT/docker-compose.dev.yml" \
   "$ROOT/docker-compose.psql.yml" \
-  "$ROOT/scripts/remediation/storage-emulators/compose.yaml")
+  "$ROOT/scripts/verification/storage-emulators/compose.yaml")
 
 contains_affected_nuxt_form() {
   local file
