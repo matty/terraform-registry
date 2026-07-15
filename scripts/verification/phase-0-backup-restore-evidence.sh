@@ -7,7 +7,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/remediation/phase-0-backup-restore-evidence.sh sqlite <source.db> [evidence-dir]
+Usage: scripts/verification/phase-0-backup-restore-evidence.sh sqlite <source.db> [evidence-dir]
 
 The source must be a disposable SQLite database. The command creates an online
 backup and a separate restored database, compares every user-table row count and

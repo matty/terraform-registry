@@ -28,7 +28,7 @@ docker buildx imagetools inspect "$IMAGE:$VERSION"
 
 ## Pre-publication candidate verification
 
-The labelled-candidate CI artifact verifies the portable P5/P6 gates before an
+The labelled-candidate CI artifact verifies the portable release gates before an
 image is published. This artifact is not release certification until immutable post-publication digest evidence is recorded: its `image_digest` is deliberately null and its release-certification status remains incomplete.
 After publication, create the explicit post-publication evidence record with
 the immutable registry digest for the exact candidate SHA and version before
@@ -37,7 +37,7 @@ digest evidence.
 
 The image is designed to run as the non-root `app` user. Retain the existing
 writable mounts for `/app/modules`, `/app/providers`, and `/data` when using
-local storage; the Phase 1 deployment gate verifies those paths.
+local storage; the storage verification checks exercise those paths.
 
 ## Pre-rollout verification
 
@@ -46,7 +46,7 @@ local storage; the Phase 1 deployment gate verifies those paths.
 2. Run the reproducibility gate from the release checkout:
 
    ```bash
-   bash scripts/remediation/gates/supply-chain-pinning.sh
+   bash scripts/verification/gates/supply-chain-pinning.sh
    ```
 
 3. Verify the candidate digest locally when Docker is available. The marker is
@@ -66,15 +66,7 @@ local storage; the Phase 1 deployment gate verifies those paths.
    credentials:
 
    ```bash
-   bash scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh --provider all
-   ```
-
-5. For a real Azure managed-identity change, run the protected-environment
-   gate; an emulator cannot issue a user-delegation key:
-
-   ```bash
-   TF_REGISTRY_REQUIRE_REAL_AZURE=1 \
-     bash scripts/remediation/gates/phase-1-real-azure-user-delegation-sas.sh
+   bash scripts/verification/phase-1-storage-emulator-terraform-smoke.sh --provider all
    ```
 
 ## Backup, restore, and migration state

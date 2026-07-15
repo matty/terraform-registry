@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-SOURCE_COMPOSE="$ROOT/scripts/remediation/storage-emulators/compose.yaml"
+SOURCE_COMPOSE="$ROOT/scripts/verification/storage-emulators/compose.yaml"
 DEFAULT_HOME="$HOME/.terraform-registry-storage-test"
 HOME_DIR="$DEFAULT_HOME"
 PROVIDER=""
@@ -71,7 +71,7 @@ case "$COMMAND" in
     printf 'Storage emulator harness is running at %s.\n' "$HOME_DIR"
     ;;
   test)
-    exec "$ROOT/scripts/remediation/phase-1-storage-emulator-terraform-smoke.sh" \
+    exec "$ROOT/scripts/verification/phase-1-storage-emulator-terraform-smoke.sh" \
       --provider "$PROVIDER" --home "$HOME_DIR"
     ;;
   clean)

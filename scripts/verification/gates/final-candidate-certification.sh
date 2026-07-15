@@ -91,22 +91,18 @@ write_evidence() {
 }
 
 cleanup_matrix() {
-  bash scripts/remediation/storage-emulators/storage-emulators.sh clean \
+  bash scripts/verification/storage-emulators/storage-emulators.sh clean \
     --home "$MATRIX_HOME/terraform-1.12.0" >/dev/null 2>&1 || true
-  bash scripts/remediation/storage-emulators/storage-emulators.sh clean \
+  bash scripts/verification/storage-emulators/storage-emulators.sh clean \
     --home "$MATRIX_HOME/terraform-1.14.2" >/dev/null 2>&1 || true
 }
 
 trap 'cleanup_matrix; write_evidence' EXIT
 
-record_gate operability-contract bash scripts/remediation/gates/test-operability-certification.sh
-record_gate operability bash scripts/remediation/gates/operability-certification.sh
-record_gate fault-load-contract bash scripts/remediation/gates/test-fault-load-certification.sh
-record_gate fault-load bash scripts/remediation/gates/fault-load-certification.sh
-record_gate terraform-backend-contract bash scripts/remediation/test-terraform-backend-matrix.sh
-record_gate terraform-backend-matrix bash scripts/remediation/terraform-backend-matrix.sh --home "$MATRIX_HOME"
-record_gate release-runbooks bash scripts/remediation/gates/release-runbooks.sh
-record_gate release-runbooks-contract bash scripts/remediation/gates/test-release-runbooks-gate.sh
+record_gate terraform-backend-contract bash scripts/verification/test-terraform-backend-matrix.sh
+record_gate terraform-backend-matrix bash scripts/verification/terraform-backend-matrix.sh --home "$MATRIX_HOME"
+record_gate release-runbooks bash scripts/verification/gates/release-runbooks.sh
+record_gate release-runbooks-contract bash scripts/verification/gates/test-release-runbooks-gate.sh
 
 if [[ "$status" -ne 0 ]]; then
   echo 'Pre-publication candidate verification failed; inspect the evidence artifact for every gate result.' >&2

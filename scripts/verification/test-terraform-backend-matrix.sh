@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MATRIX="$ROOT/scripts/remediation/terraform-backend-matrix.sh"
+MATRIX="$ROOT/scripts/verification/terraform-backend-matrix.sh"
 WORKFLOW="$ROOT/.github/workflows/ci.yaml"
 BUILD_INPUTS="$ROOT/docs/build-inputs.md"
-EMULATOR_COMPOSE="$ROOT/scripts/remediation/storage-emulators/compose.yaml"
-LOCAL_SMOKE="$ROOT/scripts/remediation/phase-1-local-terraform-smoke.sh"
+EMULATOR_COMPOSE="$ROOT/scripts/verification/storage-emulators/compose.yaml"
+LOCAL_SMOKE="$ROOT/scripts/verification/phase-1-local-terraform-smoke.sh"
 
 test -x "$MATRIX"
 grep -Fq 'hashicorp/terraform:1.12.0@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b' "$MATRIX"
@@ -18,8 +18,8 @@ grep -Fq 'phase-1-storage-emulator-terraform-smoke.sh' "$MATRIX"
 grep -Fq 'run_emulator_provider azure' "$MATRIX"
 grep -Fq 'run_emulator_provider s3' "$MATRIX"
 grep -Fq 'provider-registry-terraform-smoke-test.sh' "$MATRIX"
-test -f "$ROOT/scripts/remediation/terraform-provider-smoke.Dockerfile"
-grep -Fq 'USER app' "$ROOT/scripts/remediation/terraform-provider-smoke.Dockerfile"
+test -f "$ROOT/scripts/verification/terraform-provider-smoke.Dockerfile"
+grep -Fq 'USER app' "$ROOT/scripts/verification/terraform-provider-smoke.Dockerfile"
 grep -Fq 'TF_REG_SMOKE_REMOTE_APP_BASE_URL' "$MATRIX"
 grep -Fq 'TF_REG_SMOKE_REMOTE_APP_BASE_URL' "$ROOT/devutils/provider-registry-terraform-smoke-test.sh"
 grep -Fq 'chmod 755 "$terraform_dir"' "$MATRIX"
@@ -27,8 +27,8 @@ grep -Fq 'caddy-root.crt' "$MATRIX"
 grep -Fq 'terraform-provider-smoke build inputs' "$BUILD_INPUTS"
 grep -Fq "docker image inspect --format '{{.Config.User}}'" "$MATRIX"
 grep -Eq '^  terraform-backend-matrix:' "$WORKFLOW"
-grep -Fq 'scripts/remediation/test-terraform-backend-matrix.sh' "$WORKFLOW"
-grep -Fq 'scripts/remediation/terraform-backend-matrix.sh' "$WORKFLOW"
+grep -Fq 'scripts/verification/test-terraform-backend-matrix.sh' "$WORKFLOW"
+grep -Fq 'scripts/verification/terraform-backend-matrix.sh' "$WORKFLOW"
 
 # A grep -q consumer can close the pipe before docker logs finishes writing;
 # under pipefail that makes the readiness probe fail with SIGPIPE (141).
