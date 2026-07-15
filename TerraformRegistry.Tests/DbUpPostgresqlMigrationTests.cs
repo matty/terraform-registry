@@ -286,6 +286,54 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Migration010PreservesPopulatedLegacyVcsSourcesAndCredentials()
+    {
+        var connectionString = CreateFreshDatabase();
+        MigrateUpTo(9, connectionString);
+
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+            VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');
+            INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at)
+            VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'hashicorp', 'consul', 'aws', 'hashicorp', 'terraform-aws-consul', 'encrypted-pat', 'webhook-secret', true, '2026-01-03T00:00:00Z', '2026-01-04T00:00:00Z')";
+        await cmd.ExecuteNonQueryAsync();
+
+        MigrateUpTo(10, connectionString);
+
+        cmd.CommandText = @"
+            SELECT s.id, s.user_id, s.namespace, s.name, s.provider, s.repo_owner, s.repo_name,
+                   s.is_active, s.created_at, s.updated_at, c.pat_encrypted, c.webhook_secret,
+                   c.created_by, c.default_org, c.is_active, c.created_at, c.updated_at
+            FROM vcs_sources s
+            JOIN vcs_connections c ON c.id = s.connection_id
+            WHERE s.id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';";
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(Guid.Parse("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"), reader.GetGuid(0));
+        Assert.Equal("user-1", reader.GetString(1));
+        Assert.Equal("hashicorp", reader.GetString(2));
+        Assert.Equal("consul", reader.GetString(3));
+        Assert.Equal("aws", reader.GetString(4));
+        Assert.Equal("hashicorp", reader.GetString(5));
+        Assert.Equal("terraform-aws-consul", reader.GetString(6));
+        Assert.True(reader.GetBoolean(7));
+        Assert.Equal(DateTimeOffset.Parse("2026-01-03T00:00:00Z"), reader.GetFieldValue<DateTimeOffset>(8));
+        Assert.Equal(DateTimeOffset.Parse("2026-01-04T00:00:00Z"), reader.GetFieldValue<DateTimeOffset>(9));
+        Assert.Equal("encrypted-pat", reader.GetString(10));
+        Assert.Equal("webhook-secret", reader.GetString(11));
+        Assert.Equal("user-1", reader.GetString(12));
+        Assert.Equal("hashicorp", reader.GetString(13));
+        Assert.True(reader.GetBoolean(14));
+        Assert.Equal(DateTimeOffset.Parse("2026-01-03T00:00:00Z"), reader.GetFieldValue<DateTimeOffset>(15));
+        Assert.Equal(DateTimeOffset.Parse("2026-01-04T00:00:00Z"), reader.GetFieldValue<DateTimeOffset>(16));
+        Assert.False(await reader.ReadAsync());
+    }
+
+    [Fact]
     public async Task Migration011_AddsWebhooksUserIdIndex()
     {
         var connStr = CreateFreshDatabase();
