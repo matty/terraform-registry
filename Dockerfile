@@ -2,7 +2,7 @@ FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aab
 ARG TERRAFORM_CONFIG_INSPECT_VERSION=2fb54c236733ee65ee877105d595c124c993c64d
 RUN GOBIN=/out go install github.com/hashicorp/terraform-config-inspect@${TERRAFORM_CONFIG_INSPECT_VERSION}
 
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS frontend
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend
 WORKDIR /app/TerraformRegistry/web-src
 COPY TerraformRegistry/web-src/package.json TerraformRegistry/web-src/package-lock.json ./
 RUN npm ci
