@@ -2,15 +2,15 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978
 
 # These tools generate and verify the signed fabricated provider fixture. This
 # image is used only by the portable certification harness, never released.
-# The SDK base is digest-pinned and this Alpine v3.23 tool set is pinned to the
+# The SDK base is digest-pinned and this Alpine v3.24 tool set is pinned to the
 # exact package revisions recorded in docs/build-inputs.md. Keep this list in
 # sync with that record so a certificate rerun cannot silently pick up a newer
 # helper tool.
 RUN apk add --no-cache \
-    bash=5.3.3-r1 \
-    gnupg=2.4.9-r0 \
+    bash=5.3.9-r1 \
+    gnupg=2.4.9-r1 \
     openssl=3.5.8-r0 \
-    python3=3.12.14-r0
+    python3=3.14.7-r1
 
 RUN mkdir -p /tmp/nuget /tmp/smoke-home \
     && chown -R app:app /tmp/nuget /tmp/smoke-home
