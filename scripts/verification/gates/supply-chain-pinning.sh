@@ -5,7 +5,9 @@ ROOT="${SUPPLY_CHAIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd
 DOCKERFILE="$ROOT/Dockerfile"
 DEV_DOCKERFILE="$ROOT/Dockerfile.dev"
 MANIFEST="$ROOT/docs/build-inputs.md"
-EXCEPTION="$ROOT/docs/security-exceptions/SUP-003-nuxt-ui.md"
+FRONTEND_DIR="$ROOT/TerraformRegistry/web-src"
+PACKAGE_MANIFEST="$FRONTEND_DIR/package.json"
+PACKAGE_LOCK="$FRONTEND_DIR/package-lock.json"
 
 validate_dockerfile_bases() {
   local dockerfile="$1"
@@ -44,7 +46,25 @@ validate_dockerfile_bases() {
 }
 
 test -f "$MANIFEST"
-test -f "$EXCEPTION"
+test -f "$PACKAGE_MANIFEST"
+test -f "$PACKAGE_LOCK"
+
+for pnpm_input in "$FRONTEND_DIR/pnpm-lock.yaml" "$FRONTEND_DIR/pnpm-workspace.yaml"; do
+  if [[ -e "$pnpm_input" ]]; then
+    echo "npm-only frontend contains pnpm input: $pnpm_input" >&2
+    exit 1
+  fi
+done
+
+for alternative_lockfile in "$FRONTEND_DIR/yarn.lock" "$FRONTEND_DIR/bun.lock" "$FRONTEND_DIR/bun.lockb"; do
+  if [[ -e "$alternative_lockfile" ]]; then
+    echo "npm-only frontend contains alternative package-manager input: $alternative_lockfile" >&2
+    exit 1
+  fi
+done
+
+grep -Eq '"nuxt"[[:space:]]*:[[:space:]]*"\^4\.' "$PACKAGE_MANIFEST"
+grep -Eq '"@nuxt/ui"[[:space:]]*:[[:space:]]*"\^4\.11\.' "$PACKAGE_MANIFEST"
 
 grep -Eq '^ARG TERRAFORM_CONFIG_INSPECT_VERSION=[0-9a-f]{40}$' "$DOCKERFILE"
 validate_dockerfile_bases "$DOCKERFILE"
@@ -75,39 +95,6 @@ done < <(grep -hE '^[[:space:]]*image:' \
   "$ROOT/docker-compose.dev.yml" \
   "$ROOT/docker-compose.psql.yml" \
   "$ROOT/scripts/verification/storage-emulators/compose.yaml")
-
-contains_affected_nuxt_form() {
-  local file
-  while IFS= read -r file; do
-    if grep -Eiq '<u(auth)?form\b|\bU(Auth)?Form\b|u-auth-form|u-form' "$file"; then
-      printf '%s\n' "$file"
-      return 0
-    fi
-  done < <(find "$ROOT/TerraformRegistry/web-src" \
-    \( -path '*/.nuxt' -o -path '*/.nuxt/*' \
-      -o -path '*/.output' -o -path '*/.output/*' \
-      -o -path '*/coverage' -o -path '*/coverage/*' \
-      -o -path '*/dist' -o -path '*/dist/*' \
-      -o -path '*/node_modules' -o -path '*/node_modules/*' \) -prune -o \
-    -type f \( -name '*.vue' -o -name '*.ts' -o -name '*.tsx' \
-      -o -name '*.js' -o -name '*.jsx' \) -print)
-
-  return 1
-}
-
-if contains_affected_nuxt_form; then
-  echo 'The SUP-003 exception is no longer valid: an affected Nuxt UI form is reachable.' >&2
-  exit 1
-fi
-
-grep -Fq 'Owner: `matty`' "$EXCEPTION"
-grep -Eq '^[-] Expiry: 20[0-9]{2}-[0-9]{2}-[0-9]{2}$' "$EXCEPTION"
-grep -Fq 'Compensating control' "$EXCEPTION"
-expiry="$(sed -n 's/^- Expiry: //p' "$EXCEPTION")"
-if [[ "$expiry" < "$(date -u +%F)" || "$expiry" == "$(date -u +%F)" ]]; then
-  echo "The SUP-003 exception has expired; upgrade or re-assess @nuxt/ui." >&2
-  exit 1
-fi
 
 while IFS= read -r action; do
   if [[ ! "$action" =~ @[0-9a-f]{40}([[:space:]]|$) ]]; then
