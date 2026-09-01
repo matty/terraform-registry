@@ -643,6 +643,37 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task EveryPostgresMigrationUpgradesPopulatedDatabaseWithoutDataLoss()
+    {
+        var scripts = GetEmbeddedScriptNames(".Scripts.PostgreSQL.");
+        var connectionString = CreateFreshDatabase();
+        var seededTables = new HashSet<string>(StringComparer.Ordinal);
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        foreach (var script in scripts)
+        {
+            await AssertSeedDataAsync(connection, seededTables);
+            MigrateResource(script, connectionString);
+            await AssertSeedTablesStillExistAsync(connection, seededTables);
+            await AssertSeedDataAsync(connection, seededTables);
+            await SeedDataAvailableAtCurrentSchemaAsync(connection);
+            await TrackAvailableSeedTablesAsync(connection, seededTables);
+            await AssertSeedDataAsync(connection, seededTables);
+        }
+
+        Assert.Equal(scripts, await GetPostgresJournalScriptNamesAsync(connection));
+        await AssertForeignKeysAreValidAsync(connection);
+
+        var logger = new Microsoft.Extensions.Logging.Abstractions.NullLogger<DbUpMigrator>();
+        new DbUpMigrator(logger).Migrate("postgres", connectionString);
+
+        Assert.Equal(scripts, await GetPostgresJournalScriptNamesAsync(connection));
+        await AssertSeedDataAsync(connection, seededTables);
+    }
+
+    [Fact]
     public async Task FullMigrationDataOperationsSucceed()
     {
         var connectionString = CreateFreshDatabase();
@@ -1036,6 +1067,355 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
             VALUES ('user-1', 'test@example.com', 'github', 'gh-123', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
             INSERT INTO vcs_connections (id, label, provider, webhook_secret, is_active, created_at, updated_at)
             VALUES ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'GitHub Main', 'github', 'secret123', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')";
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static void MigrateResource(string resourceName, string connectionString)
+    {
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(
+                typeof(DbUpMigrator).Assembly,
+                script => string.Equals(script, resourceName, StringComparison.Ordinal))
+            .WithTransactionPerScript()
+            .LogToNowhere()
+            .Build();
+
+        var result = upgrader.PerformUpgrade();
+        Assert.True(result.Successful, $"Migration resource '{resourceName}' failed: {result.Error}");
+    }
+
+    private static async Task SeedDataAvailableAtCurrentSchemaAsync(NpgsqlConnection connection)
+    {
+        if (await TableExistsAsync(connection, "modules"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO modules (id, namespace, name, provider, version, description, storage_path, published_at, dependencies, metadata)
+                VALUES (42, 'seed', 'module', 'aws', '1.0.0', 'Seed module', 'modules/seed/module/1.0.0', '2026-01-01T00:00:00Z', '[]', '{}')
+                ON CONFLICT (namespace, name, provider, version) DO NOTHING;
+                INSERT INTO module_downloads (id, module_id, namespace, name, provider, version, download_time, client_ip, user_agent)
+                VALUES (42, 42, 'seed', 'module', 'aws', '1.0.0', '2026-01-01T00:00:00Z', '127.0.0.1', 'migration-test')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "users"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO users (id, email, provider, provider_id, created_at, updated_at)
+                VALUES ('user-1', 'seed@example.com', 'github', 'seed-user', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO api_keys (id, user_id, description, token_hash, prefix, is_shared, created_at)
+                VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'Seed key', 'seed-token-hash', 'seed_', false, '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "webhooks"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO webhooks (id, user_id, url, secret, events, is_active, created_at, updated_at)
+                VALUES ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'https://example.com/seed-webhook', 'seed-webhook-secret', ARRAY['module.published'], true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "vcs_sources") && !await ColumnExistsAsync(connection, "vcs_sources", "connection_id"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO vcs_sources (id, user_id, namespace, name, provider, repo_owner, repo_name, pat_encrypted, webhook_secret, is_active, created_at, updated_at)
+                VALUES ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'seed', 'module', 'aws', 'seed-org', 'seed-repo', 'seed-pat', 'seed-vcs-webhook-secret', true, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "roles"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO roles (id, name, description, permissions, is_system, created_at, updated_at)
+                VALUES ('d0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed-role', 'Seed role', ARRAY['seed.read'], false, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO user_roles (user_id, role_id, assigned_at, assigned_by)
+                VALUES ('user-1', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '2026-01-01T00:00:00Z', 'user-1')
+                ON CONFLICT (user_id, role_id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "audit_logs"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO audit_logs (id, user_id, action, resource_type, resource_id, details, ip_address, timestamp)
+                VALUES ('e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'user-1', 'seed.action', 'module', '42', '{""seed"":true}', '127.0.0.1', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "module_extractions"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO module_extractions (module_id, document_json, source_checksum, created_at, updated_at)
+                VALUES (42, '{""seed"":true}', 'seed-extraction-checksum', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (module_id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "providers"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO providers (id, namespace, type, display_name, description, source_repository_url, created_by, created_at, updated_at)
+                VALUES ('f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed', 'provider', 'Seed provider', 'Seed provider', 'https://example.com/seed/provider', 'user-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO provider_gpg_keys (id, namespace, key_id, ascii_armor, source, created_at)
+                VALUES ('f1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed', 'SEED123', 'seed public key', 'migration-test', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO provider_versions (id, provider_id, version, protocols, key_id, shasums_storage_path, shasums_signature_storage_path, published_at)
+                VALUES ('f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '1.0.0', '[""5.0""]', 'SEED123', 'providers/seed/provider/1.0.0/SHA256SUMS', 'providers/seed/provider/1.0.0/SHA256SUMS.sig', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO provider_platforms (id, provider_version_id, os, arch, filename, shasum, package_storage_path, size_bytes, uploaded_at)
+                VALUES ('f3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'linux', 'amd64', 'terraform-provider-seed_1.0.0_linux_amd64.zip', repeat('a', 64), 'providers/seed/provider/1.0.0/linux-amd64.zip', 42, '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO provider_downloads (id, provider_id, namespace, type, version, os, arch, download_time, client_ip, user_agent)
+                VALUES (42, 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed', 'provider', '1.0.0', 'linux', 'amd64', '2026-01-01T00:00:00Z', '127.0.0.1', 'migration-test')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "runtime_settings"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO runtime_settings (key, value_json, updated_at, updated_by)
+                VALUES ('seed.setting', '{""enabled"":true}', '2026-01-01T00:00:00Z', 'user-1')
+                ON CONFLICT (key) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "module_llm_contexts"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO module_llm_contexts (module_id, schema_version, generated_at, document_json, source_checksum, created_at, updated_at)
+                VALUES (42, '1', '2026-01-01T00:00:00Z', '{""seed"":true}', 'seed-llm-checksum', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (module_id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "mirror_provider_indexes"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO mirror_provider_indexes (id, hostname, namespace, type, versions_json, etag, state, created_at, updated_at)
+                VALUES ('10eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'registry.terraform.io', 'seed', 'provider', '{""versions"":[""1.0.0""]}', 'seed-etag', 'ready', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO mirror_provider_packages (id, hostname, namespace, type, version, os, arch, download_url, protocols_json, hashes_json, state, created_at, updated_at)
+                VALUES ('11eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'registry.terraform.io', 'seed', 'provider', '1.0.0', 'linux', 'amd64', 'https://example.com/seed.zip', '[""5.0""]', '[""h1:seed""]', 'ready', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO mirror_module_versions (id, hostname, namespace, name, provider, versions_json, state, created_at, updated_at)
+                VALUES ('12eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'registry.terraform.io', 'seed', 'module', 'aws', '{""versions"":[""1.0.0""]}', 'ready', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO mirror_module_packages (id, hostname, namespace, name, provider, version, download_url, state, created_at, updated_at)
+                VALUES ('13eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'registry.terraform.io', 'seed', 'module', 'aws', '1.0.0', 'https://example.com/seed-module.tar.gz', 'ready', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO mirror_cache_leases (id, lease_key, operation_type, owner_instance_id, expires_at, created_at, updated_at)
+                VALUES ('14eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed-lease', 'provider-index', 'migration-test', '2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "terraform_authorization_codes"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO terraform_authorization_codes (code_hash, user_id, client_id, redirect_uri, state, code_challenge, code_challenge_method, expires_at)
+                VALUES ('seed-code-hash', 'user-1', 'terraform-cli', 'http://localhost:10000/login', 'seed-state', 'seed-challenge', 'S256', '2026-01-02T00:00:00Z')
+                ON CONFLICT (code_hash) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "namespace_maintainers"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO namespace_maintainers (namespace, user_id, assigned_at)
+                VALUES ('seed', 'user-1', '2026-01-01T00:00:00Z')
+                ON CONFLICT (namespace) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "module_publication_attempts"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO module_publication_attempts (id, namespace, name, provider, version, state, staging_key, created_at, updated_at)
+                VALUES ('20eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed', 'module', 'aws', '1.0.0', 'committed', 'staging/seed/module/1.0.0', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO module_extraction_jobs (id, publication_attempt_id, namespace, name, provider, version, state, created_at, updated_at)
+                VALUES ('21eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '20eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'seed', 'module', 'aws', '1.0.0', 'pending', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+
+        if (await TableExistsAsync(connection, "durable_outbox_events"))
+        {
+            await ExecuteAsync(connection, @"
+                INSERT INTO durable_outbox_events (id, kind, idempotency_key, payload_json, state, created_at, updated_at)
+                VALUES ('22eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'module.published', 'seed-idempotency-key', '{""seed"":true}', 'pending', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+                ON CONFLICT (id) DO NOTHING;");
+        }
+    }
+
+    private static readonly string[] SeedTableNames =
+    [
+        "modules",
+        "module_downloads",
+        "users",
+        "api_keys",
+        "webhooks",
+        "vcs_connections",
+        "vcs_sources",
+        "roles",
+        "user_roles",
+        "audit_logs",
+        "module_extractions",
+        "providers",
+        "provider_gpg_keys",
+        "provider_versions",
+        "provider_platforms",
+        "provider_downloads",
+        "runtime_settings",
+        "module_llm_contexts",
+        "mirror_provider_indexes",
+        "mirror_provider_packages",
+        "mirror_module_versions",
+        "mirror_module_packages",
+        "mirror_cache_leases",
+        "terraform_authorization_codes",
+        "namespace_maintainers",
+        "module_publication_attempts",
+        "module_extraction_jobs",
+        "durable_outbox_events"
+    ];
+
+    private static async Task TrackAvailableSeedTablesAsync(
+        NpgsqlConnection connection,
+        ISet<string> seededTables)
+    {
+        foreach (var tableName in SeedTableNames)
+        {
+            if (await TableExistsAsync(connection, tableName))
+            {
+                seededTables.Add(tableName);
+            }
+        }
+    }
+
+    private static async Task AssertSeedTablesStillExistAsync(
+        NpgsqlConnection connection,
+        IReadOnlySet<string> seededTables)
+    {
+        foreach (var tableName in seededTables)
+        {
+            Assert.True(
+                await TableExistsAsync(connection, tableName),
+                $"Seeded table '{tableName}' was dropped during migration.");
+        }
+    }
+
+    private static async Task AssertSeedDataAsync(
+        NpgsqlConnection connection,
+        IReadOnlySet<string> seededTables)
+    {
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "modules", "SELECT EXISTS(SELECT 1 FROM modules WHERE id = 42 AND description = 'Seed module' AND storage_path = 'modules/seed/module/1.0.0')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "module_downloads", "SELECT EXISTS(SELECT 1 FROM module_downloads WHERE id = 42 AND user_agent = 'migration-test')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "users", "SELECT EXISTS(SELECT 1 FROM users WHERE id = 'user-1' AND email = 'seed@example.com' AND provider_id = 'seed-user')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "api_keys", "SELECT EXISTS(SELECT 1 FROM api_keys WHERE id = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND token_hash = 'seed-token-hash' AND prefix = 'seed_')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "webhooks", "SELECT EXISTS(SELECT 1 FROM webhooks WHERE id = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND url = 'https://example.com/seed-webhook' AND secret = 'seed-webhook-secret')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "vcs_connections", @"SELECT EXISTS(
+                SELECT 1 FROM vcs_connections c
+                JOIN vcs_sources s ON s.connection_id = c.id
+                WHERE s.id = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
+                  AND c.pat_encrypted = 'seed-pat'
+                  AND c.webhook_secret = 'seed-vcs-webhook-secret')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "roles", "SELECT EXISTS(SELECT 1 FROM roles WHERE id = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND name = 'seed-role' AND permissions = ARRAY['seed.read'])");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "user_roles", "SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id = 'user-1' AND role_id = 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "audit_logs", "SELECT EXISTS(SELECT 1 FROM audit_logs WHERE id = 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND action = 'seed.action' AND resource_id = '42')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "module_extractions", "SELECT EXISTS(SELECT 1 FROM module_extractions WHERE module_id = 42 AND source_checksum = 'seed-extraction-checksum')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "providers", "SELECT EXISTS(SELECT 1 FROM providers WHERE id = 'f0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND namespace = 'seed' AND type = 'provider')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "provider_gpg_keys", "SELECT EXISTS(SELECT 1 FROM provider_gpg_keys WHERE id = 'f1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND key_id = 'SEED123')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "provider_versions", "SELECT EXISTS(SELECT 1 FROM provider_versions WHERE id = 'f2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND version = '1.0.0' AND key_id = 'SEED123')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "provider_platforms", "SELECT EXISTS(SELECT 1 FROM provider_platforms WHERE id = 'f3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND os = 'linux' AND arch = 'amd64' AND size_bytes = 42)");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "provider_downloads", "SELECT EXISTS(SELECT 1 FROM provider_downloads WHERE id = 42 AND version = '1.0.0' AND os = 'linux' AND arch = 'amd64' AND user_agent = 'migration-test')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "runtime_settings", "SELECT EXISTS(SELECT 1 FROM runtime_settings WHERE key = 'seed.setting' AND value_json = '{\"enabled\":true}')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "module_llm_contexts", "SELECT EXISTS(SELECT 1 FROM module_llm_contexts WHERE module_id = 42 AND source_checksum = 'seed-llm-checksum')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "mirror_provider_indexes", "SELECT EXISTS(SELECT 1 FROM mirror_provider_indexes WHERE id = '10eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND hostname = 'registry.terraform.io' AND etag = 'seed-etag' AND state = 'ready')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "mirror_provider_packages", "SELECT EXISTS(SELECT 1 FROM mirror_provider_packages WHERE id = '11eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND version = '1.0.0' AND os = 'linux' AND arch = 'amd64' AND state = 'ready')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "mirror_module_versions", "SELECT EXISTS(SELECT 1 FROM mirror_module_versions WHERE id = '12eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND namespace = 'seed' AND name = 'module' AND provider = 'aws' AND state = 'ready')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "mirror_module_packages", "SELECT EXISTS(SELECT 1 FROM mirror_module_packages WHERE id = '13eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND version = '1.0.0' AND download_url = 'https://example.com/seed-module.tar.gz' AND state = 'ready')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "mirror_cache_leases", "SELECT EXISTS(SELECT 1 FROM mirror_cache_leases WHERE id = '14eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND lease_key = 'seed-lease' AND operation_type = 'provider-index' AND owner_instance_id = 'migration-test')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "terraform_authorization_codes", "SELECT EXISTS(SELECT 1 FROM terraform_authorization_codes WHERE code_hash = 'seed-code-hash' AND state = 'seed-state' AND code_challenge = 'seed-challenge')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "namespace_maintainers", "SELECT EXISTS(SELECT 1 FROM namespace_maintainers WHERE namespace = 'seed' AND user_id = 'user-1')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "module_publication_attempts", "SELECT EXISTS(SELECT 1 FROM module_publication_attempts WHERE id = '20eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND state = 'committed' AND staging_key = 'staging/seed/module/1.0.0')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "module_extraction_jobs", "SELECT EXISTS(SELECT 1 FROM module_extraction_jobs WHERE id = '21eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND state = 'pending')");
+        await AssertTrackedSeedExistsAsync(connection, seededTables, "durable_outbox_events", "SELECT EXISTS(SELECT 1 FROM durable_outbox_events WHERE id = '22eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' AND kind = 'module.published' AND idempotency_key = 'seed-idempotency-key')");
+
+        if (seededTables.Contains("vcs_sources"))
+        {
+            var commandText = await ColumnExistsAsync(connection, "vcs_sources", "connection_id")
+                ? @"SELECT EXISTS(
+                        SELECT 1
+                        FROM vcs_sources s
+                        JOIN vcs_connections c ON c.id = s.connection_id
+                        WHERE s.id = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
+                          AND c.pat_encrypted = 'seed-pat'
+                          AND c.webhook_secret = 'seed-vcs-webhook-secret')"
+                : @"SELECT EXISTS(
+                        SELECT 1 FROM vcs_sources
+                        WHERE id = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
+                          AND pat_encrypted = 'seed-pat'
+                          AND webhook_secret = 'seed-vcs-webhook-secret')";
+            await AssertSeedExistsAsync(connection, "vcs_sources", commandText);
+        }
+    }
+
+    private static async Task AssertForeignKeysAreValidAsync(NpgsqlConnection connection)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT conname FROM pg_constraint WHERE contype = 'f' AND NOT convalidated";
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var invalidConstraints = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            invalidConstraints.Add(reader.GetString(0));
+        }
+
+        Assert.Empty(invalidConstraints);
+    }
+
+    private static async Task<bool> TableExistsAsync(NpgsqlConnection connection, string tableName)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT to_regclass('public.' || @table) IS NOT NULL";
+        cmd.Parameters.AddWithValue("table", tableName);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(NpgsqlConnection connection, string tableName, string columnName)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT EXISTS(
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = @table AND column_name = @column)";
+        cmd.Parameters.AddWithValue("table", tableName);
+        cmd.Parameters.AddWithValue("column", columnName);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    private static async Task AssertTrackedSeedExistsAsync(
+        NpgsqlConnection connection,
+        IReadOnlySet<string> seededTables,
+        string tableName,
+        string commandText)
+    {
+        if (!seededTables.Contains(tableName))
+        {
+            return;
+        }
+
+        await AssertSeedExistsAsync(connection, tableName, commandText);
+    }
+
+    private static async Task AssertSeedExistsAsync(NpgsqlConnection connection, string tableName, string commandText)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = commandText;
+        Assert.True((bool)(await cmd.ExecuteScalarAsync())!, $"Seed data for '{tableName}' was lost during migration.");
+    }
+
+    private static async Task ExecuteAsync(NpgsqlConnection connection, string commandText)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = commandText;
         await cmd.ExecuteNonQueryAsync();
     }
 }
