@@ -65,6 +65,18 @@ touch "$fixture_root/TerraformRegistry/web-src/pnpm-workspace.yaml"
 expect_failure 'a pnpm workspace file in the npm-only frontend'
 rm "$fixture_root/TerraformRegistry/web-src/pnpm-workspace.yaml"
 
+touch "$fixture_root/TerraformRegistry/web-src/yarn.lock"
+expect_failure 'a Yarn lockfile in the npm-only frontend'
+rm "$fixture_root/TerraformRegistry/web-src/yarn.lock"
+
+touch "$fixture_root/TerraformRegistry/web-src/bun.lock"
+expect_failure 'a Bun lockfile in the npm-only frontend'
+rm "$fixture_root/TerraformRegistry/web-src/bun.lock"
+
+touch "$fixture_root/TerraformRegistry/web-src/bun.lockb"
+expect_failure 'a Bun binary lockfile in the npm-only frontend'
+rm "$fixture_root/TerraformRegistry/web-src/bun.lockb"
+
 sed -i 's/"nuxt": "[^"]*"/"nuxt": "^3.21.11"/' \
   "$fixture_root/TerraformRegistry/web-src/package.json"
 expect_failure 'a Nuxt 3 frontend manifest'
