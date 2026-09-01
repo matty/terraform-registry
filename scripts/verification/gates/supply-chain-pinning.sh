@@ -56,6 +56,13 @@ for pnpm_input in "$FRONTEND_DIR/pnpm-lock.yaml" "$FRONTEND_DIR/pnpm-workspace.y
   fi
 done
 
+for alternative_lockfile in "$FRONTEND_DIR/yarn.lock" "$FRONTEND_DIR/bun.lock" "$FRONTEND_DIR/bun.lockb"; do
+  if [[ -e "$alternative_lockfile" ]]; then
+    echo "npm-only frontend contains alternative package-manager input: $alternative_lockfile" >&2
+    exit 1
+  fi
+done
+
 grep -Eq '"nuxt"[[:space:]]*:[[:space:]]*"\^4\.' "$PACKAGE_MANIFEST"
 grep -Eq '"@nuxt/ui"[[:space:]]*:[[:space:]]*"\^4\.11\.' "$PACKAGE_MANIFEST"
 
