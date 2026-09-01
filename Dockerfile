@@ -1,9 +1,12 @@
 FROM golang:1.26-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468 AS terraform-config-inspect
 ARG TERRAFORM_CONFIG_INSPECT_VERSION=2fb54c236733ee65ee877105d595c124c993c64d
+ARG TERRAFORM_CONFIG_INSPECT_ARCHIVE_SHA256=83aedf832593023babc90bd49dce5adb58e8f0774bacea4992a3d350f33af915
 ARG TERRAFORM_CONFIG_INSPECT_X_TEXT_VERSION=0.39.0
 RUN mkdir /src \
-    && wget -qO- "https://github.com/hashicorp/terraform-config-inspect/archive/${TERRAFORM_CONFIG_INSPECT_VERSION}.tar.gz" \
-        | tar -xz --strip-components=1 -C /src \
+    && wget -qO /tmp/terraform-config-inspect.tar.gz \
+        "https://github.com/hashicorp/terraform-config-inspect/archive/${TERRAFORM_CONFIG_INSPECT_VERSION}.tar.gz" \
+    && echo "${TERRAFORM_CONFIG_INSPECT_ARCHIVE_SHA256}  /tmp/terraform-config-inspect.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/terraform-config-inspect.tar.gz --strip-components=1 -C /src \
     && cd /src \
     && go get "golang.org/x/text@v${TERRAFORM_CONFIG_INSPECT_X_TEXT_VERSION}" \
     && GOBIN=/out go install .
