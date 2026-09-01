@@ -21,10 +21,12 @@ fi
 
 fixture_root="$(mktemp -d)"
 
-mkdir -p "$fixture_root"/{docs/security-exceptions,scripts/verification/gates,TerraformRegistry/web-src,.github}
+mkdir -p "$fixture_root"/{docs,scripts/verification/gates,TerraformRegistry/web-src,.github}
 cp "$ROOT/Dockerfile" "$ROOT/Dockerfile.dev" "$fixture_root/"
 cp "$ROOT/docs/build-inputs.md" "$fixture_root/docs/"
-cp "$ROOT/docs/security-exceptions/SUP-003-nuxt-ui.md" "$fixture_root/docs/security-exceptions/"
+cp "$ROOT/TerraformRegistry/web-src/package.json" \
+  "$ROOT/TerraformRegistry/web-src/package-lock.json" \
+  "$fixture_root/TerraformRegistry/web-src/"
 cp -a "$ROOT/.github/workflows" "$fixture_root/.github/"
 mkdir -p "$fixture_root/scripts/verification"
 cp -a "$ROOT/scripts/verification/storage-emulators" "$fixture_root/scripts/verification/"
@@ -38,13 +40,6 @@ expect_failure() {
   fi
 }
 
-mkdir -p "$fixture_root/TerraformRegistry/web-src/.nuxt"
-printf 'declare const UAuthForm: typeof import("@nuxt/ui")["UAuthForm"]\n' > "$fixture_root/TerraformRegistry/web-src/.nuxt/components.d.ts"
-if ! SUPPLY_CHAIN_ROOT="$fixture_root" bash "$ROOT/scripts/verification/gates/supply-chain-pinning.sh"; then
-  echo 'Generated Nuxt declarations must not invalidate the SUP-003 exception.' >&2
-  exit 1
-fi
-
 sed -i '0,/^FROM node:/s|^FROM node:.* AS frontend$|FROM node AS frontend|' "$fixture_root/Dockerfile"
 expect_failure 'a bare external Docker base image'
 cp "$ROOT/Dockerfile" "$fixture_root/Dockerfile"
@@ -54,17 +49,22 @@ if ! SUPPLY_CHAIN_ROOT="$fixture_root" bash "$ROOT/scripts/verification/gates/su
   exit 1
 fi
 
-printf '<template><UAuthForm /></template>\n' > "$fixture_root/TerraformRegistry/web-src/affected.vue"
-expect_failure 'UAuthForm'
-rm "$fixture_root/TerraformRegistry/web-src/affected.vue"
-
-printf '<template><UForm /></template>\n' > "$fixture_root/TerraformRegistry/web-src/affected.vue"
-expect_failure 'UForm'
-rm "$fixture_root/TerraformRegistry/web-src/affected.vue"
-
 sed -i 's/@sha256:[0-9a-f]*/:latest/' "$fixture_root/docker-compose.dev.yml"
 expect_failure 'a mutable Compose image'
 cp "$ROOT/docker-compose.dev.yml" "$fixture_root/docker-compose.dev.yml"
 
 printf '\nRUN apk upgrade --no-cache\n' >> "$fixture_root/Dockerfile"
 expect_failure 'an unpinned Alpine package upgrade'
+cp "$ROOT/Dockerfile" "$fixture_root/Dockerfile"
+
+touch "$fixture_root/TerraformRegistry/web-src/pnpm-lock.yaml"
+expect_failure 'a pnpm lockfile in the npm-only frontend'
+rm "$fixture_root/TerraformRegistry/web-src/pnpm-lock.yaml"
+
+touch "$fixture_root/TerraformRegistry/web-src/pnpm-workspace.yaml"
+expect_failure 'a pnpm workspace file in the npm-only frontend'
+rm "$fixture_root/TerraformRegistry/web-src/pnpm-workspace.yaml"
+
+sed -i 's/"nuxt": "[^"]*"/"nuxt": "^3.21.11"/' \
+  "$fixture_root/TerraformRegistry/web-src/package.json"
+expect_failure 'a Nuxt 3 frontend manifest'
