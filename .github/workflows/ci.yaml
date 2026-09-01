@@ -43,7 +43,7 @@ concurrency:
 
 env:
   CONFIGURATION: Release
-  DOTNET_VERSION: "10.0.301"
+  DOTNET_VERSION: "10.0.400"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/terraform-registry
   NODE_VERSION: "24"
   SCAN_IMAGE_NAME: terraform-registry:${{ github.sha }}
