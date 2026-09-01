@@ -8,12 +8,12 @@ is responsible for proposing reviewed updates.
 | --- | --- | --- |
 | Terraform CLI | `1.14.2`, `hashicorp/terraform@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf` | Local, Azure, and S3-compatible Terraform smoke tests |
 | Terraform CLI support window | `1.12.0`, `hashicorp/terraform@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b`; `1.14.2`, `hashicorp/terraform@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf` | Release certification matrix for Local, Azurite, MinIO, signed-provider, and non-root image evidence |
-| terraform-config-inspect | `2fb54c236733ee65ee877105d595c124c993c64d` | Release Docker image |
-| Go builder | `golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2` | terraform-config-inspect build stage |
+| terraform-config-inspect | `2fb54c236733ee65ee877105d595c124c993c64d`, rebuilt with `golang.org/x/text@v0.39.0` | Release Docker image |
+| Go builder | `golang:1.26-alpine@sha256:28d89ee9cc0ff9fec75c82ca201e6bf7fdf9a679d4b7b24dfa04f2bb766bb468` | terraform-config-inspect build stage |
 | Node builder | `node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd` | Generated frontend build stage |
-| .NET SDK builder | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:940f919ae84dd92ccd4aab7686fa5b777870b006c9360351039e16bcaad73d89` | Release Docker image |
+| .NET SDK builder | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1` | Release Docker image |
 | terraform-provider-smoke build inputs | Digest-pinned `.NET SDK` above; Alpine v3.23 `bash=5.3.3-r1`, `gnupg=2.4.9-r0`, `openssl=3.5.8-r0`, `python3=3.12.14-r0` | Non-root fabricated-provider certification helper. The helper only installs these exact package revisions; changing one requires updating this row and its Dockerfile together. |
-| ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:57bd717ac18ff6c8a39cc0ee4a76c1f15adc46df50434c73eff0c3f1df4c88f0` | Release Docker image |
+| ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:c4b29bf368004ad9076c1ab9bc91fb373561e3905b4345637e14e8b8c57e3be8`; Alpine `libcrypto3=3.5.8-r0`, `libssl3=3.5.8-r0` | Release Docker image |
 | Development .NET SDK | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:ea8bde36c11b6e7eec2656d0e59101d4462f6bd630730f2c8201ed0572b295d5` | Development Docker image |
 | PostgreSQL | `postgres:18@sha256:48ebba8b80dc3be58b5ae431f47a33535289959cddfe13f5f887298de959fae0` | Development Compose stack and storage-emulator smoke tests |
 | pgAdmin | `dpage/pgadmin4:latest@sha256:40fa840c5bb7c8463957f1255b01283732c2d8c9396a956d180f8e6c296753b3` | Development Compose stack |

@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:940f919ae84dd92ccd4aab7686fa5b777870b006c9360351039e16bcaad73d89
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1
 
 # These tools generate and verify the signed fabricated provider fixture. This
 # image is used only by the portable certification harness, never released.
