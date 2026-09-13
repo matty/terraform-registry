@@ -22,7 +22,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserRejectsEmptyEmail()
     {
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -33,7 +32,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserRejectsCrossProviderEmailCollision()
     {
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await apiKeyService.GetOrCreateOidcUserAsync("admin@example.com", "github", "gh-1");
@@ -48,7 +46,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserCanonicalizesEmailBeforeCollisionChecks()
     {
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var created = await apiKeyService.GetOrCreateOidcUserAsync("Admin@Example.com", "github", "gh-1");
@@ -66,7 +63,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserFindsLegacyMixedCaseStoredEmail()
     {
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
         var legacyUser = new User
@@ -94,7 +90,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         await InsertLegacyUserAsync("admin@example.com", "github", "gh-legacy-2", DateTime.UtcNow.AddDays(-9));
 
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -107,7 +102,6 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserAllowsRepeatLoginForSameProviderIdentity()
     {
         using var scope = Factory.Services.CreateScope();
-        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var first = await apiKeyService.GetOrCreateOidcUserAsync("user@example.com", "github", "gh-1");
