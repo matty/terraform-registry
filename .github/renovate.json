@@ -117,5 +117,19 @@
       ],
       "dependencyDashboardApproval": true
     }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "docs/build-inputs.md and the supply-chain gate restate the digests pinned in Compose and the Dockerfiles. The gate now fails when Compose and the manifest disagree, so Renovate has to bump all copies together or digest PRs go red.",
+      "managerFilePatterns": [
+        "/^docs/build-inputs\\.md$/",
+        "/^scripts/verification/gates/supply-chain-pinning\\.sh$/"
+      ],
+      "matchStrings": [
+        "(?<depName>[^\\s`'\"@]+?):(?<currentValue>[^\\s`'\"@/]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
   ]
 }
