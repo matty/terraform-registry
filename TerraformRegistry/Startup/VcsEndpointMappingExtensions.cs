@@ -1,7 +1,7 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.Mvc;
 
 namespace TerraformRegistry.Startup;
 

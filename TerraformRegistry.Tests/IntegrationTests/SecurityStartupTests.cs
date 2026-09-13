@@ -1,10 +1,10 @@
-using TerraformRegistry.Startup;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TerraformRegistry.Models;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Tests.IntegrationTests;
 
