@@ -44,6 +44,14 @@
       "enabled": false
     },
     {
+      "description": "Digest refreshes of already-pinned images and SHA-pinned Actions are upstream rebuilds, usually carrying base-OS security patches. The digest/SHA pin is itself the supply-chain control, and a re-pushed tag resets the age clock, so the soak gate would stall these indefinitely while we keep running unpatched layers. Version bumps are NOT exempt and still serve the full minimumReleaseAge.",
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
       "matchManagers": [
         "github-actions"
       ],
