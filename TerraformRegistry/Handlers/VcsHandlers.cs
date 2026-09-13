@@ -4,6 +4,7 @@ using TerraformRegistry.API;
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Handlers;
 
@@ -285,15 +286,16 @@ public static class VcsHandlers
 
     // --- GitHub Webhook ---
 
-    public static async Task<IResult> HandleGitHubWebhook(IGitHubVcsService githubService, HttpContext context)
+    public static async Task<IResult> HandleGitHubWebhook(IGitHubVcsService githubService,
+        VcsWebhookOptions webhookOptions, HttpContext context)
     {
-        const int maxBodyBytes = 1024 * 1024;
+        var maxBodyBytes = webhookOptions.GitHubWebhookMaxBodyBytes;
         if (context.Request.ContentLength > maxBodyBytes)
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
         await using var bodyBuffer = new MemoryStream();
         var buffer = new byte[81920];
-        var totalBytes = 0;
+        var totalBytes = 0L;
         while (true)
         {
             var read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted);
