@@ -7,6 +7,7 @@ using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.API.Logging;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
+using TerraformRegistry.Startup;
 
 namespace TerraformRegistry.Handlers;
 
@@ -31,7 +32,8 @@ public static class AuthHandlers
     /// <summary>
     /// Initiates OIDC login flow for the specified provider.
     /// </summary>
-    public static IResult Login(string provider, string? returnTo, OAuthService oauthService, HttpContext context)
+    public static IResult Login(string provider, string? returnTo, OAuthService oauthService,
+        IHostEnvironment environment, HttpContext context)
     {
         try
         {
@@ -40,7 +42,7 @@ public static class AuthHandlers
                 context.Response.Cookies.Append(ReturnToCookieName, returnTo, new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = context.Request.IsHttps,
+                    Secure = CookieSecurity.IsSecure(environment),
                     SameSite = SameSiteMode.Lax,
                     MaxAge = TimeSpan.FromMinutes(10)
                 });
@@ -51,7 +53,7 @@ public static class AuthHandlers
             context.Response.Cookies.Append(StateCookieName, state, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = context.Request.IsHttps,
+                Secure = CookieSecurity.IsSecure(environment),
                 SameSite = SameSiteMode.Lax,
                 MaxAge = TimeSpan.FromMinutes(10)
             });
@@ -78,6 +80,7 @@ public static class AuthHandlers
         IApiKeyService apiKeyService,
         IAuditService auditService,
         HttpContext context,
+        IHostEnvironment environment,
         ILogger<Program> logger)
     {
         // Check for OAuth errors
@@ -164,7 +167,7 @@ public static class AuthHandlers
         context.Response.Cookies.Append(SessionCookieName, token, new CookieOptions
         {
             HttpOnly = true,
-            Secure = context.Request.IsHttps,
+            Secure = CookieSecurity.IsSecure(environment),
             SameSite = SameSiteMode.Lax,
             MaxAge = TimeSpan.FromHours(24)
         });
@@ -466,7 +469,7 @@ public static class AuthHandlers
         context.Response.Cookies.Append(SessionCookieName, token, new CookieOptions
         {
             HttpOnly = true,
-            Secure = context.Request.IsHttps,
+            Secure = CookieSecurity.IsSecure(environment),
             SameSite = SameSiteMode.Lax,
             MaxAge = TimeSpan.FromHours(24)
         });

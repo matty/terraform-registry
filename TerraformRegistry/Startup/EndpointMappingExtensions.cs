@@ -62,17 +62,18 @@ internal static class EndpointMappingExtensions
             .WithTags("Authentication")
             .WithDescription("Returns list of enabled OIDC providers");
 
-        app.MapGet("/api/auth/login/{provider}", (string provider, string? returnTo, HttpContext context) =>
-                AuthHandlers.Login(provider, returnTo, oauthService, context))
+        app.MapGet("/api/auth/login/{provider}",
+                (string provider, string? returnTo, IHostEnvironment environment, HttpContext context) =>
+                AuthHandlers.Login(provider, returnTo, oauthService, environment, context))
             .WithTags("Authentication")
             .WithDescription("Initiates OIDC login flow for the specified provider");
 
         app.MapGet("/api/auth/callback/{provider}",
                 async (string provider, string? code, string? state, string? error,
                         HttpContext context, IApiKeyService apiKeyService, IAuditService auditService,
-                        ILogger<Program> authLogger) =>
+                        IHostEnvironment environment, ILogger<Program> authLogger) =>
                     await AuthHandlers.Callback(provider, code, state, error, oauthService, jwtService, apiKeyService,
-                        auditService, context, authLogger))
+                        auditService, context, environment, authLogger))
             .WithTags("Authentication")
             .WithDescription("Handles OIDC callback after provider authentication");
 
