@@ -26,8 +26,13 @@ public class UploadRequestLimitTests
     private const long ConfiguredArchiveBytes = 111_222_333;
     private const long ConfiguredPackageBytes = 444_555_666;
 
-    private static WebApplicationFactory<Program> CreateFactory(string tempDir) =>
-        new WebApplicationFactory<Program>()
+    // WithWebHostBuilder returns a new factory, so the one it was called on needs disposing
+    // too. Running the body here keeps both in scope rather than returning one and leaking
+    // the other.
+    private static void WithConfiguredApp(string tempDir, Action<WebApplicationFactory<Program>> body)
+    {
+        using var hostFactory = new WebApplicationFactory<Program>();
+        using var factory = hostFactory
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -37,9 +42,9 @@ public class UploadRequestLimitTests
                     {
                         ["AuthorizationToken"] = "upload-limit-test-token",
                         ["DatabaseProvider"] = "sqlite",
-                        ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(tempDir, "upload-limits.db")}",
+                        ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "upload-limits.db")}",
                         ["StorageProvider"] = "local",
-                        ["ModuleStoragePath"] = Path.Combine(tempDir, "modules"),
+                        ["ModuleStoragePath"] = Path.Join(tempDir, "modules"),
                         ["Oidc:JwtSecretKey"] = "upload-limit-test-jwt-secret-key-32-chars",
                         ["ModuleExtraction:MaxArchiveBytes"] =
                             ConfiguredArchiveBytes.ToString(CultureInfo.InvariantCulture),
@@ -68,6 +73,9 @@ public class UploadRequestLimitTests
                 });
             });
 
+        body(factory);
+    }
+
     private static long? RequestSizeLimitFor(
         WebApplicationFactory<Program> factory, string routePattern, string httpMethod)
     {
@@ -86,21 +94,23 @@ public class UploadRequestLimitTests
     [Fact]
     public void ModuleUploadEndpointAllowsTheConfiguredArchiveLimit()
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            using var factory = CreateFactory(tempDir);
-            _ = factory.CreateClient();
+            WithConfiguredApp(tempDir, factory =>
+            {
+                _ = factory.CreateClient();
 
-            var limit = RequestSizeLimitFor(factory, "/v1/modules/{namespace}/{name}/{provider}/{version}", "POST");
+                var limit = RequestSizeLimitFor(factory, "/v1/modules/{namespace}/{name}/{provider}/{version}", "POST");
 
-            // Tracks the configured value, not a default, and clears Kestrel's 30,000,000
-            // byte default so the documented limit is actually reachable.
-            Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredArchiveBytes), limit);
-            Assert.True(limit > 30_000_000,
-                "module upload limit must exceed Kestrel's 30,000,000 byte default to be reachable");
+                // Tracks the configured value, not a default, and clears Kestrel's 30,000,000
+                // byte default so the documented limit is actually reachable.
+                Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredArchiveBytes), limit);
+                Assert.True(limit > 30_000_000,
+                    "module upload limit must exceed Kestrel's 30,000,000 byte default to be reachable");
+            });
         }
         finally
         {
@@ -111,19 +121,21 @@ public class UploadRequestLimitTests
     [Fact]
     public void ProviderPlatformUploadEndpointAllowsTheConfiguredPackageLimit()
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            using var factory = CreateFactory(tempDir);
-            _ = factory.CreateClient();
+            WithConfiguredApp(tempDir, factory =>
+            {
+                _ = factory.CreateClient();
 
-            var limit = RequestSizeLimitFor(factory,
-                "/api/providers/{namespace}/{type}/versions/{version}/platforms", "POST");
+                var limit = RequestSizeLimitFor(factory,
+                    "/api/providers/{namespace}/{type}/versions/{version}/platforms", "POST");
 
-            Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredPackageBytes), limit);
-            Assert.NotEqual(UploadRequestLimits.ForUploadOf(new ProviderUploadOptions().MaxPackageBytes), limit);
+                Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredPackageBytes), limit);
+                Assert.NotEqual(UploadRequestLimits.ForUploadOf(new ProviderUploadOptions().MaxPackageBytes), limit);
+            });
         }
         finally
         {
@@ -135,15 +147,17 @@ public class UploadRequestLimitTests
     public void OrdinaryEndpointsKeepTheServerDefaultLimit()
     {
         // The raised limits must be scoped to the upload routes, not applied globally.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-limits-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            using var factory = CreateFactory(tempDir);
-            _ = factory.CreateClient();
+            WithConfiguredApp(tempDir, factory =>
+            {
+                _ = factory.CreateClient();
 
-            Assert.Null(RequestSizeLimitFor(factory, "/api/auth/providers", "GET"));
+                Assert.Null(RequestSizeLimitFor(factory, "/api/auth/providers", "GET"));
+            });
         }
         finally
         {
