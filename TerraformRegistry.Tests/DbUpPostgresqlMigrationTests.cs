@@ -1282,10 +1282,12 @@ public class DbUpPostgresqlMigrationTests : IAsyncLifetime
     {
         foreach (var tableName in SeedTableNames)
         {
-            if (await TableExistsAsync(connection, tableName))
+            if (!await TableExistsAsync(connection, tableName))
             {
-                seededTables.Add(tableName);
+                continue;
             }
+
+            seededTables.Add(tableName);
         }
     }
 
