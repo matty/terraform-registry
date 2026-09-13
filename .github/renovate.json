@@ -37,6 +37,13 @@
   "prHourlyLimit": 4,
   "packageRules": [
     {
+      "description": "global.json pins a deliberate SDK floor so distro-packaged .NET SDKs (e.g. Rocky AppStream 10.0.1xx) satisfy it via rollForward. Auto-bumping the pin to a 3xx/4xx band breaks local builds, so leave it to humans.",
+      "matchFileNames": [
+        "global.json"
+      ],
+      "enabled": false
+    },
+    {
       "matchManagers": [
         "github-actions"
       ],
