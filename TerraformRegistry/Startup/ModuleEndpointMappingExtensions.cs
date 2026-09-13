@@ -6,6 +6,7 @@ using TerraformRegistry.Services.Mirror;
 using TerraformRegistry.Services.Publishing;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 
 namespace TerraformRegistry.Startup;
 
@@ -107,6 +108,12 @@ internal static class ModuleEndpointMappingExtensions
 
     private static WebApplication MapModuleManagementEndpoints(this WebApplication app)
     {
+        // Kestrel's 30,000,000 byte default is well below the configured archive limit, so
+        // without this the documented limit is unreachable and oversize uploads fail at the
+        // transport instead of with the handler's Terraform error.
+        var maxArchiveBytes = app.Services
+            .GetRequiredService<IOptions<ModuleExtractionOptions>>().Value.MaxArchiveBytes;
+
         app.MapPost("/v1/modules/{namespace}/{name}/{provider}/{version}",
                 async (string @namespace, string name, string provider, string version, HttpRequest request,
                         IModulePublishCoordinator publishCoordinator,
@@ -118,9 +125,11 @@ internal static class ModuleEndpointMappingExtensions
             .WithTags("Modules")
             .WithDescription("Uploads a new module version")
             .Accepts<IFormFile>("multipart/form-data")
+            .WithMetadata(new RequestSizeLimitAttribute(UploadRequestLimits.ForUploadOf(maxArchiveBytes)))
             .RequireRateLimiting(RateLimitPolicyNames.ModuleUpload)
             .ProducesProblem(400)
             .ProducesProblem(409)
+            .ProducesProblem(413)
             .Produces(201);
 
         app.MapDelete("/v1/modules/{namespace}/{name}/{provider}/{version}",

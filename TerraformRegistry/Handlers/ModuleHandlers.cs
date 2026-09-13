@@ -286,7 +286,10 @@ public static class ModuleHandlers
         if (moduleFile == null || moduleFile.Length == 0) return ErrorResponseExtensions.BadRequest("No file uploaded");
         if (moduleFile.Length > extractionOptions.Value.MaxArchiveBytes)
         {
-            return ErrorResponseExtensions.BadRequest(
+            // 413 rather than 400: the request is well-formed, it is simply too large. This
+            // matches the transport-level rejection clients get for anything above the
+            // endpoint's request size limit.
+            return ErrorResponseExtensions.TerraformError(StatusCodes.Status413PayloadTooLarge,
                 $"Module archive exceeds the configured limit of {extractionOptions.Value.MaxArchiveBytes} bytes.");
         }
 
