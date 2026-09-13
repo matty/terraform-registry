@@ -3,6 +3,7 @@
   "onboarding": false,
   "requireConfig": "optional",
   "branchPrefix": "renovate/",
+  "rebaseWhen": "behind-base-branch",
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
