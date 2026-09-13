@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +22,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserRejectsEmptyEmail()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -31,6 +33,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserRejectsCrossProviderEmailCollision()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         await apiKeyService.GetOrCreateOidcUserAsync("admin@example.com", "github", "gh-1");
@@ -45,6 +48,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserCanonicalizesEmailBeforeCollisionChecks()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var created = await apiKeyService.GetOrCreateOidcUserAsync("Admin@Example.com", "github", "gh-1");
@@ -62,6 +66,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserFindsLegacyMixedCaseStoredEmail()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var dbService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
         var legacyUser = new User
@@ -89,6 +94,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         await InsertLegacyUserAsync("admin@example.com", "github", "gh-legacy-2", DateTime.UtcNow.AddDays(-9));
 
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -101,6 +107,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task GetOrCreateOidcUserAllowsRepeatLoginForSameProviderIdentity()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
 
         var first = await apiKeyService.GetOrCreateOidcUserAsync("user@example.com", "github", "gh-1");
@@ -120,12 +127,13 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task LoginDoesNotStoreUnsafeReturnPath(string returnTo)
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var oauthService = CreateGitHubOAuthService(
             scope.ServiceProvider.GetRequiredService<IConfiguration>(),
             new QueuedResponseHandler());
         var context = CreateLoginHttpContext(scope.ServiceProvider);
 
-        var result = AuthHandlers.Login("github", returnTo, oauthService, context);
+        var result = AuthHandlers.Login("github", returnTo, oauthService, environment, context);
         await result.ExecuteAsync(context);
 
         Assert.Equal(StatusCodes.Status302Found, context.Response.StatusCode);
@@ -137,12 +145,13 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task LoginStoresValidLocalReturnPath()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var oauthService = CreateGitHubOAuthService(
             scope.ServiceProvider.GetRequiredService<IConfiguration>(),
             new QueuedResponseHandler());
         var context = CreateLoginHttpContext(scope.ServiceProvider);
 
-        var result = AuthHandlers.Login("github", "/account/settings?tab=security", oauthService, context);
+        var result = AuthHandlers.Login("github", "/account/settings?tab=security", oauthService, environment, context);
         await result.ExecuteAsync(context);
 
         Assert.Contains(context.Response.Headers.SetCookie,
@@ -153,6 +162,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task CallbackIgnoresUnsafeReturnPathCookie()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -176,6 +186,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
             apiKeyService,
             auditService,
             context,
+            environment,
             NullLogger<Program>.Instance);
 
         await result.ExecuteAsync(context);
@@ -188,6 +199,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task CallbackOnAccountCollisionRedirectsWithoutSessionCookie()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
@@ -212,6 +224,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
             apiKeyService,
             auditService,
             context,
+            environment,
             NullLogger<Program>.Instance);
 
         await result.ExecuteAsync(context);
@@ -228,6 +241,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
         await InsertLegacyUserAsync("admin@example.com", "azuread", "aad-legacy-2", DateTime.UtcNow.AddDays(-9));
 
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -250,6 +264,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
             apiKeyService,
             auditService,
             context,
+            environment,
             NullLogger<Program>.Instance);
 
         await result.ExecuteAsync(context);
@@ -263,6 +278,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task CallbackWhenOAuthExchangeProducesNoUsableEmailRedirectsWithoutSessionCookie()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -286,6 +302,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
             apiKeyService,
             auditService,
             context,
+            environment,
             NullLogger<Program>.Instance);
 
         await result.ExecuteAsync(context);
@@ -299,6 +316,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
     public async Task CallbackWhenAzureAdExchangeProducesNoUsableEmailRedirectsWithoutSessionCookie()
     {
         using var scope = Factory.Services.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
         var jwtService = scope.ServiceProvider.GetRequiredService<JwtService>();
         var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
         var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
@@ -321,6 +339,7 @@ public class OidcSecurityTests(ITestOutputHelper output) : IntegrationTestBase(o
             apiKeyService,
             auditService,
             context,
+            environment,
             NullLogger<Program>.Instance);
 
         await result.ExecuteAsync(context);
