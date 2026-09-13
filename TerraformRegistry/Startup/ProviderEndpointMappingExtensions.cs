@@ -4,7 +4,6 @@ using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace TerraformRegistry.Startup;
 
@@ -23,7 +22,7 @@ internal static class ProviderEndpointMappingExtensions
     {
         // Provider packages are configured far above Kestrel's 30,000,000 byte default, so the
         // upload routes need an explicit limit or the configured size is never reachable.
-        var uploadOptions = app.Services.GetRequiredService<IOptions<ProviderUploadOptions>>().Value;
+        var uploadOptions = app.Services.GetRequiredService<ProviderUploadOptions>();
 
         app.MapGet("/api/providers",
                 (IProviderRegistryService service, HttpContext context, string? q, int offset = 0, int limit = 20) =>

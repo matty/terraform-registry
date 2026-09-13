@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -20,6 +21,11 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 /// </summary>
 public class UploadRequestLimitTests
 {
+    // Deliberately non-default so a limit that silently falls back to a default-constructed
+    // options object (rather than the configured one) is caught.
+    private const long ConfiguredArchiveBytes = 111_222_333;
+    private const long ConfiguredPackageBytes = 444_555_666;
+
     private static WebApplicationFactory<Program> CreateFactory(string tempDir) =>
         new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -34,11 +40,25 @@ public class UploadRequestLimitTests
                         ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(tempDir, "upload-limits.db")}",
                         ["StorageProvider"] = "local",
                         ["ModuleStoragePath"] = Path.Combine(tempDir, "modules"),
-                        ["Oidc:JwtSecretKey"] = "upload-limit-test-jwt-secret-key-32-chars"
+                        ["Oidc:JwtSecretKey"] = "upload-limit-test-jwt-secret-key-32-chars",
+                        ["ModuleExtraction:MaxArchiveBytes"] =
+                            ConfiguredArchiveBytes.ToString(CultureInfo.InvariantCulture),
+                        ["ProviderUpload:MaxPackageBytes"] =
+                            ConfiguredPackageBytes.ToString(CultureInfo.InvariantCulture)
                     });
                 });
                 builder.ConfigureServices(services =>
                 {
+                    // ProviderUploadOptions is bound eagerly during Program.cs service
+                    // registration, which happens before WebApplicationFactory's
+                    // ConfigureAppConfiguration is applied, so the singleton has to be
+                    // replaced rather than configured. Replacing it also proves the endpoint
+                    // reads the registered instance and not a default-constructed one.
+                    services.RemoveAll<ProviderUploadOptions>();
+                    services.AddSingleton(new ProviderUploadOptions
+                    {
+                        MaxPackageBytes = ConfiguredPackageBytes
+                    });
                     services.RemoveAll<OidcOptions>();
                     services.AddSingleton(new OidcOptions
                     {
@@ -76,11 +96,9 @@ public class UploadRequestLimitTests
 
             var limit = RequestSizeLimitFor(factory, "/v1/modules/{namespace}/{name}/{provider}/{version}", "POST");
 
-            Assert.NotNull(limit);
-            // Must clear the configured archive size, otherwise the documented limit is
-            // unreachable and oversize uploads fail at the transport with a bare 413.
-            Assert.True(limit >= ModuleExtractionOptions.DefaultMaxArchiveBytes,
-                $"module upload limit {limit} must allow the configured {ModuleExtractionOptions.DefaultMaxArchiveBytes} byte archive");
+            // Tracks the configured value, not a default, and clears Kestrel's 30,000,000
+            // byte default so the documented limit is actually reachable.
+            Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredArchiveBytes), limit);
             Assert.True(limit > 30_000_000,
                 "module upload limit must exceed Kestrel's 30,000,000 byte default to be reachable");
         }
@@ -104,9 +122,8 @@ public class UploadRequestLimitTests
             var limit = RequestSizeLimitFor(factory,
                 "/api/providers/{namespace}/{type}/versions/{version}/platforms", "POST");
 
-            Assert.NotNull(limit);
-            Assert.True(limit >= new ProviderUploadOptions().MaxPackageBytes,
-                $"provider platform upload limit {limit} must allow the configured package size");
+            Assert.Equal(UploadRequestLimits.ForUploadOf(ConfiguredPackageBytes), limit);
+            Assert.NotEqual(UploadRequestLimits.ForUploadOf(new ProviderUploadOptions().MaxPackageBytes), limit);
         }
         finally
         {
