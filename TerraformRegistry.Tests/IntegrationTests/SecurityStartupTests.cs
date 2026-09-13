@@ -107,12 +107,15 @@ public class SecurityStartupTests
         // false for a request that reached the user over HTTPS. Keying the Secure flag off
         // IsHttps therefore silently drops it and the state/return-to cookies travel in the
         // clear. Outside Development the flag must be set regardless of the inbound scheme.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-cookie-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-cookie-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            using var factory = new WebApplicationFactory<Program>()
+            // WithWebHostBuilder returns a new factory, so the one it was called on needs
+            // disposing too.
+            using var hostFactory = new WebApplicationFactory<Program>();
+            using var factory = hostFactory
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseEnvironment(environmentName);
@@ -124,9 +127,9 @@ public class SecurityStartupTests
                             ["ApiKeySecurity:DigestKey"] = "cookie-test-api-key-digest-key-32-chars-min",
                             ["ArtifactDownloadTokens:SigningKey"] = "cookie-test-artifact-signing-key-32-chars",
                             ["DatabaseProvider"] = "sqlite",
-                            ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(tempDir, "cookie-test.db")}",
+                            ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "cookie-test.db")}",
                             ["StorageProvider"] = "local",
-                            ["ModuleStoragePath"] = Path.Combine(tempDir, "modules"),
+                            ["ModuleStoragePath"] = Path.Join(tempDir, "modules"),
                             ["Oidc:JwtSecretKey"] = "cookie-test-jwt-secret-key-32-chars-minimum"
                         });
                     });
@@ -190,12 +193,15 @@ public class SecurityStartupTests
     {
         // Development is the deliberate exception: a Secure cookie would never be sent back
         // over http://localhost, breaking local sign-in.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"tf-reg-cookie-dev-{Guid.NewGuid():N}");
+        var tempDir = Path.Join(Path.GetTempPath(), $"tf-reg-cookie-dev-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
-            using var factory = new WebApplicationFactory<Program>()
+            // WithWebHostBuilder returns a new factory, so the one it was called on needs
+            // disposing too.
+            using var hostFactory = new WebApplicationFactory<Program>();
+            using var factory = hostFactory
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseEnvironment("Development");
@@ -207,9 +213,9 @@ public class SecurityStartupTests
                             ["ApiKeySecurity:DigestKey"] = "cookie-test-api-key-digest-key-32-chars-min",
                             ["ArtifactDownloadTokens:SigningKey"] = "cookie-test-artifact-signing-key-32-chars",
                             ["DatabaseProvider"] = "sqlite",
-                            ["Sqlite:ConnectionString"] = $"Data Source={Path.Combine(tempDir, "cookie-dev.db")}",
+                            ["Sqlite:ConnectionString"] = $"Data Source={Path.Join(tempDir, "cookie-dev.db")}",
                             ["StorageProvider"] = "local",
-                            ["ModuleStoragePath"] = Path.Combine(tempDir, "modules"),
+                            ["ModuleStoragePath"] = Path.Join(tempDir, "modules"),
                             ["Oidc:JwtSecretKey"] = "cookie-test-jwt-secret-key-32-chars-minimum"
                         });
                     });

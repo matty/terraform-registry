@@ -56,7 +56,7 @@ public class UploadModuleSizeLimitTests(ITestOutputHelper output) : IntegrationT
         var projectDir = Directory.GetParent(assemblyDirectory)?.Parent?.Parent?.FullName
             ?? throw new DirectoryNotFoundException("Could not locate the test project directory.");
 
-        var moduleFilePath = Path.Combine(projectDir, "TestData", "test-module.zip");
+        var moduleFilePath = Path.Join(projectDir, "TestData", "test-module.zip");
         if (!File.Exists(moduleFilePath))
             throw new FileNotFoundException("Test module file missing.", moduleFilePath);
 
