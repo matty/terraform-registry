@@ -12,7 +12,7 @@
   "labels": [
     "dependencies"
   ],
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "14 days",
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "labels": [
