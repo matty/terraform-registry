@@ -3,6 +3,8 @@ using TerraformRegistry.Handlers;
 using TerraformRegistry.Models;
 using TerraformRegistry.Services;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace TerraformRegistry.Startup;
 
@@ -19,6 +21,10 @@ internal static class ProviderEndpointMappingExtensions
 
     private static WebApplication MapProviderManagementEndpoints(this WebApplication app)
     {
+        // Provider packages are configured far above Kestrel's 30,000,000 byte default, so the
+        // upload routes need an explicit limit or the configured size is never reachable.
+        var uploadOptions = app.Services.GetRequiredService<IOptions<ProviderUploadOptions>>().Value;
+
         app.MapGet("/api/providers",
                 (IProviderRegistryService service, HttpContext context, string? q, int offset = 0, int limit = 20) =>
                     ProviderHandlers.ListProviders(service, context, q, offset, limit))
@@ -88,7 +94,10 @@ internal static class ProviderEndpointMappingExtensions
                 (string @namespace, string type, string version, IProviderRegistryService service,
                         HttpContext context, HttpRequest request) =>
                     ProviderHandlers.CreatePlatform(@namespace, type, version, service, context, request))
-            .WithTags("Providers");
+            .WithTags("Providers")
+            .WithMetadata(new RequestSizeLimitAttribute(
+                UploadRequestLimits.ForUploadOf(uploadOptions.MaxPackageBytes)))
+            .ProducesProblem(413);
 
         app.MapDelete("/api/providers/{namespace}/{type}/versions/{version}/platforms/{os}/{arch}",
                 (string @namespace, string type, string version, string os, string arch,
@@ -101,6 +110,9 @@ internal static class ProviderEndpointMappingExtensions
                         HttpContext context, HttpRequest request) =>
                     ProviderHandlers.UploadShasums(@namespace, type, version, service, context, request))
             .WithTags("Providers")
+            .WithMetadata(new RequestSizeLimitAttribute(
+                UploadRequestLimits.ForUploadOf(uploadOptions.MaxChecksumBytes)))
+            .ProducesProblem(413)
             .RequireRateLimiting(RateLimitPolicyNames.ProviderUpload);
 
         app.MapPut("/api/providers/{namespace}/{type}/versions/{version}/shasums.sig",
