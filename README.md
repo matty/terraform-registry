@@ -179,6 +179,13 @@ For Azure Blob Storage and S3-compatible storage, one configured container or bu
 - OIDC admission is closed by default. To provision new users, set `UserAdmission:Mode` to `ConstrainedAutoProvision` and configure at least one of `AllowedIssuers`, `AllowedTenants`, `AllowedDomains`, or `AllowedEmails`. `RequireVerifiedEmail` defaults to `true`; missing provider claims fail closed when their corresponding constraint is configured.
 - Disabled users are rejected immediately for portal sessions, bearer JWTs, API keys, and Terraform login authorization. Existing user records remain active after the migration unless an operator explicitly disables them.
 - Outbound admin webhooks only support `http` and `https` targets. Private and local network destinations are blocked unless `WebhookSecurity:AllowPrivateNetworks` / `TF_REG_WEBHOOKSECURITY__ALLOWPRIVATENETWORKS` is explicitly enabled.
+- Authentication cookies (session, OAuth state, and return-to) are marked `Secure`, `HttpOnly`, and `SameSite=Lax` in every environment except `Development`. The flag is decided by the environment rather than by the inbound scheme, because a TLS-terminating proxy forwards plain HTTP and would otherwise cause the flag to be dropped. `Development` is exempt so local sign-in over `http://localhost` still works.
+- Upload endpoints carry an explicit request size limit derived from their configured maximum, because Kestrel's default of 30,000,000 bytes is smaller than the limits the registry advertises. Without it, uploads above roughly 28.6 MiB would be rejected by the transport before the registry could apply, or report, the configured limit:
+  - module archives: `ModuleExtraction:MaxArchiveBytes` / `TF_REG_MODULEEXTRACTION__MAXARCHIVEBYTES` (default 100 MiB)
+  - provider packages: `ProviderUpload:MaxPackageBytes` / `TF_REG_PROVIDERUPLOAD__MAXPACKAGEBYTES` (default 512 MiB)
+  - provider checksums: `ProviderUpload:MaxChecksumBytes` / `TF_REG_PROVIDERUPLOAD__MAXCHECKSUMBYTES`
+  An archive over the configured limit is rejected with `413`. Every other route keeps the conservative server default.
+- The GitHub webhook body is bounded by `Vcs:GitHubWebhookMaxBodyBytes` / `TF_REG_VCS__GITHUBWEBHOOKMAXBODYBYTES` (default 1 MiB). The endpoint is unauthenticated until its HMAC is verified, so the limit is enforced both at the transport and by a streaming byte count that does not trust `Content-Length`.
 
 ### Architecture Options
 

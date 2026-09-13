@@ -61,6 +61,10 @@ internal static class ServiceRegistrationExtensions
                 }
             }, "Module extraction limits must all be greater than zero.")
             .ValidateOnStart();
+        var vcsWebhookOptions = new VcsWebhookOptions();
+        configuration.GetSection(VcsWebhookOptions.SectionName).Bind(vcsWebhookOptions);
+        vcsWebhookOptions.Validate();
+        services.AddSingleton(vcsWebhookOptions);
         var providerUploadOptions = new ProviderUploadOptions();
         configuration.GetSection(ProviderUploadOptions.SectionName).Bind(providerUploadOptions);
         providerUploadOptions.Validate();

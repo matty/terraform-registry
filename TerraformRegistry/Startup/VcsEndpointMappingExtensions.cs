@@ -1,6 +1,7 @@
 using TerraformRegistry.API.Interfaces;
 using TerraformRegistry.Handlers;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 
 namespace TerraformRegistry.Startup;
 
@@ -86,9 +87,17 @@ internal static class VcsEndpointMappingExtensions
 
     private static WebApplication MapGitHubWebhookEndpoint(this WebApplication app)
     {
-        app.MapPost("/api/vcs/github/webhook", (IGitHubVcsService githubService, HttpContext context) =>
-                VcsHandlers.HandleGitHubWebhook(githubService, context))
+        var webhookOptions = app.Services.GetRequiredService<VcsWebhookOptions>();
+
+        app.MapPost("/api/vcs/github/webhook",
+                (IGitHubVcsService githubService, HttpContext context) =>
+                VcsHandlers.HandleGitHubWebhook(githubService, webhookOptions, context))
             .WithTags("VCS")
+            // The endpoint is unauthenticated until the HMAC is checked, so let the transport
+            // refuse an oversize body before any of our code touches it. The handler keeps its
+            // own streaming check for requests that understate or omit Content-Length.
+            .WithMetadata(new RequestSizeLimitAttribute(webhookOptions.GitHubWebhookMaxBodyBytes))
+            .ProducesProblem(413)
             .RequireRateLimiting(RateLimitPolicyNames.WebhookIngress);
 
         return app;
