@@ -10,8 +10,12 @@ namespace TerraformRegistry.Tests.IntegrationTests;
 
 public sealed class HttpDeliveryPolicyTests : IDisposable
 {
+    // The name has to satisfy IsFingerprintedFrontendAsset: at least eight
+    // characters of letters, digits, hyphen or underscore before the extension.
+    private const string FingerprintedAssetPath = "/_nuxt/fixture_asset_a1b2c3d4.js";
+
     private readonly string _tempDirectory = Path.GetTempFileName();
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly DeliveryPolicyFactory _factory;
 
     public HttpDeliveryPolicyTests()
     {
@@ -22,9 +26,12 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
 
     private sealed class DeliveryPolicyFactory(string tempDirectory) : WebApplicationFactory<Program>
     {
+        private string? _fixtureAssetPath;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Test");
+            WriteFingerprintedAsset(builder.GetSetting(WebHostDefaults.ContentRootKey));
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
@@ -46,6 +53,37 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
                 });
             });
         }
+
+        /// <summary>
+        ///     Lays down a fingerprinted asset the way a frontend build would, so these
+        ///     tests exercise the delivery policy without depending on generated output
+        ///     being tracked in the repository. Program only registers the static file
+        ///     middleware when the folder already exists, so this has to run before the
+        ///     host starts.
+        /// </summary>
+        private void WriteFingerprintedAsset(string? contentRoot)
+        {
+            if (string.IsNullOrEmpty(contentRoot)) return;
+
+            var assetDirectory = Path.Join(contentRoot, "web", "_nuxt");
+            Directory.CreateDirectory(assetDirectory);
+
+            // Repetitive content so both compression providers have something worth
+            // compressing; a handful of bytes can legitimately come back unencoded.
+            var body = string.Concat(Enumerable.Repeat(
+                "export const fixture = () => { console.log('fingerprinted asset'); };\n", 64));
+
+            _fixtureAssetPath = Path.Join(assetDirectory, Path.GetFileName(FingerprintedAssetPath));
+            File.WriteAllText(_fixtureAssetPath, body);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+
+            if (disposing && _fixtureAssetPath is not null && File.Exists(_fixtureAssetPath))
+                File.Delete(_fixtureAssetPath);
+        }
     }
 
     [Fact]
@@ -58,7 +96,7 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
         });
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip");
 
-        using var response = await client.GetAsync("/_nuxt/8_MDK3Q6.js", HttpCompletionOption.ResponseHeadersRead);
+        using var response = await client.GetAsync(FingerprintedAssetPath, HttpCompletionOption.ResponseHeadersRead);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("gzip", Assert.Single(response.Content.Headers.ContentEncoding));
@@ -84,7 +122,7 @@ public sealed class HttpDeliveryPolicyTests : IDisposable
         using var client = _factory.CreateClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "br");
 
-        using var response = await client.GetAsync("/_nuxt/8_MDK3Q6.js", HttpCompletionOption.ResponseHeadersRead);
+        using var response = await client.GetAsync(FingerprintedAssetPath, HttpCompletionOption.ResponseHeadersRead);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("br", Assert.Single(response.Content.Headers.ContentEncoding));
