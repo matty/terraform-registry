@@ -10,6 +10,7 @@ docs
 **/obj
 **/TestResults
 
+TerraformRegistry/web
 TerraformRegistry/web-src/.cache
 TerraformRegistry/web-src/.data
 TerraformRegistry/web-src/.nuxt
