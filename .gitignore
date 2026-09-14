@@ -318,3 +318,8 @@ run-dev.ps1
 # Runtime data
 TerraformRegistry/modules/
 TerraformRegistry/terraform.db
+
+# Frontend build output. The Docker image and CI both build this from
+# TerraformRegistry/web-src; build-frontend.ps1 regenerates it locally for
+# running the app outside a container. Committing it only lets it go stale.
+TerraformRegistry/web/
