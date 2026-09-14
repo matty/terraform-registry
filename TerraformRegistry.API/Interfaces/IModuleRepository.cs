@@ -13,6 +13,12 @@ public interface IModuleRepository
     Task<ModuleList> ListModulesAsync(ModuleSearchRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    ///     Gets the distinct namespaces and providers across all active modules,
+    ///     for populating catalog filter controls.
+    /// </summary>
+    Task<ModuleFacets> GetModuleFacetsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     ///     Gets detailed information about a specific module.
     /// </summary>
     Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,

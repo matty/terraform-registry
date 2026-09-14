@@ -26,7 +26,8 @@ public sealed class PostgreSqlModuleRepository(
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
 
         var coordinates = new List<(string Namespace, string Name, string Provider)>();
-        await using (var pageCommand = new NpgsqlCommand($"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider ORDER BY m.namespace, m.name, m.provider LIMIT @limit OFFSET @offset", connection))
+        var orderByClause = ModuleListOrdering.BuildOrderByClause(request.Sort, request.Order);
+        await using (var pageCommand = new NpgsqlCommand($"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider {orderByClause} LIMIT @limit OFFSET @offset", connection))
         {
             AddParameters(pageCommand, parameters);
             pageCommand.Parameters.AddWithValue("@limit", request.Limit);
@@ -36,6 +37,13 @@ public sealed class PostgreSqlModuleRepository(
         }
 
         var rows = await GetPageRowsAsync(connection, coordinates, cancellationToken);
+
+        // The page query already applied the requested ordering; index the coordinates so
+        // the projection below preserves it rather than falling back to coordinate order.
+        var coordinateOrder = coordinates
+            .Select((coordinate, index) => (coordinate, index))
+            .ToDictionary(entry => entry.coordinate, entry => entry.index);
+
         var modules = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
@@ -48,9 +56,7 @@ public sealed class PostgreSqlModuleRepository(
                 latest.Versions = versions;
                 return latest;
             })
-            .OrderBy(row => row.Namespace, StringComparer.Ordinal)
-            .ThenBy(row => row.Name, StringComparer.Ordinal)
-            .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .OrderBy(row => coordinateOrder[(row.Namespace, row.Name, row.Provider)])
             .Select(row => new ModuleListItem
             {
                 Id = $"{row.Namespace}/{row.Name}/{row.Provider}",
@@ -79,13 +85,42 @@ public sealed class PostgreSqlModuleRepository(
         };
     }
 
+    public async Task<ModuleFacets> GetModuleFacetsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return new ModuleFacets
+        {
+            Namespaces = await ReadDistinctColumnAsync(connection, "namespace", cancellationToken),
+            Providers = await ReadDistinctColumnAsync(connection, "provider", cancellationToken)
+        };
+    }
+
+    private static async Task<List<string>> ReadDistinctColumnAsync(NpgsqlConnection connection, string column,
+        CancellationToken cancellationToken)
+    {
+        // The column name is a compile-time constant chosen by this class, never caller input.
+        await using var command = new NpgsqlCommand(
+            $"SELECT DISTINCT {column} FROM modules WHERE deleted_at IS NULL ORDER BY {column}", connection);
+
+        var values = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            if (!reader.IsDBNull(0))
+                values.Add(reader.GetString(0));
+
+        return values;
+    }
+
     private static (string WhereClause, IReadOnlyList<NpgsqlParameter> Parameters) BuildListFilter(ModuleSearchRequest request)
     {
         var conditions = new List<string> { "m.deleted_at IS NULL" };
         var parameters = new List<NpgsqlParameter>();
         if (!string.IsNullOrWhiteSpace(request.Namespace)) { conditions.Add("m.namespace = @ns"); parameters.Add(new NpgsqlParameter("@ns", request.Namespace)); }
         if (!string.IsNullOrWhiteSpace(request.Provider)) { conditions.Add("m.provider = @provider"); parameters.Add(new NpgsqlParameter("@provider", request.Provider)); }
-        if (!string.IsNullOrWhiteSpace(request.Q)) { conditions.Add("(strpos(lower(m.name), lower(@q)) > 0 OR strpos(lower(COALESCE(m.description, '')), lower(@q)) > 0)"); parameters.Add(new NpgsqlParameter("@q", request.Q)); }
+        if (!string.IsNullOrWhiteSpace(request.Q)) { conditions.Add("(strpos(lower(m.name), lower(@q)) > 0 OR strpos(lower(COALESCE(m.description, '')), lower(@q)) > 0 OR strpos(lower(m.namespace), lower(@q)) > 0 OR strpos(lower(m.provider), lower(@q)) > 0)"); parameters.Add(new NpgsqlParameter("@q", request.Q)); }
         return ($"WHERE {string.Join(" AND ", conditions)}", parameters);
     }
 

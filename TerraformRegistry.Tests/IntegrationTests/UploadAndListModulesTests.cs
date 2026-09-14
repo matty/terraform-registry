@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -25,6 +26,29 @@ public class UploadAndListModulesTests(ITestOutputHelper output) : UploadModuleT
 
         using var json = JsonDocument.Parse(listContent);
         Assert.Equal("1", json.RootElement.GetProperty("meta").GetProperty("total").GetString());
+    }
+
+    [Fact]
+    public async Task GetModuleFacetsAuthenticatesLikeTheListingAndReturnsDistinctValues()
+    {
+        var client = Factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AuthToken);
+
+        using var content = CreateModuleUploadContent();
+        var upload = await client.PostAsync("/v1/modules/facet-ns/facet-name/facet-provider/1.0.0", content);
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+
+        var facetsResponse = await client.GetAsync("/v1/modules/facets");
+        Assert.Equal(HttpStatusCode.OK, facetsResponse.StatusCode);
+
+        using var json = JsonDocument.Parse(await facetsResponse.Content.ReadAsStringAsync());
+        var namespaces = json.RootElement.GetProperty("namespaces")
+            .EnumerateArray().Select(value => value.GetString()).ToList();
+        var providers = json.RootElement.GetProperty("providers")
+            .EnumerateArray().Select(value => value.GetString()).ToList();
+
+        Assert.Contains("facet-ns", namespaces);
+        Assert.Contains("facet-provider", providers);
     }
 
     [Fact]

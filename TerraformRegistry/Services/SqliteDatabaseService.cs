@@ -87,6 +87,9 @@ public class SqliteDatabaseService : IDatabaseService, IModulePublicationReposit
         return page;
     }
 
+    public Task<ModuleFacets> GetModuleFacetsAsync(CancellationToken cancellationToken = default) =>
+        _modules.GetModuleFacetsAsync(cancellationToken);
+
     public Task<TerraformModule?> GetModuleAsync(string moduleNamespace, string name, string provider, string version,
         CancellationToken cancellationToken = default) =>
         _modules.GetModuleAsync(moduleNamespace, name, provider, version, cancellationToken);

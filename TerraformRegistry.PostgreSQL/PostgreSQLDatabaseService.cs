@@ -44,6 +44,9 @@ public class PostgreSqlDatabaseService : IDatabaseService, IModulePublicationRep
         return page;
     }
 
+    public Task<ModuleFacets> GetModuleFacetsAsync(CancellationToken cancellationToken = default) =>
+        _modules.GetModuleFacetsAsync(cancellationToken);
+
     public Task CreatePublicationAttemptWithExtractionJobAsync(ModulePublicationAttempt attempt, ModuleExtractionJob job,
         CancellationToken cancellationToken = default) =>
         _publications.CreatePublicationAttemptWithExtractionJobAsync(attempt, job, cancellationToken);

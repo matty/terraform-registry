@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -245,6 +245,202 @@ public class SqliteDatabaseServiceTests : IAsyncLifetime
 
         var item = Assert.Single(result.Modules);
         Assert.Equal("literal%module", item.Name);
+    }
+    [Fact]
+    public async Task ListModulesSortsByPublishedDateDescending()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(name: "oldest",
+            publishedAt: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(name: "newest",
+            publishedAt: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(name: "middle",
+            publishedAt: new DateTime(2023, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+
+        var result = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "published",
+            Order = "desc",
+            Limit = 50
+        });
+
+        Assert.Equal(["newest", "middle", "oldest"], result.Modules.Select(module => module.Name));
+    }
+
+    [Fact]
+    public async Task ListModulesSortsByPublishedDateUsingLatestVersionOfEachModule()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        // "stale" was created first but never updated; "fresh" got a recent release.
+        await svc.AddModuleAsync(MakeModule(name: "stale", version: "1.0.0",
+            publishedAt: new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(name: "fresh", version: "1.0.0",
+            publishedAt: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(name: "fresh", version: "2.0.0",
+            publishedAt: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+
+        var result = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "published",
+            Order = "desc",
+            Limit = 50
+        });
+
+        Assert.Equal(["fresh", "stale"], result.Modules.Select(module => module.Name));
+    }
+
+    [Fact]
+    public async Task ListModulesSortsByVersionCountDescending()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(name: "single", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "triple", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "triple", version: "1.1.0"));
+        await svc.AddModuleAsync(MakeModule(name: "triple", version: "1.2.0"));
+        await svc.AddModuleAsync(MakeModule(name: "double", version: "1.0.0"));
+        await svc.AddModuleAsync(MakeModule(name: "double", version: "2.0.0"));
+
+        var result = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "versions",
+            Order = "desc",
+            Limit = 50
+        });
+
+        Assert.Equal(["triple", "double", "single"], result.Modules.Select(module => module.Name));
+    }
+
+    [Fact]
+    public async Task ListModulesSortsByNameInBothDirections()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(ns: "zzz", name: "alpha"));
+        await svc.AddModuleAsync(MakeModule(ns: "aaa", name: "zebra"));
+
+        var ascending = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "name",
+            Limit = 50
+        });
+        Assert.Equal(["alpha", "zebra"], ascending.Modules.Select(module => module.Name));
+
+        var descending = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "name",
+            Order = "desc",
+            Limit = 50
+        });
+        Assert.Equal(["zebra", "alpha"], descending.Modules.Select(module => module.Name));
+    }
+
+    [Fact]
+    public async Task ListModulesAppliesSortAcrossPageBoundariesRatherThanWithinAPage()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        // Namespaces are deliberately ordered inversely to the publish dates, so a
+        // sort applied only to the rows of one page would return the wrong module.
+        await svc.AddModuleAsync(MakeModule(ns: "aaa", name: "first",
+            publishedAt: new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(ns: "bbb", name: "second",
+            publishedAt: new DateTime(2023, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+        await svc.AddModuleAsync(MakeModule(ns: "ccc", name: "third",
+            publishedAt: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)));
+
+        var firstPage = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "published",
+            Order = "desc",
+            Limit = 1,
+            Offset = 0
+        });
+        Assert.Equal("third", Assert.Single(firstPage.Modules).Name);
+
+        var lastPage = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "published",
+            Order = "desc",
+            Limit = 1,
+            Offset = 2
+        });
+        Assert.Equal("first", Assert.Single(lastPage.Modules).Name);
+    }
+
+    [Fact]
+    public async Task ListModulesIgnoresUnknownSortFieldsAndKeepsCoordinateOrder()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(ns: "aaa", name: "zebra"));
+        await svc.AddModuleAsync(MakeModule(ns: "zzz", name: "alpha"));
+
+        var result = await svc.ListModulesAsync(new ModuleSearchRequest
+        {
+            Sort = "name; DROP TABLE modules",
+            Order = "desc; DROP TABLE modules",
+            Limit = 50
+        });
+
+        Assert.Equal(["zebra", "alpha"], result.Modules.Select(module => module.Name));
+    }
+
+    [Fact]
+    public async Task ListModulesSearchMatchesNamespaceAndProvider()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(ns: "platform", name: "vpc", provider: "aws", desc: "networking"));
+        await svc.AddModuleAsync(MakeModule(ns: "hashicorp", name: "aks", provider: "azurerm", desc: "clusters"));
+
+        var byNamespace = await svc.ListModulesAsync(new ModuleSearchRequest { Q = "platform", Limit = 50 });
+        Assert.Equal("vpc", Assert.Single(byNamespace.Modules).Name);
+
+        var byProvider = await svc.ListModulesAsync(new ModuleSearchRequest { Q = "azurerm", Limit = 50 });
+        Assert.Equal("aks", Assert.Single(byProvider.Modules).Name);
+    }
+
+    [Fact]
+    public async Task GetModuleFacetsReturnsDistinctSortedNamespacesAndProviders()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        await svc.AddModuleAsync(MakeModule(ns: "platform", name: "vpc", provider: "aws"));
+        await svc.AddModuleAsync(MakeModule(ns: "platform", name: "eks", provider: "aws"));
+        await svc.AddModuleAsync(MakeModule(ns: "acme", name: "aks", provider: "azurerm"));
+
+        var facets = await svc.GetModuleFacetsAsync();
+
+        Assert.Equal(["acme", "platform"], facets.Namespaces);
+        Assert.Equal(["aws", "azurerm"], facets.Providers);
+    }
+
+    [Fact]
+    public async Task GetModuleFacetsExcludesDeletedModules()
+    {
+        var svc = CreateService(_connectionString);
+        await (svc as IInitializableDb).InitializeDatabase();
+
+        var doomed = MakeModule(ns: "acme", name: "aks", provider: "azurerm");
+        await svc.AddModuleAsync(MakeModule(ns: "platform", name: "vpc", provider: "aws"));
+        await svc.AddModuleAsync(doomed);
+        await svc.SoftDeleteModuleAsync(doomed.Namespace, doomed.Name, doomed.Provider, doomed.Version);
+
+        var facets = await svc.GetModuleFacetsAsync();
+
+        Assert.Equal(["platform"], facets.Namespaces);
+        Assert.Equal(["aws"], facets.Providers);
     }
 
     [Fact]

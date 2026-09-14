@@ -29,7 +29,8 @@ public sealed class SqliteModuleRepository(
         var coordinates = new List<(string Namespace, string Name, string Provider)>();
         await using (var pageCommand = connection.CreateCommand())
         {
-            pageCommand.CommandText = $"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider ORDER BY m.namespace, m.name, m.provider LIMIT $limit OFFSET $offset";
+            var orderByClause = ModuleListOrdering.BuildOrderByClause(request.Sort, request.Order);
+            pageCommand.CommandText = $"SELECT m.namespace, m.name, m.provider FROM modules m {whereClause} GROUP BY m.namespace, m.name, m.provider {orderByClause} LIMIT $limit OFFSET $offset";
             AddParameters(pageCommand, parameters);
             pageCommand.Parameters.AddWithValue("$limit", request.Limit);
             pageCommand.Parameters.AddWithValue("$offset", request.Offset);
@@ -38,6 +39,13 @@ public sealed class SqliteModuleRepository(
         }
 
         var rows = await GetPageRowsAsync(connection, coordinates, cancellationToken);
+
+        // The page query already applied the requested ordering; index the coordinates so
+        // the projection below preserves it rather than falling back to coordinate order.
+        var coordinateOrder = coordinates
+            .Select((coordinate, index) => (coordinate, index))
+            .ToDictionary(entry => entry.coordinate, entry => entry.index);
+
         var modules = rows
             .GroupBy(row => new { row.Namespace, row.Name, row.Provider })
             .Select(group =>
@@ -50,9 +58,7 @@ public sealed class SqliteModuleRepository(
                 latest.Versions = versions;
                 return latest;
             })
-            .OrderBy(row => row.Namespace, StringComparer.Ordinal)
-            .ThenBy(row => row.Name, StringComparer.Ordinal)
-            .ThenBy(row => row.Provider, StringComparer.Ordinal)
+            .OrderBy(row => coordinateOrder[(row.Namespace, row.Name, row.Provider)])
             .Select(row => new ModuleListItem
             {
                 Id = $"{row.Namespace}/{row.Name}/{row.Provider}",
@@ -81,13 +87,43 @@ public sealed class SqliteModuleRepository(
         };
     }
 
+    public async Task<ModuleFacets> GetModuleFacetsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var connection = new SqliteConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        return new ModuleFacets
+        {
+            Namespaces = await ReadDistinctColumnAsync(connection, "namespace", cancellationToken),
+            Providers = await ReadDistinctColumnAsync(connection, "provider", cancellationToken)
+        };
+    }
+
+    private static async Task<List<string>> ReadDistinctColumnAsync(SqliteConnection connection, string column,
+        CancellationToken cancellationToken)
+    {
+        // The column name is a compile-time constant chosen by this class, never caller input.
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT DISTINCT {column} FROM modules WHERE deleted_at IS NULL ORDER BY {column}";
+
+        var values = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            if (!reader.IsDBNull(0))
+                values.Add(reader.GetString(0));
+
+        return values;
+    }
+
     private static (string WhereClause, IReadOnlyList<SqliteParameter> Parameters) BuildListFilter(ModuleSearchRequest request)
     {
         var conditions = new List<string> { "m.deleted_at IS NULL" };
         var parameters = new List<SqliteParameter>();
         if (!string.IsNullOrWhiteSpace(request.Namespace)) { conditions.Add("m.namespace = $ns"); parameters.Add(new SqliteParameter("$ns", request.Namespace)); }
         if (!string.IsNullOrWhiteSpace(request.Provider)) { conditions.Add("m.provider = $prov"); parameters.Add(new SqliteParameter("$prov", request.Provider)); }
-        if (!string.IsNullOrWhiteSpace(request.Q)) { conditions.Add("(instr(lower(m.name), lower($q)) > 0 OR instr(lower(COALESCE(m.description, '')), lower($q)) > 0)"); parameters.Add(new SqliteParameter("$q", request.Q)); }
+        if (!string.IsNullOrWhiteSpace(request.Q)) { conditions.Add("(instr(lower(m.name), lower($q)) > 0 OR instr(lower(COALESCE(m.description, '')), lower($q)) > 0 OR instr(lower(m.namespace), lower($q)) > 0 OR instr(lower(m.provider), lower($q)) > 0)"); parameters.Add(new SqliteParameter("$q", request.Q)); }
         return ($"WHERE {string.Join(" AND ", conditions)}", parameters);
     }
 

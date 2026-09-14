@@ -26,11 +26,21 @@ internal static class ModuleEndpointMappingExtensions
     {
         app.MapGet("/v1/modules",
                 (IModuleService moduleService, HttpContext context, string? q, string? @namespace, string? provider,
-                        int offset = 0, int limit = 10) =>
-                    ModuleHandlers.ListModules(moduleService, context, q, @namespace, provider, offset, limit))
+                        string? sort, string? order, int offset = 0, int limit = 10) =>
+                    ModuleHandlers.ListModules(moduleService, context, q, @namespace, provider, sort, order, offset,
+                        limit))
             .WithTags("Modules")
             .WithDescription("Lists or searches modules")
             .Produces<ModuleList>();
+
+        // Registered under /v1 so it authenticates through AuthenticationMiddleware and
+        // therefore carries the same permission claims as the listing it accompanies.
+        app.MapGet("/v1/modules/facets",
+                (IDatabaseService databaseService, HttpContext context) =>
+                    ModuleHandlers.GetModuleFacets(databaseService, context))
+            .WithTags("Modules")
+            .WithDescription("Lists the distinct namespaces and providers available for filtering modules")
+            .Produces<ModuleFacets>();
 
         app.MapGet("/v1/modules/{namespace}/{name}/{provider}/{version}",
                 (string @namespace, string name, string provider, string version, IModuleService moduleService,

@@ -77,6 +77,8 @@ public static class ModuleHandlers
         string? q = null,
         string? @namespace = null,
         string? provider = null,
+        string? sort = null,
+        string? order = null,
         int offset = 0,
         int limit = 10)
     {
@@ -91,12 +93,28 @@ public static class ModuleHandlers
             Q = q,
             Namespace = @namespace,
             Provider = provider,
+            Sort = sort,
+            Order = order,
             Offset = Math.Max(0, offset),
             Limit = Math.Clamp(limit, 1, 100)
         };
 
         var result = await moduleService.ListModulesAsync(request, context.RequestAborted);
         return Ok(result);
+    }
+
+    /// <summary>
+    ///     Lists the distinct namespaces and providers available for filtering the catalog
+    /// </summary>
+    public static async Task<IResult> GetModuleFacets(
+        IDatabaseService databaseService,
+        HttpContext context)
+    {
+        var denied = CheckPermission(context, Permissions.ModulesRead);
+        if (denied != null) return denied;
+
+        var facets = await databaseService.GetModuleFacetsAsync(context.RequestAborted);
+        return Ok(facets);
     }
 
     /// <summary>
