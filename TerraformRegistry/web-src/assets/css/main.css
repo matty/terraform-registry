@@ -36,3 +36,38 @@ body {
 .page-divider {
   @apply border-t border-neutral-200 dark:border-neutral-800 mx-6;
 }
+/* Modules list — one column rhythm shared by the header strip and every row.
+   Columns drop from the right as the viewport narrows, so the module name and
+   its latest version survive down to the smallest screens. */
+.module-row-grid {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) 5rem 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .module-row-grid {
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr) 6rem 5rem 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .module-row-grid {
+    grid-template-columns: minmax(0, 1fr) 6rem 5rem 4.5rem 6.5rem 1.25rem;
+  }
+}
+
+/* Aligns the list header strip with the row content, which sits to the right
+   of a 2.25rem provider mark plus a 0.875rem gutter. */
+.module-row-indent {
+  padding-left: 3.125rem;
+}
+
+/* Brighten the coordinate's copy icon whenever the row or the control itself is
+   hovered, so the affordance is discoverable without reserving hover-only space. */
+.group:hover .copy-coordinate .iconify,
+.copy-coordinate:hover .iconify {
+  color: var(--color-neutral-400);
+}

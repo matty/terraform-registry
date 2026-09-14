@@ -24,6 +24,24 @@ export interface ModulesResponse {
   };
 }
 
+export interface ModuleFacets {
+  namespaces: string[];
+  providers: string[];
+}
+
+export type ModuleSortField = 'name' | 'published' | 'versions';
+export type ModuleSortOrder = 'asc' | 'desc';
+
+export interface ModuleListQuery {
+  q?: string;
+  namespace?: string;
+  provider?: string;
+  sort?: ModuleSortField;
+  order?: ModuleSortOrder;
+  offset?: number;
+  limit?: number;
+}
+
 export function useModules() {
   const { getAuthHeaders } = useAuth();
 
@@ -99,19 +117,35 @@ export function useModules() {
   };
 
   const listModules = async (
-    offset = 0,
-    limit = 10
+    query: ModuleListQuery = {}
   ): Promise<ModulesResponse> => {
+    const { offset = 0, limit = 25, q, namespace, provider, sort, order } = query;
+
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    });
+
+    if (q) params.set('q', q);
+    if (namespace) params.set('namespace', namespace);
+    if (provider) params.set('provider', provider);
+    if (sort) params.set('sort', sort);
+    if (order) params.set('order', order);
+
+    return await $fetch<ModulesResponse>(`/v1/modules?${params.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+  };
+
+  const getModuleFacets = async (): Promise<ModuleFacets> => {
     try {
-      return await $fetch<ModulesResponse>(
-        `/v1/modules?offset=${offset}&limit=${limit}`,
-        {
-          headers: getAuthHeaders(),
-        }
-      );
+      return await $fetch<ModuleFacets>('/v1/modules/facets', {
+        headers: getAuthHeaders(),
+      });
     } catch (err) {
-      console.error('Error fetching modules:', err);
-      return { modules: [] };
+      // Filters degrade to "All" rather than blocking the listing.
+      console.error('Error fetching module facets:', err);
+      return { namespaces: [], providers: [] };
     }
   };
 
@@ -158,6 +192,7 @@ export function useModules() {
     purgeModuleVersion,
     listDeletedModules,
     listModules,
+    getModuleFacets,
     getModuleVersions,
     updateModuleDescription,
   };
