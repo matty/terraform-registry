@@ -10,45 +10,49 @@ export interface ProviderIdentity {
   color: string;
 }
 
+// Icon names use Iconify's canonical "collection:icon" form rather than the
+// "i-collection-icon" shorthand: the shorthand splits at the first hyphen, so
+// a collection whose own name contains one — simple-icons — cannot be resolved
+// from the client bundle.
 const FALLBACK: ProviderIdentity = {
-  icon: "i-lucide-cloud",
+  icon: "lucide:cloud",
   color: "#a1a1aa",
 };
 
 // Keyed by the provider string Terraform uses in a module source coordinate.
 const IDENTITIES: Record<string, ProviderIdentity> = {
-  aws: { icon: "i-simple-icons-amazonwebservices", color: "#FF9900" },
-  azurerm: { icon: "i-simple-icons-microsoftazure", color: "#0078D4" },
-  azuread: { icon: "i-simple-icons-microsoftazure", color: "#0078D4" },
-  azure: { icon: "i-simple-icons-microsoftazure", color: "#0078D4" },
-  google: { icon: "i-simple-icons-googlecloud", color: "#4285F4" },
-  "google-beta": { icon: "i-simple-icons-googlecloud", color: "#4285F4" },
-  gcp: { icon: "i-simple-icons-googlecloud", color: "#4285F4" },
-  kubernetes: { icon: "i-simple-icons-kubernetes", color: "#326CE5" },
-  k8s: { icon: "i-simple-icons-kubernetes", color: "#326CE5" },
-  helm: { icon: "i-simple-icons-helm", color: "#5B7FDE" },
-  docker: { icon: "i-simple-icons-docker", color: "#2496ED" },
-  github: { icon: "i-simple-icons-github", color: "#e4e4e7" },
-  gitlab: { icon: "i-simple-icons-gitlab", color: "#FC6D26" },
-  cloudflare: { icon: "i-simple-icons-cloudflare", color: "#F38020" },
-  digitalocean: { icon: "i-simple-icons-digitalocean", color: "#0080FF" },
-  postgresql: { icon: "i-simple-icons-postgresql", color: "#4169E1" },
-  mysql: { icon: "i-simple-icons-mysql", color: "#4479A1" },
-  redis: { icon: "i-simple-icons-redis", color: "#FF4438" },
-  vault: { icon: "i-simple-icons-vault", color: "#FFEC6E" },
-  consul: { icon: "i-simple-icons-consul", color: "#F24C53" },
-  nomad: { icon: "i-simple-icons-nomad", color: "#00CA8E" },
-  oracle: { icon: "i-simple-icons-oracle", color: "#F80000" },
-  oci: { icon: "i-simple-icons-oracle", color: "#F80000" },
-  alicloud: { icon: "i-simple-icons-alibabacloud", color: "#FF6A00" },
-  openstack: { icon: "i-simple-icons-openstack", color: "#ED1944" },
-  vsphere: { icon: "i-simple-icons-vmware", color: "#8A9BA8" },
-  vmware: { icon: "i-simple-icons-vmware", color: "#8A9BA8" },
-  datadog: { icon: "i-simple-icons-datadog", color: "#632CA6" },
-  elasticsearch: { icon: "i-simple-icons-elastic", color: "#43A047" },
-  null: { icon: "i-simple-icons-terraform", color: "#7B42BC" },
-  local: { icon: "i-simple-icons-terraform", color: "#7B42BC" },
-  random: { icon: "i-simple-icons-terraform", color: "#7B42BC" },
+  aws: { icon: "simple-icons:amazonwebservices", color: "#FF9900" },
+  azurerm: { icon: "simple-icons:microsoftazure", color: "#0078D4" },
+  azuread: { icon: "simple-icons:microsoftazure", color: "#0078D4" },
+  azure: { icon: "simple-icons:microsoftazure", color: "#0078D4" },
+  google: { icon: "simple-icons:googlecloud", color: "#4285F4" },
+  "google-beta": { icon: "simple-icons:googlecloud", color: "#4285F4" },
+  gcp: { icon: "simple-icons:googlecloud", color: "#4285F4" },
+  kubernetes: { icon: "simple-icons:kubernetes", color: "#326CE5" },
+  k8s: { icon: "simple-icons:kubernetes", color: "#326CE5" },
+  helm: { icon: "simple-icons:helm", color: "#5B7FDE" },
+  docker: { icon: "simple-icons:docker", color: "#2496ED" },
+  github: { icon: "simple-icons:github", color: "#e4e4e7" },
+  gitlab: { icon: "simple-icons:gitlab", color: "#FC6D26" },
+  cloudflare: { icon: "simple-icons:cloudflare", color: "#F38020" },
+  digitalocean: { icon: "simple-icons:digitalocean", color: "#0080FF" },
+  postgresql: { icon: "simple-icons:postgresql", color: "#4169E1" },
+  mysql: { icon: "simple-icons:mysql", color: "#4479A1" },
+  redis: { icon: "simple-icons:redis", color: "#FF4438" },
+  vault: { icon: "simple-icons:vault", color: "#FFEC6E" },
+  consul: { icon: "simple-icons:consul", color: "#F24C53" },
+  nomad: { icon: "simple-icons:nomad", color: "#00CA8E" },
+  oracle: { icon: "simple-icons:oracle", color: "#F80000" },
+  oci: { icon: "simple-icons:oracle", color: "#F80000" },
+  alicloud: { icon: "simple-icons:alibabacloud", color: "#FF6A00" },
+  openstack: { icon: "simple-icons:openstack", color: "#ED1944" },
+  vsphere: { icon: "simple-icons:vmware", color: "#8A9BA8" },
+  vmware: { icon: "simple-icons:vmware", color: "#8A9BA8" },
+  datadog: { icon: "simple-icons:datadog", color: "#632CA6" },
+  elasticsearch: { icon: "simple-icons:elastic", color: "#43A047" },
+  null: { icon: "simple-icons:terraform", color: "#7B42BC" },
+  local: { icon: "simple-icons:terraform", color: "#7B42BC" },
+  random: { icon: "simple-icons:terraform", color: "#7B42BC" },
 };
 
 export function useProviderIdentity() {
