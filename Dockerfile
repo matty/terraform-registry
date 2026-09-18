@@ -11,7 +11,7 @@ RUN mkdir /src \
     && go get "golang.org/x/text@v${TERRAFORM_CONFIG_INSPECT_X_TEXT_VERSION}" \
     && GOBIN=/out go install .
 
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS frontend
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS frontend
 WORKDIR /app/TerraformRegistry/web-src
 COPY TerraformRegistry/web-src/package.json TerraformRegistry/web-src/package-lock.json ./
 RUN npm ci
