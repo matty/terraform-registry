@@ -10,7 +10,7 @@ is responsible for proposing reviewed updates.
 | Terraform CLI support window | `1.12.0`, `hashicorp/terraform@sha256:be40b1de9a0f97b1e859235aca824d1bac4cf5c0dd715074aa45595ea055aa8b`; `1.14.2`, `hashicorp/terraform@sha256:eee2f7d5725bfcfd734dfc9fe5a3df4b58b00eb8cc874993458108d8943265cf` | Release certification matrix for Local, Azurite, MinIO, signed-provider, and non-root image evidence |
 | terraform-config-inspect | `2fb54c236733ee65ee877105d595c124c993c64d` archive SHA-256 `83aedf832593023babc90bd49dce5adb58e8f0774bacea4992a3d350f33af915`, rebuilt with `golang.org/x/text@v0.39.0` | Release Docker image |
 | Go builder | `golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125` | terraform-config-inspect build stage |
-| Node builder | `node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81` | Generated frontend build stage |
+| Node builder | `node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1` | Generated frontend build stage |
 | .NET SDK builder | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:4ac537e13e2f55d1d588ed3e618cb0cb6b82dd8deb17830de43d5086fbde958b` | Release Docker image |
 | terraform-provider-smoke build inputs | Digest-pinned `.NET SDK` above; Alpine v3.24 `bash=5.3.9-r1`, `gnupg=2.4.9-r1`, `openssl=3.5.8-r0`, `python3=3.14.7-r1` | Non-root fabricated-provider certification helper. The helper only installs these exact package revisions; changing one requires updating this row and its Dockerfile together. |
 | ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:6bb0fab0ef31f44f710a668c39c2263ae810f5adf868afa34cbd86815912c7fe`; Alpine `libcrypto3=3.5.8-r0`, `libssl3=3.5.8-r0` | Release Docker image |
