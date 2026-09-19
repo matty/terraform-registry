@@ -15,7 +15,7 @@ is responsible for proposing reviewed updates.
 | terraform-provider-smoke build inputs | Digest-pinned `.NET SDK` above; Alpine v3.24 `bash=5.3.9-r1`, `gnupg=2.4.9-r1`, `openssl=3.5.8-r0`, `python3=3.14.7-r1` | Non-root fabricated-provider certification helper. The helper only installs these exact package revisions; changing one requires updating this row and its Dockerfile together. |
 | ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:6bb0fab0ef31f44f710a668c39c2263ae810f5adf868afa34cbd86815912c7fe`; Alpine `libcrypto3=3.5.8-r0`, `libssl3=3.5.8-r0` | Release Docker image |
 | Development .NET SDK | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d` | Development Docker image |
-| PostgreSQL | `postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280` | Development Compose stack and storage-emulator smoke tests |
+| PostgreSQL | `postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae` | Development Compose stack and storage-emulator smoke tests |
 | pgAdmin | `dpage/pgadmin4:latest@sha256:2f4ce946ddf8360680d7eff4eaba1d91859eb6b4003e6623bad5c63a322c2f4d` | Development Compose stack |
 | Azurite | `mcr.microsoft.com/azure-storage/azurite:3.33.0@sha256:2628ee10a72833cc344b9d194cd8b245543892b307d16cf26a2cf55a15b816af` | Azure Blob storage-emulator smoke tests |
 | MinIO server | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e` | S3-compatible storage-emulator smoke tests |
