@@ -20,7 +20,7 @@ is responsible for proposing reviewed updates.
 | Azurite | `mcr.microsoft.com/azure-storage/azurite:3.33.0@sha256:2628ee10a72833cc344b9d194cd8b245543892b307d16cf26a2cf55a15b816af` | Azure Blob storage-emulator smoke tests |
 | MinIO server | `quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e` | S3-compatible storage-emulator smoke tests |
 | MinIO client | `quay.io/minio/mc:RELEASE.2025-03-12T17-29-24Z@sha256:470f5546b596e16c7816b9c3fa7a78ce4076bb73c2c73f7faeec0c8043923123` | S3-compatible storage-emulator initialization |
-| Caddy | `caddy:2.11-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648` | Storage-emulator smoke-test reverse proxy |
+| Caddy | `caddy:2.11-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b` | Storage-emulator smoke-test reverse proxy |
 
 The gate at `scripts/verification/gates/supply-chain-pinning.sh` ensures these
 references remain immutable, including every Compose image used by development
