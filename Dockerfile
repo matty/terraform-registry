@@ -19,7 +19,7 @@ COPY TerraformRegistry/web-src/ ./
 ARG FRONTEND_BUILD_MARKER=local
 RUN printf '%s\n' "$FRONTEND_BUILD_MARKER" > public/.build-marker && npm run generate
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:4ac537e13e2f55d1d588ed3e618cb0cb6b82dd8deb17830de43d5086fbde958b AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:cc02b814237a76c4735fb6eeee87181597b5e56f2ce458a435e527674d91f4d7 AS build
 WORKDIR /app
 
 
@@ -46,7 +46,7 @@ RUN dotnet build TerraformRegistry.csproj -c Release -o /app/build
 FROM build AS publish
 RUN dotnet publish TerraformRegistry.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:6bb0fab0ef31f44f710a668c39c2263ae810f5adf868afa34cbd86815912c7fe AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:254fe017495996d3abcc487ffacdcce2b73affb380d3af87af12c8dff41fe0b0 AS final
 WORKDIR /app
 ENV TF_REG_Sqlite__ConnectionString="Data Source=/data/terraform.db"
 RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
