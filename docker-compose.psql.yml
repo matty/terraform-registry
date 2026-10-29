@@ -19,7 +19,7 @@ services:
       start_period: 10s
 
   pgadmin:
-    image: dpage/pgadmin4:latest@sha256:2f4ce946ddf8360680d7eff4eaba1d91859eb6b4003e6623bad5c63a322c2f4d
+    image: dpage/pgadmin4:latest@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83
     container_name: terraform-registry-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
