@@ -77,7 +77,7 @@ fi
 grep -Eq '^\| Terraform CLI \| `1\.14\.2`, `hashicorp/terraform@sha256:[0-9a-f]{64}`' "$MANIFEST"
 grep -Eq '^\| terraform-config-inspect \| `[0-9a-f]{40}`' "$MANIFEST"
 for image in \
-  'postgres:18@sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583' \
+  'postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42' \
   'dpage/pgadmin4:latest@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83' \
   'mcr.microsoft.com/azure-storage/azurite:3.33.0@sha256:2628ee10a72833cc344b9d194cd8b245543892b307d16cf26a2cf55a15b816af' \
   'pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372' \
