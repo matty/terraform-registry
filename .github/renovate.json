@@ -1,7 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "onboarding": false,
-  "requireConfig": "optional",
   "branchPrefix": "renovate/",
   "rebaseWhen": "behind-base-branch",
   "extends": [
