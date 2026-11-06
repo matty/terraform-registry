@@ -56,3 +56,6 @@ key_id="$(GNUPGHOME="$gpg_home" gpg --list-keys --with-colons | awk -F: '/^pub:/
 GNUPGHOME="$gpg_home" gpg --batch --pinentry-mode loopback --passphrase '' --yes --detach-sign "$out_dir/terraform-provider-${provider_name}_${version}_SHA256SUMS"
 GNUPGHOME="$gpg_home" gpg --armor --export "$key_id" > "$out_dir/public-key.asc"
 printf '%s' "$key_id" > "$out_dir/key-id.txt"
+
+# Stop the agent so a later rm -rf of this folder cannot race it removing its own sockets.
+GNUPGHOME="$gpg_home" gpgconf --kill gpg-agent || true
