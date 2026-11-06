@@ -23,7 +23,7 @@ services:
       mc mb --ignore-existing local/modules'
 
   postgres:
-    image: postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+    image: postgres:18@sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583
     environment:
       POSTGRES_USER: terraform_reg_user
       POSTGRES_PASSWORD: terraform_reg_password
