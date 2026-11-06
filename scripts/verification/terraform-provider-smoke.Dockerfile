@@ -9,8 +9,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:5562fd626eec39f6f53218f9b7d
 RUN apk add --no-cache \
     bash=5.3.9-r1 \
     gnupg=2.4.9-r1 \
-    openssl=3.5.8-r0 \
-    python3=3.14.7-r1
+    openssl=3.5.9-r0 \
+    python3=3.14.10-r1
 
 RUN mkdir -p /tmp/nuget /tmp/smoke-home \
     && chown -R app:app /tmp/nuget /tmp/smoke-home
