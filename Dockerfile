@@ -1,7 +1,7 @@
 FROM golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS terraform-config-inspect
 ARG TERRAFORM_CONFIG_INSPECT_VERSION=2fb54c236733ee65ee877105d595c124c993c64d
 ARG TERRAFORM_CONFIG_INSPECT_ARCHIVE_SHA256=83aedf832593023babc90bd49dce5adb58e8f0774bacea4992a3d350f33af915
-ARG TERRAFORM_CONFIG_INSPECT_X_TEXT_VERSION=0.39.0
+ARG TERRAFORM_CONFIG_INSPECT_X_TEXT_VERSION=0.41.0
 RUN mkdir /src \
     && wget -qO /tmp/terraform-config-inspect.tar.gz \
         "https://github.com/hashicorp/terraform-config-inspect/archive/${TERRAFORM_CONFIG_INSPECT_VERSION}.tar.gz" \
@@ -49,7 +49,7 @@ RUN dotnet publish TerraformRegistry.csproj -c Release -o /app/publish /p:UseApp
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:486297ae006e95ee2ee3112a2c03e3d26e41fbbc64b7a29e28e7a18cc36b12bb AS final
 WORKDIR /app
 ENV TF_REG_Sqlite__ConnectionString="Data Source=/data/terraform.db"
-RUN apk add --no-cache libcrypto3=3.5.8-r0 libssl3=3.5.8-r0
+RUN apk add --no-cache libcrypto3=3.5.9-r0 libssl3=3.5.9-r0
 COPY --from=publish /app/publish .
 COPY --from=terraform-config-inspect /out/terraform-config-inspect /usr/local/bin/terraform-config-inspect
 RUN mkdir -p /app/modules /app/providers /data && chown app:app /app/modules /app/providers /data
