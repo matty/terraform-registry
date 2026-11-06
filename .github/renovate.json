@@ -25,14 +25,8 @@
     "rangeStrategy": "update-lockfile"
   },
   "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": [
-      "before 6am on monday"
-    ],
-    "labels": [
-      "dependencies",
-      "lockfile-maintenance"
-    ]
+    "description": "Off because regenerating web-src/package-lock.json fails on npm 12 with EALLOWREMOTE, and a refresh limited to aged releases would downgrade packages deliberately raised past the soak by security fixes (nuxt, node-forge). Grouped npm and vulnerability PRs keep dependencies moving.",
+    "enabled": false
   },
   "prConcurrentLimit": 10,
   "prHourlyLimit": 4,
