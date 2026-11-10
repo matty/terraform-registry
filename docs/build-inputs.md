@@ -11,10 +11,10 @@ is responsible for proposing reviewed updates.
 | terraform-config-inspect | `2fb54c236733ee65ee877105d595c124c993c64d` archive SHA-256 `83aedf832593023babc90bd49dce5adb58e8f0774bacea4992a3d350f33af915`, rebuilt with `golang.org/x/text@v0.41.0` | Release Docker image |
 | Go builder | `golang:1.27-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18` | terraform-config-inspect build stage |
 | Node builder | `node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8` | Generated frontend build stage |
-| .NET SDK builder | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:5562fd626eec39f6f53218f9b7d7856ab7195d51d846568304fbe85071a3b6e6` | Release Docker image |
+| .NET SDK builder | `mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:0294f285d062afacc8b5f6d7febb0cd4ee879320e5585fa15f2f4ebf1feb9ba7` | Release Docker image |
 | terraform-provider-smoke build inputs | Digest-pinned `.NET SDK` above; Alpine v3.24 `bash=5.3.9-r1`, `gnupg=2.4.9-r1`, `openssl=3.5.9-r0`, `python3=3.14.10-r1` | Non-root fabricated-provider certification helper. The helper only installs these exact package revisions; changing one requires updating this row and its Dockerfile together. |
-| ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:486297ae006e95ee2ee3112a2c03e3d26e41fbbc64b7a29e28e7a18cc36b12bb`; Alpine `libcrypto3=3.5.9-r0`, `libssl3=3.5.9-r0` | Release Docker image |
-| Development .NET SDK | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e` | Development Docker image |
+| ASP.NET runtime | `mcr.microsoft.com/dotnet/aspnet:10.0-alpine@sha256:21c3f9798416cba4c0576a947c286231cb71ea2884896cb968253f5c9668f930`; Alpine `libcrypto3=3.5.9-r0`, `libssl3=3.5.9-r0` | Release Docker image |
+| Development .NET SDK | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb` | Development Docker image |
 | PostgreSQL | `postgres:18@sha256:bd5dfa494a5a259704365813dbfa5fa6b3e69be7348d43b547f540c730478583` | Development Compose stack and storage-emulator smoke tests |
 | pgAdmin | `dpage/pgadmin4:latest@sha256:3591b3d02910dcd817dec6fcaa681c278ba6966945283dd0ea0042731c330c83` | Development Compose stack |
 | Azurite | `mcr.microsoft.com/azure-storage/azurite:3.33.0@sha256:2628ee10a72833cc344b9d194cd8b245543892b307d16cf26a2cf55a15b816af` | Azure Blob storage-emulator smoke tests |
