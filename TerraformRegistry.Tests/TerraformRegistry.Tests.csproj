@@ -8,10 +8,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="AWSSDK.S3" Version="4.0.104.6" />
+        <PackageReference Include="AWSSDK.S3" Version="4.0.104.8" />
         <PackageReference Include="coverlet.collector" Version="6.0.4" />
-        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
-        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
+        <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
         <PackageReference Include="SourceGear.sqlite3" Version="3.53.4" />
         <PackageReference Include="SQLitePCLRaw.config.e_sqlite3" Version="3.0.5" />
